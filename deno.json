@@ -1,0 +1,12 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run src/tui.ts",
+    "run": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run src/run.ts",
+    "curl2http": "deno run --allow-read --allow-write --allow-env scripts/curl2http.ts"
+  },
+  "imports": {
+    "@std/fmt": "jsr:@std/fmt@1",
+    "@std/fs": "jsr:@std/fs@1",
+    "@std/path": "jsr:@std/path@1"
+  }
+}

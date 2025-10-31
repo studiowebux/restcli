@@ -1,0 +1,53 @@
+[
+  {
+    "name": "Dev - Player 1",
+    "variables": {
+      "baseUrl": "http://localhost:3000",
+      "token": "dev_player1_token_here",
+      "username": "potato",
+      "password": "12345"
+    },
+    "headers": {
+      "Authorization": "Bearer {{token}}",
+      "X-User-ID": "player-001",
+      "X-Environment": "dev"
+    }
+  },
+  {
+    "name": "Dev - Admin",
+    "variables": {
+      "baseUrl": "http://localhost:3000",
+      "token": "dev_admin_token_here"
+    },
+    "headers": {
+      "Authorization": "Bearer {{token}}",
+      "X-User-ID": "admin-001",
+      "X-Admin-Role": "super",
+      "X-Environment": "dev"
+    }
+  },
+  {
+    "name": "Staging - Player 1",
+    "variables": {
+      "baseUrl": "https://staging.example.com",
+      "token": "staging_player1_token_here"
+    },
+    "headers": {
+      "Authorization": "Bearer {{token}}",
+      "X-User-ID": "player-001",
+      "X-Environment": "staging"
+    }
+  },
+  {
+    "name": "Production - Player 1",
+    "variables": {
+      "baseUrl": "https://api.example.com",
+      "token": "prod_player1_token_here"
+    },
+    "headers": {
+      "Authorization": "Bearer {{token}}",
+      "X-User-ID": "player-001",
+      "X-Environment": "production"
+    }
+  }
+]

@@ -1,0 +1,7 @@
+# Session and profiles (keep .example files)
+.session.json
+.profiles.json
+
+# Response and inspection files
+response-*.txt
+inspection-*.txt

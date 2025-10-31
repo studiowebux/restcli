@@ -1,0 +1,9 @@
+### Create Post
+POST https://jsonplaceholder.typicode.com/posts
+Content-Type: application/json
+
+{
+  "title": "Test Post",
+  "body": "This is a test",
+  "userId": 1
+}
