@@ -30,6 +30,11 @@ jobs:
           deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-curl2http-${{ matrix.platform }} scripts/curl2http.ts
           chmod +x bin/restcli-curl2http-${{ matrix.platform }}
 
+      - name: Compile openapi2http
+        run: |
+          deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-openapi2http-${{ matrix.platform }} scripts/openapi2http.ts
+          chmod +x bin/restcli-openapi2http-${{ matrix.platform }}
+
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
@@ -37,3 +42,4 @@ jobs:
           files: |
             bin/restcli-${{ matrix.platform }}
             bin/restcli-curl2http-${{ matrix.platform }}
+            bin/restcli-openapi2http-${{ matrix.platform }}

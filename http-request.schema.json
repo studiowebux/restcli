@@ -39,6 +39,137 @@
         "body": {
           "type": "string",
           "description": "Request body (for POST, PUT, PATCH)"
+        },
+        "documentation": {
+          "$ref": "#/definitions/Documentation",
+          "description": "Optional documentation for the request"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Documentation": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Description of what the endpoint does"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags/categories for organizing endpoints"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Parameter"
+          },
+          "description": "Request parameters"
+        },
+        "responses": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/Response"
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Shorthand: {\"200\": \"Success\"}"
+              }
+            ]
+          },
+          "description": "Expected responses"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Parameter": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Parameter name"
+        },
+        "type": {
+          "type": "string",
+          "description": "Parameter type (string, number, boolean, object, array)"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether the parameter is required",
+          "default": false
+        },
+        "description": {
+          "type": "string",
+          "description": "Parameter description"
+        },
+        "example": {
+          "description": "Example value for the parameter"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResponseField": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Field name"
+        },
+        "type": {
+          "type": "string",
+          "description": "Field type (string, number, boolean, object, array, etc.)"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether the field is required",
+          "default": false
+        },
+        "description": {
+          "type": "string",
+          "description": "Field description"
+        },
+        "example": {
+          "description": "Example value for the field"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Response": {
+      "type": "object",
+      "required": ["code", "description"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "HTTP status code",
+          "pattern": "^[1-5][0-9]{2}$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Response description"
+        },
+        "contentType": {
+          "type": "string",
+          "description": "Response content type (e.g., application/json)"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ResponseField"
+          },
+          "description": "Response body fields/schema"
+        },
+        "example": {
+          "type": "string",
+          "description": "Complete response example"
         }
       },
       "additionalProperties": false

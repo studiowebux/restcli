@@ -53,6 +53,7 @@ pbpaste | deno task curl2http --output requests/my-request.http
 See [INSTALL.md](./docs/INSTALL.md) for detailed installation and setup guide.
 See [PROFILES.md](./docs/PROFILES.md) for detailed profile configuration guide.
 See [CURL2HTTP.md](./docs/CURL2HTTP.md) for converting cURL commands to `.http` files.
+See [CURL2HTTP.md](./docs/OPENAPI.md) for converting openapi to `.http` files.
 See [DOCUMENTATION.md](./docs/DOCUMENTATION.md) for adding documentation to your requests.
 
 ## CLI Mode
@@ -141,7 +142,7 @@ The TUI will display files with their relative paths (e.g., `auth/login.http`, `
 
 ## HTTP File Format
 
-```http
+```text
 ### Request Name (optional)
 METHOD url
 Header: value
@@ -156,7 +157,7 @@ Another-Header: value
 
 ### Example
 
-```http
+```text
 ### Login
 POST {{baseUrl}}/auth/login
 Content-Type: application/json
@@ -171,25 +172,13 @@ GET {{baseUrl}}/users/{{userId}}
 Authorization: Bearer {{token}}
 ```
 
-## Variables
+## Variables and Profiles
 
-Variables use `{{varName}}` syntax and are stored in `.session.json`:
+Variables use `{{varName}}` syntax in your requests. Headers and variables are configured in **profiles** (`.profiles.json`).
 
-```json
-{
-  "variables": {
-    "baseUrl": "http://localhost:3000",
-    "token": "eyJhbGc...",
-    "userId": "123"
-  }
-}
-```
+### Profiles
 
-The TUI auto-extracts `token` or `accessToken` from JSON responses.
-
-## Header Profiles
-
-Create profiles in `.profiles.json` to quickly switch between users:
+Profiles store your headers and variables permanently. Create profiles in `.profiles.json`:
 
 ```json
 [
@@ -198,19 +187,38 @@ Create profiles in `.profiles.json` to quickly switch between users:
     "headers": {
       "Authorization": "Bearer {{token}}",
       "X-User-ID": "user1"
+    },
+    "variables": {
+      "baseUrl": "http://localhost:3000",
+      "token": "user1-token-here"
     }
   },
   {
     "name": "User 2",
     "headers": {
-      "Authorization": "Bearer {{token2}}",
+      "Authorization": "Bearer {{token}}",
       "X-User-ID": "user2"
+    },
+    "variables": {
+      "baseUrl": "http://localhost:3000",
+      "token": "user2-token-here"
     }
   }
 ]
 ```
 
-Press `p` in the TUI to cycle through profiles.
+Press `p` in the TUI to cycle through profiles, or press `v` to open the variable editor.
+
+### Session Data (Ephemeral)
+
+`.session.json` contains **ephemeral** state that is linked to the currently active profile:
+- Active profile name
+- Temporary runtime variables (auto-extracted tokens, etc.)
+- Session state gets cleared when you switch profiles
+
+**Important:** Configure your headers and variables in `.profiles.json` (permanent), not `.session.json` (ephemeral).
+
+The TUI auto-extracts `token` or `accessToken` from JSON responses and temporarily stores them in the session.
 
 ## Keyboard Shortcuts
 
@@ -229,6 +237,8 @@ Press `p` in the TUI to cycle through profiles.
 - `r` - Refresh file list
 - `p` - Switch profile (cycles through profiles)
 - `v` - Open variable editor (add, edit, delete variables)
+- `h` - Open header editor (add, edit, delete headers)
+- `m` - View request documentation
 - `j` - Scroll response down (useful for long JSON responses)
 - `k` - Scroll response up
 
@@ -268,7 +278,40 @@ Press `v` to open the interactive variable editor. This allows you to manage **p
 - Profile variables are permanent configuration
 - Long values are automatically truncated to prevent overlap
 
-## Tips
+## Header Editor
+
+Press `h` to open the interactive header editor. This allows you to manage **profile headers** without editing `.profiles.json` manually.
+
+The header editor works identically to the variable editor:
+
+### List Mode
+- Navigate headers with `↑` / `↓`
+- `A` - Add new header
+- `E` or `Enter` - Edit selected header's value
+- `D` - Delete selected header
+- `ESC` - Exit header editor
+
+### Add Mode
+- Type to enter header name and value
+- `Tab` - Switch between name and value fields
+- `Enter` - Save header to active profile
+- `ESC` - Cancel
+
+### Edit Mode
+- Type to change the value (header name cannot be changed)
+- `Enter` - Save changes to active profile
+- `ESC` - Cancel
+
+### Delete Mode
+- `Y` - Confirm deletion from profile
+- `N` or `ESC` - Cancel
+
+**Important Notes:**
+- Headers are saved to the **active profile** in `.profiles.json`
+- Profile headers are merged with request headers (request headers take precedence)
+- Common headers: `Authorization`, `Content-Type`, `X-API-Key`, etc.
+
+## File Organization
 
 - Organize requests by feature/domain in subdirectories
 - Use duplicate (`d`) to quickly create variations of requests

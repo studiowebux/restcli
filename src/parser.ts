@@ -8,9 +8,20 @@ export interface Parameter {
   example?: string;
 }
 
+export interface ResponseField {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  example?: any;
+}
+
 export interface Response {
   code: string;
   description: string;
+  contentType?: string;
+  fields?: ResponseField[];
+  example?: string;
 }
 
 export interface Documentation {
@@ -68,19 +79,34 @@ export function parseTraditionalHttpFile(content: string): ParsedHttpFile {
     const documentation: Documentation = {};
 
     // Find method and URL first
+    // Skip the first line if it looks like a title (e.g., "POST /v1/mobile/account/claim")
+    // The actual method line should have variables ({{...}}) or full URLs (http://...)
     let methodLineIdx = -1;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      // Method must be followed by a URL (http://, https://, /, or {{var}})
-      const methodMatch = line.match(/^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(https?:\/\/.+|\/.*|\{\{.+)$/i);
+      // Check if this line starts with a method
+      const methodMatch = line.match(/^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(.+)$/i);
       if (methodMatch) {
-        method = methodMatch[1].toUpperCase();
-        url = methodMatch[2].trim();
-        methodLineIdx = i;
-        bodyStartIndex = i + 1;
-        break;
+        const potentialUrl = methodMatch[2].trim();
+
+        // Only treat it as the actual method line if:
+        // 1. It contains variables ({{...}})
+        // 2. It starts with http:// or https://
+        // 3. It starts with / and we're past the first line (to allow titles on line 0)
+        if (
+          potentialUrl.includes('{{') ||
+          potentialUrl.startsWith('http://') ||
+          potentialUrl.startsWith('https://') ||
+          (potentialUrl.startsWith('/') && i > 0)
+        ) {
+          method = methodMatch[1].toUpperCase();
+          url = potentialUrl;
+          methodLineIdx = i;
+          bodyStartIndex = i + 1;
+          break;
+        }
       }
     }
 
@@ -91,7 +117,8 @@ export function parseTraditionalHttpFile(content: string): ParsedHttpFile {
         if (!line) continue;
 
         // Check for documentation annotations (# @...)
-        const annotationMatch = line.match(/^#\s*@(\w+)\s+(.+)$/);
+        // Note: Use [\w-]+ to support hyphenated annotation types like @response-field
+        const annotationMatch = line.match(/^#\s*@([\w-]+)\s+(.+)$/);
         if (annotationMatch) {
           const [, annotationType, annotationValue] = annotationMatch;
           parseAnnotation(annotationType, annotationValue, documentation);
@@ -151,7 +178,7 @@ export function parseTraditionalHttpFile(content: string): ParsedHttpFile {
 
 /**
  * Parse a documentation annotation
- * Supports: @description, @tag, @param, @example, @response
+ * Supports: @description, @tag, @param, @example, @response, @response-field, @response-example
  */
 function parseAnnotation(type: string, value: string, documentation: Documentation): void {
   switch (type) {
@@ -200,7 +227,46 @@ function parseAnnotation(type: string, value: string, documentation: Documentati
       if (responseMatch) {
         const [, code, description] = responseMatch;
         if (!documentation.responses) documentation.responses = [];
-        documentation.responses.push({ code, description });
+        documentation.responses.push({ code, description, fields: [] });
+      }
+      break;
+    }
+
+    case 'response-field': {
+      // Format: fieldName {type} required|optional - description
+      const fieldMatch = value.match(/^(\S+)\s+\{([^}]+)\}\s+(required|optional)(?:\s+-\s+(.+))?$/);
+      if (fieldMatch && documentation.responses && documentation.responses.length > 0) {
+        const [, name, type, requiredStr, description] = fieldMatch;
+        const lastResponse = documentation.responses[documentation.responses.length - 1];
+        if (!lastResponse.fields) lastResponse.fields = [];
+        lastResponse.fields.push({
+          name,
+          type,
+          required: requiredStr === 'required',
+          description,
+        });
+      }
+      break;
+    }
+
+    case 'response-example': {
+      // Format: fieldName value
+      const exampleMatch = value.match(/^(\S+)\s+(.+)$/);
+      if (exampleMatch && documentation.responses && documentation.responses.length > 0) {
+        const [, fieldName, exampleValue] = exampleMatch;
+        const lastResponse = documentation.responses[documentation.responses.length - 1];
+        if (lastResponse.fields) {
+          const field = lastResponse.fields.find(f => f.name === fieldName);
+          if (field) {
+            // Try to parse as JSON, otherwise treat as string
+            try {
+              field.example = JSON.parse(exampleValue);
+            } catch {
+              // Remove quotes if present
+              field.example = exampleValue.replace(/^["'](.+)["']$/, '$1');
+            }
+          }
+        }
       }
       break;
     }

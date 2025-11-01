@@ -8,3 +8,5 @@ inspection-*.txt
 
 history
 bin/
+
+test-requests/

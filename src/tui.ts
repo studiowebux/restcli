@@ -1246,7 +1246,15 @@ class TUI {
       return;
     }
 
-    if (!documentation) {
+    // Check if documentation has any content
+    const hasContent = documentation && (
+      documentation.description ||
+      (documentation.tags && documentation.tags.length > 0) ||
+      (documentation.parameters && documentation.parameters.length > 0) ||
+      (documentation.responses && documentation.responses.length > 0)
+    );
+
+    if (!hasContent) {
       this.moveCursor(4, startCol);
       this.write(`\x1b[2mNo documentation available for this request\x1b[0m\x1b[K`);
       this.moveCursor(6, startCol);
@@ -1263,13 +1271,16 @@ class TUI {
     // Build content lines
     const contentLines: string[] = [];
 
+    // At this point we know documentation has content, so we can safely use it
+    const doc = documentation!;
+
     // Description
-    if (documentation.description) {
+    if (doc.description) {
       contentLines.push(`\x1b[1;36mDescription:\x1b[0m`);
       contentLines.push("");
       // Wrap description if needed
       const maxDescWidth = width - 4;
-      const words = documentation.description.split(' ');
+      const words = doc.description.split(' ');
       let currentLine = "  ";
       for (const word of words) {
         if (currentLine.length + word.length + 1 > maxDescWidth) {
@@ -1286,18 +1297,18 @@ class TUI {
     }
 
     // Tags
-    if (documentation.tags && documentation.tags.length > 0) {
+    if (doc.tags && doc.tags.length > 0) {
       contentLines.push(`\x1b[1;36mTags:\x1b[0m`);
       contentLines.push("");
-      contentLines.push(`  ${documentation.tags.map(t => `\x1b[35m#${t}\x1b[0m`).join("  ")}`);
+      contentLines.push(`  ${doc.tags.map(t => `\x1b[35m#${t}\x1b[0m`).join("  ")}`);
       contentLines.push("");
     }
 
     // Parameters
-    if (documentation.parameters && documentation.parameters.length > 0) {
+    if (doc.parameters && doc.parameters.length > 0) {
       contentLines.push(`\x1b[1;36mParameters:\x1b[0m`);
       contentLines.push("");
-      for (const param of documentation.parameters) {
+      for (const param of doc.parameters) {
         const requiredBadge = param.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
         contentLines.push(`  \x1b[1m${param.name}\x1b[0m \x1b[2m{${param.type}}\x1b[0m ${requiredBadge}`);
         if (param.description) {
@@ -1312,15 +1323,41 @@ class TUI {
     }
 
     // Responses
-    if (documentation.responses && documentation.responses.length > 0) {
+    if (doc.responses && doc.responses.length > 0) {
       contentLines.push(`\x1b[1;36mResponses:\x1b[0m`);
       contentLines.push("");
-      for (const response of documentation.responses) {
+      for (const response of doc.responses) {
         const codeColor = response.code.startsWith('2') ? '\x1b[32m' :
                           response.code.startsWith('4') || response.code.startsWith('5') ? '\x1b[31m' : '\x1b[33m';
         contentLines.push(`  ${codeColor}${response.code}\x1b[0m  ${response.description.slice(0, width - 10)}`);
+
+        // Show response schema fields if available
+        if (response.fields && response.fields.length > 0) {
+          contentLines.push("");
+          contentLines.push(`    \x1b[2mResponse Body:\x1b[0m`);
+          for (const field of response.fields) {
+            // Calculate indentation based on nesting level
+            // Count dots in field name to determine depth
+            const depth = (field.name.match(/\./g) || []).length;
+            const baseIndent = 6; // Base indentation for fields
+            const indent = " ".repeat(baseIndent + (depth * 2));
+
+            // Get the display name (last segment for nested fields)
+            const displayName = field.name.split('.').pop() || field.name;
+
+            const requiredBadge = field.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
+            contentLines.push(`${indent}\x1b[1m${displayName}\x1b[0m \x1b[2m{${field.type}}\x1b[0m ${requiredBadge}`);
+            if (field.description) {
+              contentLines.push(`${indent}  ${field.description.slice(0, width - 10 - indent.length)}`);
+            }
+            if (field.example !== undefined) {
+              const exampleStr = typeof field.example === 'string' ? `"${field.example}"` : JSON.stringify(field.example);
+              contentLines.push(`${indent}  \x1b[2mExample: ${exampleStr.slice(0, width - 20 - indent.length)}\x1b[0m`);
+            }
+          }
+        }
+        contentLines.push("");
       }
-      contentLines.push("");
     }
 
     // Add footer
