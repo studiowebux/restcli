@@ -13,7 +13,7 @@ interface ParsedCurl {
 function parseCurl(curlCommand: string): ParsedCurl {
   // Remove newlines and extra spaces
   let normalized = curlCommand
-    .replace(/\\\n/g, " ") // Handle multiline with \
+    .replace(/\\(\r?\n)/g, " ") // Handle multiline with \ (supports both \n and \r\n)
     .replace(/\s+/g, " ")
     .trim();
 
@@ -264,72 +264,6 @@ function suggestFilename(parsed: ParsedCurl): string {
   }
 }
 
-/**
- * Interactive mode - prompt user for details
- */
-async function interactiveMode(parsed: ParsedCurl, result: { content: string; variables: Record<string, string>; filteredHeaders: string[] }): Promise<void> {
-  console.log("\n📝 Converted curl to .http format:\n");
-  console.log("─".repeat(60));
-  console.log(result.content);
-  console.log("─".repeat(60));
-
-  if (Object.keys(result.variables).length > 0) {
-    console.log("\n💡 Detected variables:");
-    for (const [key, value] of Object.entries(result.variables)) {
-      console.log(`  ${key}: ${value}`);
-    }
-  }
-
-  if (result.filteredHeaders.length > 0) {
-    console.log("\n🔒 Excluded sensitive headers:");
-    for (const header of result.filteredHeaders) {
-      console.log(`  ${header}`);
-    }
-    console.log("💡 Tip: Use --import-headers flag to include these in the .http file");
-  }
-
-  const suggestedName = suggestFilename(parsed);
-  console.log(`\n📁 Suggested filename: requests/${suggestedName}`);
-
-  console.log("\nOptions:");
-  console.log("  1. Save to suggested location");
-  console.log("  2. Enter custom filename");
-  console.log("  3. Print to stdout only");
-  console.log("  4. Cancel");
-
-  // Read user input
-  const buf = new Uint8Array(1024);
-  const n = await Deno.stdin.read(buf);
-  if (!n) {
-    console.log("No input received, printing to stdout only");
-    return;
-  }
-
-  const choice = new TextDecoder().decode(buf.subarray(0, n)).trim();
-
-  if (choice === "1") {
-    const fullPath = `requests/${suggestedName}`;
-    await Deno.writeTextFile(fullPath, result.content);
-    console.log(`\n✅ Saved to: ${fullPath}`);
-
-    if (Object.keys(result.variables).length > 0) {
-      console.log("\n💡 Don't forget to add these to .session.json or .profiles.json:");
-      console.log(JSON.stringify(result.variables, null, 2));
-    }
-  } else if (choice === "2") {
-    console.log("\nEnter filename (relative to requests/): ");
-    const filenameBuf = new Uint8Array(1024);
-    const filenameN = await Deno.stdin.read(filenameBuf);
-    if (filenameN) {
-      const customName = new TextDecoder().decode(filenameBuf.subarray(0, filenameN)).trim();
-      const fullPath = `requests/${customName}`;
-      await Deno.writeTextFile(fullPath, result.content);
-      console.log(`\n✅ Saved to: ${fullPath}`);
-    }
-  } else if (choice === "3" || choice === "4") {
-    console.log("\n👋 Output printed above");
-  }
-}
 
 /**
  * Main function
@@ -364,25 +298,47 @@ async function main() {
   }
 
   if (args.length === 0) {
-    // Read from stdin
-    // Auto-detect if stdin is piped (non-interactive)
+    // Read from stdin (must be piped)
     const isStdinPiped = !(Deno.stdin.isTerminal?.() ?? true);
 
-    if (isStdinPiped) {
-      stdoutOnly = true; // Auto-enable stdout mode when piped
-    } else {
-      console.log("📋 Reading from stdin... (paste your curl command and press Ctrl+D)");
+    if (!isStdinPiped) {
+      console.error("❌ No input provided");
+      console.error("\n💡 Usage:");
+      console.error("  pbpaste | restcli-curl2http --output requests/file.http");
+      console.error("  echo 'curl http://...' | restcli-curl2http --output requests/file.http");
+      console.error("  restcli-curl2http --output requests/file.http 'curl http://...'");
+      console.error("\n💡 Or with deno:");
+      console.error("  pbpaste | deno task curl2http --output requests/file.http");
+      Deno.exit(1);
     }
 
-    const decoder = new TextDecoder();
-    const buf = new Uint8Array(1024 * 10); // 10KB buffer
-    const n = await Deno.stdin.read(buf);
-    if (n) {
-      curlCommand = decoder.decode(buf.subarray(0, n));
-    } else {
+    stdoutOnly = true; // Auto-enable stdout mode when piped
+
+    // Read all piped input
+    const chunks: Uint8Array[] = [];
+    const buf = new Uint8Array(4096);
+
+    while (true) {
+      const n = await Deno.stdin.read(buf);
+      if (n === null) break;
+      chunks.push(buf.slice(0, n));
+    }
+
+    if (chunks.length === 0) {
       console.error("❌ No input provided");
       Deno.exit(1);
     }
+
+    // Combine chunks
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    curlCommand = new TextDecoder().decode(combined);
   } else {
     // Use command line argument
     curlCommand = args.join(" ");
@@ -408,27 +364,19 @@ async function main() {
 
     const result = generateHttpFile(parsed, true, importHeaders);
 
-    if (stdoutOnly) {
-      // Determine output path
-      let fullPath: string;
-      if (outputPath) {
-        // User specified a custom path
-        fullPath = outputPath;
+    // If --output is specified, use it directly (works in all modes)
+    if (outputPath) {
+      let fullPath = outputPath;
 
-        // If it's a directory path (ends with /), append the suggested filename
-        if (fullPath.endsWith("/")) {
-          const suggestedName = suggestFilename(parsed);
-          fullPath = `${fullPath}${suggestedName}`;
-        }
-
-        // Ensure it has .http extension
-        if (!fullPath.endsWith(".http")) {
-          fullPath = `${fullPath}.http`;
-        }
-      } else {
-        // Use suggested location
+      // If it's a directory path (ends with /), append the suggested filename
+      if (fullPath.endsWith("/")) {
         const suggestedName = suggestFilename(parsed);
-        fullPath = `requests/${suggestedName}`;
+        fullPath = `${fullPath}${suggestedName}`;
+      }
+
+      // Ensure it has .http extension
+      if (!fullPath.endsWith(".http")) {
+        fullPath = `${fullPath}.http`;
       }
 
       // Create parent directory if it doesn't exist
@@ -460,9 +408,37 @@ async function main() {
         }
         console.log("\n💡 Add these to your profile headers in .profiles.json instead");
       }
-    } else {
-      // Interactive mode
-      await interactiveMode(parsed, result);
+    } else if (stdoutOnly) {
+      // Auto-save mode (piped or CLI args)
+      const suggestedName = suggestFilename(parsed);
+      const fullPath = `requests/${suggestedName}`;
+
+      // Create parent directory if it doesn't exist
+      try {
+        await Deno.mkdir("requests", { recursive: true });
+      } catch {
+        // Directory already exists
+      }
+
+      await Deno.writeTextFile(fullPath, result.content);
+
+      console.log(`✅ Saved to: ${fullPath}`);
+
+      if (Object.keys(result.variables).length > 0) {
+        console.log("\n💡 Detected variables:");
+        for (const [key, value] of Object.entries(result.variables)) {
+          console.log(`  ${key}: ${value}`);
+        }
+        console.log("\n📝 Add these to .session.json or .profiles.json");
+      }
+
+      if (result.filteredHeaders.length > 0) {
+        console.log("\n🔒 Excluded sensitive headers (use --import-headers to include):");
+        for (const header of result.filteredHeaders) {
+          console.log(`  ${header}`);
+        }
+        console.log("\n💡 Add these to your profile headers in .profiles.json instead");
+      }
     }
   } catch (error) {
     console.error("❌ Error:", error instanceof Error ? error.message : String(error));

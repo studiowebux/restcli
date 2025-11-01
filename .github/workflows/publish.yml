@@ -21,10 +21,14 @@ jobs:
           deno-version: v2.x
 
       - name: Compile TUI
-        run: "deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-${{ matrix.platform }} src/tui.ts"
+        run: |
+          deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-${{ matrix.platform }} src/tui.ts
+          chmod +x bin/restcli-${{ matrix.platform }}
 
       - name: Compile curl2http
-        run: "deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-curl2http-${{ matrix.platform }} scripts/curl2http.ts"
+        run: |
+          deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-curl2http-${{ matrix.platform }} scripts/curl2http.ts
+          chmod +x bin/restcli-curl2http-${{ matrix.platform }}
 
       - name: Release
         uses: softprops/action-gh-release@v2

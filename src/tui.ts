@@ -141,7 +141,9 @@ class TUI {
   }
 
   private clear(): void {
-    console.log("\x1b[2J\x1b[H");
+    // Don't clear entire screen - just move cursor to top
+    // We use \x1b[K on each line to clear to end of line
+    this.moveCursor(1, 1);
   }
 
   private moveCursor(row: number, col: number): void {
@@ -330,10 +332,23 @@ class TUI {
   }
 
   private drawSeparator(col: number, height: number): void {
+    // Build the entire separator in one buffer to reduce cursor movements
+    const encoder = new TextEncoder();
+    const parts: Uint8Array[] = [];
+
     for (let row = 2; row <= height; row++) {
-      this.moveCursor(row, col);
-      this.write("\x1b[2m│\x1b[0m");
+      parts.push(encoder.encode(`\x1b[${row};${col}H\x1b[2m│\x1b[0m`));
     }
+
+    // Write all at once
+    const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+    const buffer = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      buffer.set(part, offset);
+      offset += part.length;
+    }
+    Deno.stdout.writeSync(buffer);
   }
 
   private drawHeader(width: number): void {
@@ -445,6 +460,22 @@ class TUI {
   }
 
   private drawMain(startCol: number, width: number, height: number): void {
+    // Clear the main content area (since we no longer clear the entire screen)
+    // Batch all clear operations into one write to avoid flickering
+    const encoder = new TextEncoder();
+    const parts: Uint8Array[] = [];
+    for (let row = 2; row <= height; row++) {
+      parts.push(encoder.encode(`\x1b[${row};${startCol}H\x1b[K`));
+    }
+    const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+    const buffer = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      buffer.set(part, offset);
+      offset += part.length;
+    }
+    Deno.stdout.writeSync(buffer);
+
     // Check if in help mode
     if (this.helpMode) {
       this.drawHelpModal(startCol, width, height);
@@ -572,7 +603,7 @@ class TUI {
     // Show "Body:" with scroll indicator and toggle
     this.moveCursor(line++, startCol);
     const bodyToggle = this.showResponseBody ? "[-]" : "[+]";
-    this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m`);
+    this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m\x1b[K`);
 
     // Calculate maxLines AFTER writing the Body: header
     const maxLines = height - line;
@@ -588,19 +619,14 @@ class TUI {
       ),
     );
 
+    // Show scroll indicator on separate line if needed
     if (this.showResponseBody && totalWrappedLines > maxLines) {
-      const scrollProgress = `[${startIndex + 1}-${
+      this.moveCursor(line++, startCol);
+      const scrollProgress = `\x1b[2m[${startIndex + 1}-${
         Math.min(startIndex + maxLines, totalWrappedLines)
-      }/${totalWrappedLines}] j/k to scroll`;
-      const indicatorCol = Math.max(
-        startCol + 30,
-        width - scrollProgress.length,
-      );
-      this.moveCursor(line - 1, indicatorCol);
-      this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
+      }/${totalWrappedLines}] j/k to scroll\x1b[0m`;
+      this.write(`${scrollProgress}\x1b[K`);
     }
-    this.moveCursor(line - 1, width);
-    this.write("\x1b[K");
 
     // Display wrapped lines with scrolling
     if (this.showResponseBody) {
@@ -688,7 +714,7 @@ class TUI {
       // Show "Body:" with scroll indicator and toggle
       this.moveCursor(line++, startCol);
       const bodyToggle = this.showResponseBody ? "[-]" : "[+]";
-      this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m`);
+      this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m\x1b[K`);
 
       // Calculate maxLines AFTER writing the Body: header
       const maxLines = height - line;
@@ -704,19 +730,14 @@ class TUI {
         ),
       );
 
+      // Show scroll indicator on separate line if needed
       if (this.showResponseBody && totalWrappedLines > maxLines) {
-        const scrollProgress = `[${startIndex + 1}-${
+        this.moveCursor(line++, startCol);
+        const scrollProgress = `\x1b[2m[${startIndex + 1}-${
           Math.min(startIndex + maxLines, totalWrappedLines)
-        }/${totalWrappedLines}] j/k to scroll`;
-        const indicatorCol = Math.max(
-          startCol + 30,
-          width - scrollProgress.length,
-        );
-        this.moveCursor(line - 1, indicatorCol);
-        this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
+        }/${totalWrappedLines}] j/k to scroll\x1b[0m`;
+        this.write(`${scrollProgress}\x1b[K`);
       }
-      this.moveCursor(line - 1, width);
-      this.write("\x1b[K");
 
       // Display wrapped lines with scrolling
       if (this.showResponseBody) {
@@ -2457,6 +2478,14 @@ async function runCLI() {
   // Parse command line arguments
   let filePath = "";
   let profileOverride: string | null = null;
+  let fullOutput = false;
+
+  // Conditional logger - only logs when --full is set
+  // Default: noop (suppressed for clean piping to jq)
+  // With --full: stdout
+  const clog = (...args: any[]) => {
+    if (fullOutput) console.log(...args);
+  };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -2468,6 +2497,8 @@ async function runCLI() {
         console.error("Error: --profile requires a profile name");
         Deno.exit(1);
       }
+    } else if (arg === "--full" || arg === "-f") {
+      fullOutput = true;
     } else if (!filePath) {
       filePath = arg;
     }
@@ -2503,7 +2534,7 @@ async function runCLI() {
         Deno.exit(1);
       }
       sessionManager.setActiveProfile(profileOverride);
-      console.log(`Using profile: ${profileOverride}\n`);
+      clog(`Using profile: ${profileOverride}\n`);
     }
 
     // Read and parse file
@@ -2515,12 +2546,12 @@ async function runCLI() {
       Deno.exit(1);
     }
 
-    console.log(`Found ${parsed.requests.length} request(s) in ${filePath}\n`);
+    clog(`Found ${parsed.requests.length} request(s) in ${filePath}\n`);
 
     // Execute first request
     const request = parsed.requests[0];
-    console.log(`Executing: ${request.name || "Unnamed Request"}`);
-    console.log(`${request.method} ${request.url}\n`);
+    clog(`Executing: ${request.name || "Unnamed Request"}`);
+    clog(`${request.method} ${request.url}\n`);
 
     const executor = new RequestExecutor();
     const variables = sessionManager.getVariables();
@@ -2551,7 +2582,7 @@ async function runCLI() {
         responseSize: result.responseSize,
         error: result.error,
       });
-      console.log(`📝 History saved to: ${historyPath}\n`);
+      clog(`📝 History saved to: ${historyPath}\n`);
     }
 
     // Display result
@@ -2575,7 +2606,8 @@ async function runCLI() {
       return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + " " + sizes[i];
     }
 
-    console.log(
+    // Status and headers (only with --full)
+    clog(
       `${statusColor}${result.status} ${result.statusText}\x1b[0m | ${
         Math.round(result.duration)
       }ms | Req: ${formatBytes(result.requestSize)} | Res: ${
@@ -2583,13 +2615,14 @@ async function runCLI() {
       }\n`,
     );
 
-    console.log("Headers:");
+    clog("Headers:");
     for (const [key, value] of Object.entries(result.headers)) {
-      console.log(`  ${key}: ${value}`);
+      clog(`  ${key}: ${value}`);
     }
 
-    console.log("\nBody:");
-    // Try to beautify JSON
+    clog("\nBody:");
+
+    // Body (always shown on stdout)
     try {
       const json = JSON.parse(result.body);
       console.log(JSON.stringify(json, null, 2));
@@ -2628,8 +2661,8 @@ if (import.meta.main) {
   // If args exist and first arg is not a flag, it's a file path → CLI mode
   if (args.length > 0 && !args[0].startsWith("-")) {
     await runCLI();
-  } else if (args.length > 0 && (args[0] === "--profile" || args[0] === "-p")) {
-    // Profile flag with file → CLI mode
+  } else if (args.length > 0 && (args[0] === "--profile" || args[0] === "-p" || args[0] === "--full" || args[0] === "-f")) {
+    // Flags with file → CLI mode
     await runCLI();
   } else {
     // No args or just flags → TUI mode

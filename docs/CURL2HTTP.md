@@ -4,28 +4,33 @@ Quickly convert cURL commands (from browser DevTools, documentation, etc.) into 
 
 ## Quick Start
 
-### From Command Line
+### Using Compiled Binary (Recommended)
 
+**From Clipboard (macOS):**
 ```bash
-deno task curl2http 'curl -X POST http://localhost:3000/auth/login -H "Content-Type: application/json" -d '"'"'{"username":"test","password":"pass"}'"'"''
+pbpaste | restcli-curl2http --output requests/my-request.http
 ```
 
-### From Clipboard (macOS)
-
+**From Clipboard (Linux):**
 ```bash
-pbpaste | deno task curl2http
+xclip -o | restcli-curl2http --output requests/my-request.http
 ```
 
-### From Clipboard (Linux)
-
+**From Command Line:**
 ```bash
-xclip -o | deno task curl2http
+restcli-curl2http --output requests/login.http 'curl -X POST http://localhost:3000/auth/login -H "Content-Type: application/json" -d '"'"'{"username":"test","password":"pass"}'"'"''
 ```
 
-### Direct Execution
+### Using Deno (Development)
 
+**From Clipboard:**
 ```bash
-./curl2http.ts 'curl ...'
+pbpaste | deno task curl2http --output requests/my-request.http
+```
+
+**From Command Line:**
+```bash
+deno task curl2http --output requests/login.http 'curl -X POST http://localhost:3000/auth/login ...'
 ```
 
 ## Features
@@ -102,7 +107,7 @@ GET {{baseUrl}}/api/users
 **To include sensitive headers:**
 
 ```bash
-pbpaste | deno task curl2http --import-headers
+pbpaste | restcli-curl2http --output requests/file.http --import-headers
 ```
 
 This is useful for:
@@ -112,41 +117,28 @@ This is useful for:
 
 **Best practice:** Keep auth credentials in `.profiles.json` for reusability and security.
 
-### 📁 Smart Filename Suggestions
+### 📁 Output File Specification
 
-Based on the URL path:
+Use the `--output` (or `-o`) flag to specify where to save the `.http` file:
 
-| URL                 | Suggested Filename |
+```bash
+# Save to specific file
+pbpaste | restcli-curl2http --output requests/login.http
+
+# Save to directory (auto-generates filename)
+pbpaste | restcli-curl2http --output requests/
+
+# Short form
+pbpaste | restcli-curl2http -o requests/my-request.http
+```
+
+**Auto-generated filenames** are based on the URL path:
+
+| URL                 | Generated Filename |
 | ------------------- | ------------------ |
 | `/auth/login`       | `post-login.http`  |
 | `/users`            | `users.http`       |
 | `/api/v1/posts/123` | `123.http`         |
-
-### 🎯 Interactive Mode
-
-When run, the tool prompts:
-
-```
-📝 Converted curl to .http format:
-────────────────────────────────────────────
-### POST auth/login
-POST {{baseUrl}}/auth/login
-Content-Type: application/json
-
-{"username":"test","password":"pass"}
-────────────────────────────────────────────
-
-💡 Detected variables:
-  baseUrl: http://localhost:3000
-
-📁 Suggested filename: requests/post-login.http
-
-Options:
-  1. Save to suggested location
-  2. Enter custom filename
-  3. Print to stdout only
-  4. Cancel
-```
 
 ## Common Use Cases
 
@@ -155,15 +147,15 @@ Options:
 1. Open DevTools (F12)
 2. Go to Network tab
 3. Right-click on a request → "Copy as cURL"
-4. Run: `pbpaste | deno task curl2http`
-5. Choose option 1 to save
+4. Run: `pbpaste | restcli-curl2http --output requests/my-request.http`
+5. File is saved and ready to use in TUI
 
 ### API Documentation → .http File
 
 Copy curl example from docs:
 
 ```bash
-echo 'curl https://api.github.com/repos/denoland/deno' | deno task curl2http
+echo 'curl https://api.github.com/repos/denoland/deno' | restcli-curl2http --output requests/github.http
 ```
 
 ### Quick Testing
@@ -172,10 +164,10 @@ Convert and test in one go:
 
 ```bash
 # Convert
-pbpaste | deno task curl2http
+pbpaste | restcli-curl2http --output requests/new-request.http
 
 # Then run TUI
-deno task dev
+restcli
 
 # Navigate to the new file and execute
 ```
@@ -326,9 +318,15 @@ You may still want to clean up unnecessary headers like `user-agent` and `accept
 Convert multiple requests:
 
 ```bash
-for curl_cmd in request1.txt request2.txt request3.txt; do
-  cat "$curl_cmd" | deno task curl2http
+# From multiple files
+for curl_file in request1.txt request2.txt request3.txt; do
+  filename=$(basename "$curl_file" .txt)
+  cat "$curl_file" | restcli-curl2http --output "requests/${filename}.http"
 done
+
+# From clipboard with different endpoints
+pbpaste | restcli-curl2http --output requests/endpoint1.http
+pbpaste | restcli-curl2http --output requests/endpoint2.http
 ```
 
 ## Limitations

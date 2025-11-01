@@ -43,7 +43,9 @@ deno task dev
 deno task run requests/example.http
 
 # Convert cURL to .http (from browser DevTools, docs, etc.)
-pbpaste | deno task curl2http
+pbpaste | restcli-curl2http --output requests/my-request.http
+# Or with deno:
+pbpaste | deno task curl2http --output requests/my-request.http
 ```
 
 See [INSTALL.md](./docs/INSTALL.md) for detailed installation and setup guide.
