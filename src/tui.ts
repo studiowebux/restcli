@@ -57,6 +57,9 @@ class TUI {
   private documentationMode = false; // Show documentation panel
   private documentationScrollOffset = 0; // Scroll offset for documentation panel
   private maxDocumentationScrollOffset = 0; // Maximum scroll offset for documentation panel
+  private documentationCursorIndex = 0; // Current cursor position in documentation
+  private documentationCollapsedFields = new Set<string>(); // Set of collapsed field paths
+  private documentationMaxCursorIndex = 0; // Maximum cursor index
 
   constructor() {
     this.sessionManager = new SessionManager();
@@ -1216,6 +1219,207 @@ class TUI {
     }
   }
 
+  /**
+   * Get current documentation navigation items (cached during render)
+   * This is a workaround since we build navItems during rendering
+   */
+  private currentDocNavItems: any[] = [];
+
+  private getCurrentDocNavItems(): any[] {
+    return this.currentDocNavItems;
+  }
+
+  /**
+   * Initialize collapsed fields - collapse ALL fields with children by default
+   * Optimized to O(n) instead of O(n²)
+   */
+  private initializeCollapsedFields(): void {
+    this.documentationCollapsedFields.clear();
+
+    const selectedFile = this.files[this.selectedIndex];
+    if (!selectedFile) return;
+
+    try {
+      const filePath = selectedFile.path;
+      const content = Deno.readTextFileSync(filePath);
+      const parsed = parseHttpFile(content);
+
+      if (parsed.requests.length > 0 && parsed.requests[0].documentation) {
+        const doc = parsed.requests[0].documentation;
+
+        // Collapse ALL response fields that have nested children (not just top-level)
+        if (doc.responses) {
+          for (const response of doc.responses) {
+            if (response.fields && response.fields.length > 0) {
+              // Build a set of ALL parent paths in the hierarchy (O(n))
+              const parentPaths = new Set<string>();
+
+              for (const field of response.fields) {
+                // Extract ALL parent paths (not just immediate parent)
+                // e.g., "account.characters[].inventory.items[].name" should add:
+                //   - account
+                //   - account.characters[]
+                //   - account.characters[].inventory
+                //   - account.characters[].inventory.items[]
+                const parts = field.name.split('.');
+                for (let i = 1; i < parts.length; i++) {
+                  const parentPath = parts.slice(0, i).join('.');
+                  parentPaths.add(parentPath);
+                }
+              }
+
+              // Collapse all parent paths
+              for (const parent of parentPaths) {
+                this.documentationCollapsedFields.add(parent);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  /**
+   * Helper to add response fields to navigation items with collapse support
+   */
+  private addResponseFieldsToNav(
+    fields: any[],
+    navItems: any[],
+    width: number
+  ): void {
+    // Build a complete list of all paths (including intermediate parents)
+    const allPaths = new Set<string>();
+    const fieldMap = new Map<string, any>();
+
+    // Add all actual fields
+    for (const field of fields) {
+      allPaths.add(field.name);
+      fieldMap.set(field.name, field);
+    }
+
+    // Add all intermediate parent paths
+    for (const field of fields) {
+      const parts = field.name.split('.');
+      for (let i = 1; i < parts.length; i++) {
+        const parentPath = parts.slice(0, i).join('.');
+        if (!allPaths.has(parentPath)) {
+          allPaths.add(parentPath);
+          // Create a virtual parent node
+          fieldMap.set(parentPath, {
+            name: parentPath,
+            type: 'object',
+            required: false,
+            isVirtual: true  // Mark as virtual parent
+          });
+        }
+      }
+    }
+
+    // Convert to array for processing
+    const allFields = Array.from(allPaths).map(path => fieldMap.get(path)!);
+
+    // Pre-compute which fields have children (O(n) instead of O(n²))
+    const hasChildrenCache = new Map<string, boolean>();
+    for (const field of allFields) {
+      hasChildrenCache.set(field.name, false);
+    }
+    for (const field of allFields) {
+      const parts = field.name.split('.');
+      if (parts.length > 1) {
+        const parent = parts.slice(0, -1).join('.');
+        hasChildrenCache.set(parent, true);
+      }
+    }
+
+    // Recursively add fields starting from root
+    this.addFieldsRecursive('', allFields, navItems, width, 0, hasChildrenCache);
+  }
+
+  /**
+   * Recursively add fields with proper indentation and collapse support
+   */
+  private addFieldsRecursive(
+    parentPath: string,
+    allFields: any[],
+    navItems: any[],
+    width: number,
+    depth: number,
+    hasChildrenCache: Map<string, boolean>
+  ): void {
+    // Prevent excessive depth
+    if (depth > 100) {
+      return;
+    }
+
+    // Get direct children of this parent
+    const children = allFields.filter(f => {
+      const parts = f.name.split('.');
+      const fieldParent = parts.slice(0, -1).join('.');
+      return fieldParent === parentPath;
+    });
+
+    for (const field of children) {
+      const displayName = field.name.split('.').pop() || field.name;
+      const baseIndent = 6 + (depth * 2);
+      const indent = " ".repeat(baseIndent);
+
+      // Check if this field has children (use cache)
+      const hasChildren = hasChildrenCache.get(field.name) || false;
+      const isCollapsed = this.documentationCollapsedFields.has(field.name);
+
+      // Collapse indicator
+      const collapseIndicator = hasChildren ? (isCollapsed ? '▶ ' : '▼ ') : '  ';
+
+      // For virtual parent nodes (auto-generated from dot notation), show simpler format
+      let fieldText: string;
+      if (field.isVirtual) {
+        fieldText = `${indent}${collapseIndicator}\x1b[1m${displayName}\x1b[0m`;
+      } else {
+        const requiredBadge = field.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
+        const deprecatedBadge = field.deprecated ? " \x1b[33m[deprecated]\x1b[0m" : "";
+        fieldText = `${indent}${collapseIndicator}\x1b[1m${displayName}\x1b[0m \x1b[2m{${field.type}}\x1b[0m ${requiredBadge}${deprecatedBadge}`;
+      }
+
+      navItems.push({
+        type: 'field',
+        text: fieldText,
+        fieldPath: field.name,
+        hasChildren,
+        isCollapsible: hasChildren,
+        depth
+      });
+
+      // Add description and example if not collapsed (skip for virtual nodes)
+      if (!isCollapsed && !field.isVirtual) {
+        // Add extra indentation for description/example to align after the collapse indicator (2 chars)
+        const textIndent = `${indent}    `; // 4 extra spaces to align after "▶ " or "▼ "
+
+        if (field.description) {
+          navItems.push({
+            type: 'text',
+            text: `${textIndent}${field.description.slice(0, width - 10 - textIndent.length)}`,
+            parentField: field.name
+          });
+        }
+        if (field.example !== undefined) {
+          const exampleStr = typeof field.example === 'string' ? `"${field.example}"` : JSON.stringify(field.example);
+          navItems.push({
+            type: 'text',
+            text: `${textIndent}\x1b[2mExample: ${exampleStr.slice(0, width - 20 - textIndent.length)}\x1b[0m`,
+            parentField: field.name
+          });
+        }
+      }
+
+      // Recursively add children if not collapsed
+      if (!isCollapsed && hasChildren) {
+        this.addFieldsRecursive(field.name, allFields, navItems, width, depth + 1, hasChildrenCache);
+      }
+    }
+  }
+
   private drawDocumentation(startCol: number, width: number, height: number): void {
     this.moveCursor(2, startCol);
     const title = " Documentation ";
@@ -1268,119 +1472,142 @@ class TUI {
       return;
     }
 
-    // Build content lines
-    const contentLines: string[] = [];
+    // Build navigable items with collapse support
+    interface NavItem {
+      type: 'text' | 'field' | 'header';
+      text: string;
+      fieldPath?: string;  // For collapsible fields
+      hasChildren?: boolean;  // Whether this field has nested children
+      isCollapsible?: boolean;  // Whether this item can be collapsed
+    }
 
-    // At this point we know documentation has content, so we can safely use it
+    const navItems: NavItem[] = [];
     const doc = documentation!;
 
     // Description
     if (doc.description) {
-      contentLines.push(`\x1b[1;36mDescription:\x1b[0m`);
-      contentLines.push("");
-      // Wrap description if needed
+      navItems.push({ type: 'header', text: `\x1b[1;36mDescription:\x1b[0m` });
+      navItems.push({ type: 'text', text: "" });
       const maxDescWidth = width - 4;
       const words = doc.description.split(' ');
       let currentLine = "  ";
       for (const word of words) {
         if (currentLine.length + word.length + 1 > maxDescWidth) {
-          contentLines.push(currentLine);
+          navItems.push({ type: 'text', text: currentLine });
           currentLine = "  " + word;
         } else {
           currentLine += (currentLine.length > 2 ? " " : "") + word;
         }
       }
       if (currentLine.length > 2) {
-        contentLines.push(currentLine);
+        navItems.push({ type: 'text', text: currentLine });
       }
-      contentLines.push("");
+      navItems.push({ type: 'text', text: "" });
     }
 
     // Tags
     if (doc.tags && doc.tags.length > 0) {
-      contentLines.push(`\x1b[1;36mTags:\x1b[0m`);
-      contentLines.push("");
-      contentLines.push(`  ${doc.tags.map(t => `\x1b[35m#${t}\x1b[0m`).join("  ")}`);
-      contentLines.push("");
+      navItems.push({ type: 'header', text: `\x1b[1;36mTags:\x1b[0m` });
+      navItems.push({ type: 'text', text: "" });
+      navItems.push({ type: 'text', text: `  ${doc.tags.map(t => `\x1b[35m#${t}\x1b[0m`).join("  ")}` });
+      navItems.push({ type: 'text', text: "" });
     }
 
     // Parameters
     if (doc.parameters && doc.parameters.length > 0) {
-      contentLines.push(`\x1b[1;36mParameters:\x1b[0m`);
-      contentLines.push("");
+      navItems.push({ type: 'header', text: `\x1b[1;36mParameters:\x1b[0m` });
+      navItems.push({ type: 'text', text: "" });
       for (const param of doc.parameters) {
         const requiredBadge = param.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
-        contentLines.push(`  \x1b[1m${param.name}\x1b[0m \x1b[2m{${param.type}}\x1b[0m ${requiredBadge}`);
+        navItems.push({ type: 'field', text: `  \x1b[1m${param.name}\x1b[0m \x1b[2m{${param.type}}\x1b[0m ${requiredBadge}`, fieldPath: `param.${param.name}`, isCollapsible: false });
         if (param.description) {
-          contentLines.push(`    ${param.description.slice(0, width - 6)}`);
+          navItems.push({ type: 'text', text: `    ${param.description.slice(0, width - 6)}` });
         }
         if (param.example !== undefined) {
           const exampleStr = typeof param.example === 'string' ? `"${param.example}"` : String(param.example);
-          contentLines.push(`    \x1b[2mExample: ${exampleStr.slice(0, width - 16)}\x1b[0m`);
+          navItems.push({ type: 'text', text: `    \x1b[2mExample: ${exampleStr.slice(0, width - 16)}\x1b[0m` });
         }
-        contentLines.push("");
+        navItems.push({ type: 'text', text: "" });
       }
     }
 
-    // Responses
+    // Responses with collapsible fields
     if (doc.responses && doc.responses.length > 0) {
-      contentLines.push(`\x1b[1;36mResponses:\x1b[0m`);
-      contentLines.push("");
+      navItems.push({ type: 'header', text: `\x1b[1;36mResponses:\x1b[0m` });
+      navItems.push({ type: 'text', text: "" });
       for (const response of doc.responses) {
         const codeColor = response.code.startsWith('2') ? '\x1b[32m' :
                           response.code.startsWith('4') || response.code.startsWith('5') ? '\x1b[31m' : '\x1b[33m';
-        contentLines.push(`  ${codeColor}${response.code}\x1b[0m  ${response.description.slice(0, width - 10)}`);
+        navItems.push({ type: 'field', text: `  ${codeColor}${response.code}\x1b[0m  ${response.description.slice(0, width - 10)}`, fieldPath: `response.${response.code}`, isCollapsible: false });
 
-        // Show response schema fields if available
         if (response.fields && response.fields.length > 0) {
-          contentLines.push("");
-          contentLines.push(`    \x1b[2mResponse Body:\x1b[0m`);
-          for (const field of response.fields) {
-            // Calculate indentation based on nesting level
-            // Count dots in field name to determine depth
-            const depth = (field.name.match(/\./g) || []).length;
-            const baseIndent = 6; // Base indentation for fields
-            const indent = " ".repeat(baseIndent + (depth * 2));
+          navItems.push({ type: 'text', text: "" });
+          navItems.push({ type: 'text', text: `    \x1b[2mResponse Body:\x1b[0m` });
 
-            // Get the display name (last segment for nested fields)
-            const displayName = field.name.split('.').pop() || field.name;
-
-            const requiredBadge = field.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
-            contentLines.push(`${indent}\x1b[1m${displayName}\x1b[0m \x1b[2m{${field.type}}\x1b[0m ${requiredBadge}`);
-            if (field.description) {
-              contentLines.push(`${indent}  ${field.description.slice(0, width - 10 - indent.length)}`);
-            }
-            if (field.example !== undefined) {
-              const exampleStr = typeof field.example === 'string' ? `"${field.example}"` : JSON.stringify(field.example);
-              contentLines.push(`${indent}  \x1b[2mExample: ${exampleStr.slice(0, width - 20 - indent.length)}\x1b[0m`);
-            }
-          }
+          // Build field tree and collapse by default
+          this.addResponseFieldsToNav(response.fields, navItems, width);
         }
-        contentLines.push("");
+        navItems.push({ type: 'text', text: "" });
       }
     }
 
-    // Add footer
-    contentLines.push("");
-    contentLines.push("\x1b[2mPress ESC or m to close | ↑/↓ to scroll\x1b[0m");
+    // Footer
+    navItems.push({ type: 'text', text: "" });
+    navItems.push({ type: 'text', text: "\x1b[2mPress ESC/m to close | ↑/↓/PgUp/PgDn to navigate | Space to expand/collapse\x1b[0m" });
 
-    // Calculate scrolling
-    const maxLines = height - 4; // Reserve space for title and scroll indicator
-    const totalLines = contentLines.length;
+    // Cache navItems for keyboard handlers
+    this.currentDocNavItems = navItems;
+
+    this.documentationMaxCursorIndex = navItems.filter(item => item.type === 'field').length - 1;
+
+    // Ensure cursor is in valid range
+    if (this.documentationCursorIndex > this.documentationMaxCursorIndex) {
+      this.documentationCursorIndex = Math.max(0, this.documentationMaxCursorIndex);
+    }
+
+    // Calculate which field is under the cursor
+    const fieldItems = navItems.filter(item => item.type === 'field');
+    const cursorField = fieldItems[this.documentationCursorIndex];
+
+    // Auto-scroll to keep cursor visible
+    const maxLines = height - 4;
+    const cursorItemIndex = navItems.indexOf(cursorField);
+
+    if (cursorItemIndex !== -1) {
+      // Scroll down if cursor is below visible area
+      if (cursorItemIndex >= this.documentationScrollOffset + maxLines) {
+        this.documentationScrollOffset = cursorItemIndex - maxLines + 1;
+      }
+      // Scroll up if cursor is above visible area
+      if (cursorItemIndex < this.documentationScrollOffset) {
+        this.documentationScrollOffset = cursorItemIndex;
+      }
+    }
+
+    const totalLines = navItems.length;
     this.maxDocumentationScrollOffset = Math.max(0, totalLines - maxLines);
     const startIndex = Math.max(0, Math.min(this.documentationScrollOffset, this.maxDocumentationScrollOffset));
 
-    // Display content with scrolling
+    // Display content with scrolling and cursor highlighting
     let line = 4;
-    for (let i = startIndex; i < contentLines.length && line < height - 1; i++) {
+    for (let i = startIndex; i < navItems.length && line < height - 1; i++) {
       this.moveCursor(line++, startCol);
-      this.write(`${contentLines[i]}\x1b[K`);
+
+      const item = navItems[i];
+      const isCursor = item === cursorField;
+
+      // Highlight cursor line
+      if (isCursor) {
+        this.write(`\x1b[7m${item.text}\x1b[0m\x1b[K`); // Reverse video
+      } else {
+        this.write(`${item.text}\x1b[K`);
+      }
     }
 
     // Show scroll indicator if needed
     if (totalLines > maxLines) {
       const scrollProgress = `[${startIndex + 1}-${Math.min(startIndex + maxLines, totalLines)}/${totalLines}]`;
-      this.moveCursor(height - 1, width - scrollProgress.length - 1);
+      this.moveCursor(height - 1, startCol + width - scrollProgress.length - 1);
       this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
     }
 
@@ -1427,7 +1654,7 @@ class TUI {
         statusText = " Header Editor ";
       }
     } else if (this.documentationMode) {
-      statusText = " [↑↓] Scroll | [m/ESC] Close Documentation ";
+      statusText = " [↑↓/PgUp/PgDn] Navigate | [Space] Expand/Collapse | [m/ESC] Close ";
     } else if (this.historyMode) {
       const count = this.historyEntries.length;
       if (count === 0) {
@@ -1498,22 +1725,58 @@ class TUI {
         // ESC or m to close documentation
         if (input.length === 1 && (input[0] === 27 || input[0] === 109)) {
           this.documentationMode = false;
-          this.documentationScrollOffset = 0; // Reset scroll
+          this.documentationScrollOffset = 0;
+          this.documentationCursorIndex = 0;
+          this.documentationCollapsedFields.clear();
           this.draw();
           continue;
         }
 
-        // Arrow keys for scrolling
+        // Space to toggle collapse/expand
+        if (input.length === 1 && input[0] === 32) {
+          // Get current field under cursor
+          const navItems = this.getCurrentDocNavItems();
+          const fieldItems = navItems.filter((item: any) => item.type === 'field');
+          const cursorField = fieldItems[this.documentationCursorIndex];
+
+          if (cursorField && cursorField.isCollapsible) {
+            if (this.documentationCollapsedFields.has(cursorField.fieldPath)) {
+              this.documentationCollapsedFields.delete(cursorField.fieldPath);
+            } else {
+              this.documentationCollapsedFields.add(cursorField.fieldPath);
+            }
+            this.draw();
+          }
+          continue;
+        }
+
+        // Arrow keys for navigation
         if (input.length === 3 && input[0] === 27 && input[1] === 91) {
           if (input[2] === 65) {
-            // Up
-            this.documentationScrollOffset = Math.max(0, this.documentationScrollOffset - 1);
+            // Up - move cursor up
+            this.documentationCursorIndex = Math.max(0, this.documentationCursorIndex - 1);
             this.draw();
           } else if (input[2] === 66) {
-            // Down
-            this.documentationScrollOffset = Math.min(
-              this.maxDocumentationScrollOffset,
-              this.documentationScrollOffset + 1,
+            // Down - move cursor down
+            this.documentationCursorIndex = Math.min(
+              this.documentationMaxCursorIndex,
+              this.documentationCursorIndex + 1,
+            );
+            this.draw();
+          }
+        }
+
+        // Page Up/Down without the tilde (some terminals)
+        if (input.length === 4 && input[0] === 27 && input[1] === 91) {
+          if (input[2] === 53 && input[3] === 126) {
+            // Page Up
+            this.documentationCursorIndex = Math.max(0, this.documentationCursorIndex - 10);
+            this.draw();
+          } else if (input[2] === 54 && input[3] === 126) {
+            // Page Down
+            this.documentationCursorIndex = Math.min(
+              this.documentationMaxCursorIndex,
+              this.documentationCursorIndex + 10,
             );
             this.draw();
           }
@@ -1675,7 +1938,10 @@ class TUI {
           // Toggle documentation panel
           this.documentationMode = !this.documentationMode;
           if (this.documentationMode) {
-            this.documentationScrollOffset = 0; // Reset scroll when opening
+            this.documentationScrollOffset = 0;
+            this.documentationCursorIndex = 0;
+            // Initialize collapsed fields - collapse all by default
+            this.initializeCollapsedFields();
           }
           this.draw();
         }

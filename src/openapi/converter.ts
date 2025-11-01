@@ -189,6 +189,9 @@ export class OpenAPIConverter {
           for (const field of responseFields) {
             const required = field.required ? "required" : "optional";
             content += `# @response-field ${field.name} {${field.type}} ${required}`;
+            if (field.deprecated) {
+              content += ` deprecated`;
+            }
             if (field.description) {
               content += ` - ${field.description}`;
             }
@@ -299,6 +302,7 @@ export class OpenAPIConverter {
     required: boolean;
     description?: string;
     example?: any;
+    deprecated?: boolean;
   }> {
     const fields: Array<{
       name: string;
@@ -306,6 +310,7 @@ export class OpenAPIConverter {
       required: boolean;
       description?: string;
       example?: any;
+      deprecated?: boolean;
     }> = [];
 
     // Get JSON content
@@ -327,8 +332,15 @@ export class OpenAPIConverter {
   private extractFieldsRecursive(
     schema: Schema,
     prefix: string,
-    fields: Array<{ name: string; type: string; required: boolean; description?: string; example?: any }>
+    fields: Array<{ name: string; type: string; required: boolean; description?: string; example?: any; deprecated?: boolean }>,
+    depth = 0,
+    maxDepth = 100
   ): void {
+    // Prevent infinite recursion or excessive depth
+    if (depth >= maxDepth) {
+      return;
+    }
+
     const required = schema.required || [];
 
     if (schema.properties) {
@@ -336,26 +348,38 @@ export class OpenAPIConverter {
         const fullName = prefix ? `${prefix}.${name}` : name;
         const isRequired = required.includes(name);
 
-        // Get the actual type
-        const fieldType = this.getFieldType(propSchema);
+        // Resolve $ref if present
+        const resolvedSchema = this.resolveSchema(propSchema);
 
-        // Add the field
-        fields.push({
-          name: fullName,
-          type: fieldType,
-          required: isRequired,
-          description: propSchema.description,
-          example: propSchema.example,
-        });
+        // Check schema type (handle both string and array types for nullable)
+        const schemaType = Array.isArray(resolvedSchema.type) ? resolvedSchema.type[0] : resolvedSchema.type;
 
-        // If this is an object with properties, recurse into it
-        if (propSchema.type === "object" && propSchema.properties) {
-          this.extractFieldsRecursive(propSchema, fullName, fields);
+        // Check if this property has nested structure
+        const hasNestedObjectProps = (schemaType === "object" || resolvedSchema.properties) && resolvedSchema.properties;
+        const hasNestedArrayProps = schemaType === "array" && resolvedSchema.items?.type === "object" && resolvedSchema.items.properties;
+
+        // Only add the field if it's a leaf node (no nested properties to expand)
+        // This skips intermediate object/array containers
+        if (!hasNestedObjectProps && !hasNestedArrayProps) {
+          const fieldType = this.getFieldType(propSchema);
+          fields.push({
+            name: fullName,
+            type: fieldType,
+            required: isRequired,
+            description: propSchema.description,
+            example: propSchema.example,
+            deprecated: propSchema.deprecated || resolvedSchema.deprecated,
+          });
         }
 
-        // If this is an array of objects, recurse into the items
-        if (propSchema.type === "array" && propSchema.items?.type === "object" && propSchema.items.properties) {
-          this.extractFieldsRecursive(propSchema.items, `${fullName}[]`, fields);
+        // Recurse into nested objects
+        if (hasNestedObjectProps) {
+          this.extractFieldsRecursive(resolvedSchema, fullName, fields, depth + 1, maxDepth);
+        }
+
+        // Recurse into arrays of objects
+        if (hasNestedArrayProps && resolvedSchema.items) {
+          this.extractFieldsRecursive(resolvedSchema.items, `${fullName}[]`, fields, depth + 1, maxDepth);
         }
       }
     }
@@ -470,6 +494,7 @@ export class OpenAPIConverter {
    * Resolve $ref in schema
    */
   private resolveSchema(schema: Schema): Schema {
+    // Handle direct $ref
     if ('$ref' in schema && typeof schema.$ref === 'string') {
       // Extract component name from $ref (e.g., "#/components/schemas/Post Claim Request")
       const refPath = schema.$ref.split('/');
@@ -481,6 +506,32 @@ export class OpenAPIConverter {
         }
       }
     }
+
+    // Handle anyOf/oneOf with null (common pattern for nullable in OpenAPI 3.x)
+    if ('anyOf' in schema && Array.isArray(schema.anyOf)) {
+      // Find the first non-null schema
+      const nonNullSchema = schema.anyOf.find(s => {
+        if ('type' in s) return s.type !== 'null';
+        if ('$ref' in s) return true;
+        return false;
+      });
+      if (nonNullSchema) {
+        return this.resolveSchema(nonNullSchema);
+      }
+    }
+
+    if ('oneOf' in schema && Array.isArray(schema.oneOf)) {
+      // Find the first non-null schema
+      const nonNullSchema = schema.oneOf.find(s => {
+        if ('type' in s) return s.type !== 'null';
+        if ('$ref' in s) return true;
+        return false;
+      });
+      if (nonNullSchema) {
+        return this.resolveSchema(nonNullSchema);
+      }
+    }
+
     return schema;
   }
 

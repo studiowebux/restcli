@@ -6,6 +6,7 @@ export interface Parameter {
   required: boolean;
   description?: string;
   example?: string;
+  deprecated?: boolean;
 }
 
 export interface ResponseField {
@@ -14,6 +15,7 @@ export interface ResponseField {
   required: boolean;
   description?: string;
   example?: any;
+  deprecated?: boolean;
 }
 
 export interface Response {
@@ -233,16 +235,17 @@ function parseAnnotation(type: string, value: string, documentation: Documentati
     }
 
     case 'response-field': {
-      // Format: fieldName {type} required|optional - description
-      const fieldMatch = value.match(/^(\S+)\s+\{([^}]+)\}\s+(required|optional)(?:\s+-\s+(.+))?$/);
+      // Format: fieldName {type} required|optional [deprecated] - description
+      const fieldMatch = value.match(/^(\S+)\s+\{([^}]+)\}\s+(required|optional)(?:\s+(deprecated))?(?:\s+-\s+(.+))?$/);
       if (fieldMatch && documentation.responses && documentation.responses.length > 0) {
-        const [, name, type, requiredStr, description] = fieldMatch;
+        const [, name, type, requiredStr, deprecatedStr, description] = fieldMatch;
         const lastResponse = documentation.responses[documentation.responses.length - 1];
         if (!lastResponse.fields) lastResponse.fields = [];
         lastResponse.fields.push({
           name,
           type,
           required: requiredStr === 'required',
+          deprecated: deprecatedStr === 'deprecated',
           description,
         });
       }

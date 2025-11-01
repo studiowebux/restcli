@@ -106,6 +106,11 @@
           "description": "Whether the parameter is required",
           "default": false
         },
+        "deprecated": {
+          "type": "boolean",
+          "description": "Whether the parameter is deprecated",
+          "default": false
+        },
         "description": {
           "type": "string",
           "description": "Parameter description"
@@ -131,6 +136,11 @@
         "required": {
           "type": "boolean",
           "description": "Whether the field is required",
+          "default": false
+        },
+        "deprecated": {
+          "type": "boolean",
+          "description": "Whether the field is deprecated",
           "default": false
         },
         "description": {

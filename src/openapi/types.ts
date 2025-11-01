@@ -120,7 +120,12 @@ export interface Schema {
   nullable?: boolean;
   readOnly?: boolean;
   writeOnly?: boolean;
+  deprecated?: boolean;
   $ref?: string; // Reference to component schema
+  anyOf?: Schema[]; // Union types (commonly used for nullable)
+  oneOf?: Schema[]; // Exclusive union types
+  allOf?: Schema[]; // Composition
+  additionalProperties?: Schema | boolean; // For map-like objects
 }
 
 export interface Responses {
