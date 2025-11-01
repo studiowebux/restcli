@@ -1,0 +1,22 @@
+### Create User
+# @description Creates a new user in the system with the provided information
+# @tag users
+# @tag authentication
+# @param name {string} required - User's full name
+# @param email {string} required - User's email address
+# @param age {number} optional - User's age
+# @example name "John Doe"
+# @example email "john@example.com"
+# @example age 30
+# @response 201 - User created successfully
+# @response 400 - Invalid request data
+# @response 409 - User already exists
+POST {{baseUrl}}/api/v1/users
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "{{name}}",
+  "email": "{{email}}",
+  "age": {{age}}
+}

@@ -4,20 +4,20 @@ A simple, keyboard-driven TUI for testing HTTP endpoints without the bloat of GU
 
 ## Features
 
-- 📁 File-based request management (`.http` and `.yaml` files)
-- 🎯 Keyboard-driven navigation
-- 👤 Header profiles for quick account switching
-- 🔄 Variable substitution
-- 📋 Quick file duplication
-- 💾 Auto-save session state
-- 📜 Request/response history with timestamps
-- 🏠 Global config directory (`~/.restcli/`) - use from anywhere
-- 🔨 Compiled binaries - no runtime dependencies
-- 🧾 YAML format support with JSON schema for autocomplete
-- ✨ JSON response beautification (automatic pretty-printing)
-- 📄 Response scrolling with vim-style j/k keys
-- 🖥️ CLI mode - pipe-friendly output for automation and scripting
-- 🔀 YAML conversion - transform JSON responses to YAML
+- File-based request management (`.http` and `.yaml` files)
+- Keyboard-driven navigation
+- Header profiles for quick account switching
+- Variable substitution
+- Quick file duplication
+- Auto-save session state
+- Request/response history with timestamps
+- Global config directory (`~/.restcli/`) - use from anywhere
+- Compiled binaries - no runtime dependencies
+- YAML format support with JSON schema for autocomplete
+- JSON response beautification (automatic pretty-printing)
+- Response scrolling with vim-style j/k keys
+- CLI mode - pipe-friendly output for automation and scripting
+- YAML conversion - transform JSON responses to YAML
 
 ## Quick Start
 
@@ -52,8 +52,8 @@ pbpaste | deno task curl2http --output requests/my-request.http
 
 See [INSTALL.md](./docs/INSTALL.md) for detailed installation and setup guide.
 See [PROFILES.md](./docs/PROFILES.md) for detailed profile configuration guide.
-See [HEX-REFERENCE.md](./docs/HEX-REFERENCE.md) for hexadecimal numbering explanation.
 See [CURL2HTTP.md](./docs/CURL2HTTP.md) for converting cURL commands to `.http` files.
+See [DOCUMENTATION.md](./docs/DOCUMENTATION.md) for adding documentation to your requests.
 
 ## CLI Mode
 

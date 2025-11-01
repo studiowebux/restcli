@@ -1,7 +1,7 @@
 import { walk } from "@std/fs";
 import * as path from "@std/path";
 import { stringify as yamlStringify } from "@std/yaml";
-import { applyVariables, parseHttpFile } from "./parser.ts";
+import { applyVariables, parseHttpFile, type Documentation } from "./parser.ts";
 import { RequestExecutor, type RequestResult } from "./executor.ts";
 import { SessionManager } from "./session.ts";
 import { ConfigManager } from "./config.ts";
@@ -54,6 +54,9 @@ class TUI {
   private helpMode = false; // Show help modal
   private helpScrollOffset = 0; // Scroll offset for help modal
   private maxHelpScrollOffset = 0; // Maximum scroll offset for help modal
+  private documentationMode = false; // Show documentation panel
+  private documentationScrollOffset = 0; // Scroll offset for documentation panel
+  private maxDocumentationScrollOffset = 0; // Maximum scroll offset for documentation panel
 
   constructor() {
     this.sessionManager = new SessionManager();
@@ -480,6 +483,12 @@ class TUI {
     // Check if in help mode
     if (this.helpMode) {
       this.drawHelpModal(startCol, width, height);
+      return;
+    }
+
+    // Check if in documentation mode
+    if (this.documentationMode) {
+      this.drawDocumentation(startCol, width, height);
       return;
     }
 
@@ -1153,6 +1162,7 @@ class TUI {
       {
         category: "Other",
         items: [
+          { key: "m", desc: "View request documentation" },
           { key: "?", desc: "Show this help (you are here!)" },
           { key: "ESC", desc: "Clear status / Cancel search or goto" },
           { key: "q", desc: "Quit" },
@@ -1184,6 +1194,144 @@ class TUI {
     const totalLines = contentLines.length;
     this.maxHelpScrollOffset = Math.max(0, totalLines - maxLines);
     const startIndex = Math.max(0, Math.min(this.helpScrollOffset, this.maxHelpScrollOffset));
+
+    // Display content with scrolling
+    let line = 4;
+    for (let i = startIndex; i < contentLines.length && line < height - 1; i++) {
+      this.moveCursor(line++, startCol);
+      this.write(`${contentLines[i]}\x1b[K`);
+    }
+
+    // Show scroll indicator if needed
+    if (totalLines > maxLines) {
+      const scrollProgress = `[${startIndex + 1}-${Math.min(startIndex + maxLines, totalLines)}/${totalLines}]`;
+      this.moveCursor(height - 1, width - scrollProgress.length - 1);
+      this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
+    }
+
+    // Clear remaining lines
+    while (line <= height) {
+      this.moveCursor(line++, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
+  private drawDocumentation(startCol: number, width: number, height: number): void {
+    this.moveCursor(2, startCol);
+    const title = " Documentation ";
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    // Get currently selected file and parse it
+    const selectedFile = this.files[this.selectedIndex];
+    if (!selectedFile) {
+      this.moveCursor(4, startCol);
+      this.write(`\x1b[2mNo file selected\x1b[0m\x1b[K`);
+      return;
+    }
+
+    // Parse the file to get documentation
+    let documentation: Documentation | undefined;
+    try {
+      const filePath = selectedFile.path;
+      const content = Deno.readTextFileSync(filePath);
+      const parsed = parseHttpFile(content);
+
+      if (parsed.requests.length > 0) {
+        documentation = parsed.requests[0].documentation;
+      }
+    } catch (error) {
+      this.moveCursor(4, startCol);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.write(`\x1b[31mError loading documentation: ${errorMsg}\x1b[0m\x1b[K`);
+      return;
+    }
+
+    if (!documentation) {
+      this.moveCursor(4, startCol);
+      this.write(`\x1b[2mNo documentation available for this request\x1b[0m\x1b[K`);
+      this.moveCursor(6, startCol);
+      this.write(`\x1b[2mAdd documentation using:\x1b[0m\x1b[K`);
+      this.moveCursor(7, startCol);
+      this.write(`\x1b[2m  • # @description ... in .http files\x1b[0m\x1b[K`);
+      this.moveCursor(8, startCol);
+      this.write(`\x1b[2m  • documentation: section in .yaml files\x1b[0m\x1b[K`);
+      this.moveCursor(10, startCol);
+      this.write(`\x1b[2mSee docs/DOCUMENTATION.md for details\x1b[0m\x1b[K`);
+      return;
+    }
+
+    // Build content lines
+    const contentLines: string[] = [];
+
+    // Description
+    if (documentation.description) {
+      contentLines.push(`\x1b[1;36mDescription:\x1b[0m`);
+      contentLines.push("");
+      // Wrap description if needed
+      const maxDescWidth = width - 4;
+      const words = documentation.description.split(' ');
+      let currentLine = "  ";
+      for (const word of words) {
+        if (currentLine.length + word.length + 1 > maxDescWidth) {
+          contentLines.push(currentLine);
+          currentLine = "  " + word;
+        } else {
+          currentLine += (currentLine.length > 2 ? " " : "") + word;
+        }
+      }
+      if (currentLine.length > 2) {
+        contentLines.push(currentLine);
+      }
+      contentLines.push("");
+    }
+
+    // Tags
+    if (documentation.tags && documentation.tags.length > 0) {
+      contentLines.push(`\x1b[1;36mTags:\x1b[0m`);
+      contentLines.push("");
+      contentLines.push(`  ${documentation.tags.map(t => `\x1b[35m#${t}\x1b[0m`).join("  ")}`);
+      contentLines.push("");
+    }
+
+    // Parameters
+    if (documentation.parameters && documentation.parameters.length > 0) {
+      contentLines.push(`\x1b[1;36mParameters:\x1b[0m`);
+      contentLines.push("");
+      for (const param of documentation.parameters) {
+        const requiredBadge = param.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
+        contentLines.push(`  \x1b[1m${param.name}\x1b[0m \x1b[2m{${param.type}}\x1b[0m ${requiredBadge}`);
+        if (param.description) {
+          contentLines.push(`    ${param.description.slice(0, width - 6)}`);
+        }
+        if (param.example !== undefined) {
+          const exampleStr = typeof param.example === 'string' ? `"${param.example}"` : String(param.example);
+          contentLines.push(`    \x1b[2mExample: ${exampleStr.slice(0, width - 16)}\x1b[0m`);
+        }
+        contentLines.push("");
+      }
+    }
+
+    // Responses
+    if (documentation.responses && documentation.responses.length > 0) {
+      contentLines.push(`\x1b[1;36mResponses:\x1b[0m`);
+      contentLines.push("");
+      for (const response of documentation.responses) {
+        const codeColor = response.code.startsWith('2') ? '\x1b[32m' :
+                          response.code.startsWith('4') || response.code.startsWith('5') ? '\x1b[31m' : '\x1b[33m';
+        contentLines.push(`  ${codeColor}${response.code}\x1b[0m  ${response.description.slice(0, width - 10)}`);
+      }
+      contentLines.push("");
+    }
+
+    // Add footer
+    contentLines.push("");
+    contentLines.push("\x1b[2mPress ESC or m to close | ↑/↓ to scroll\x1b[0m");
+
+    // Calculate scrolling
+    const maxLines = height - 4; // Reserve space for title and scroll indicator
+    const totalLines = contentLines.length;
+    this.maxDocumentationScrollOffset = Math.max(0, totalLines - maxLines);
+    const startIndex = Math.max(0, Math.min(this.documentationScrollOffset, this.maxDocumentationScrollOffset));
 
     // Display content with scrolling
     let line = 4;
@@ -1241,6 +1389,8 @@ class TUI {
       } else {
         statusText = " Header Editor ";
       }
+    } else if (this.documentationMode) {
+      statusText = " [↑↓] Scroll | [m/ESC] Close Documentation ";
     } else if (this.historyMode) {
       const count = this.historyEntries.length;
       if (count === 0) {
@@ -1299,6 +1449,34 @@ class TUI {
             this.helpScrollOffset = Math.min(
               this.maxHelpScrollOffset,
               this.helpScrollOffset + 1,
+            );
+            this.draw();
+          }
+        }
+        continue;
+      }
+
+      // Handle documentation mode
+      if (this.documentationMode) {
+        // ESC or m to close documentation
+        if (input.length === 1 && (input[0] === 27 || input[0] === 109)) {
+          this.documentationMode = false;
+          this.documentationScrollOffset = 0; // Reset scroll
+          this.draw();
+          continue;
+        }
+
+        // Arrow keys for scrolling
+        if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+          if (input[2] === 65) {
+            // Up
+            this.documentationScrollOffset = Math.max(0, this.documentationScrollOffset - 1);
+            this.draw();
+          } else if (input[2] === 66) {
+            // Down
+            this.documentationScrollOffset = Math.min(
+              this.maxDocumentationScrollOffset,
+              this.documentationScrollOffset + 1,
             );
             this.draw();
           }
@@ -1454,6 +1632,13 @@ class TUI {
           this.helpMode = !this.helpMode;
           if (this.helpMode) {
             this.helpScrollOffset = 0; // Reset scroll when opening
+          }
+          this.draw();
+        } else if (char === "m") {
+          // Toggle documentation panel
+          this.documentationMode = !this.documentationMode;
+          if (this.documentationMode) {
+            this.documentationScrollOffset = 0; // Reset scroll when opening
           }
           this.draw();
         }

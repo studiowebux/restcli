@@ -1,11 +1,32 @@
 import { isYamlFormat, parseYamlHttpFile } from "./yaml-parser.ts";
 
+export interface Parameter {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  example?: string;
+}
+
+export interface Response {
+  code: string;
+  description: string;
+}
+
+export interface Documentation {
+  description?: string;
+  tags?: string[];
+  parameters?: Parameter[];
+  responses?: Response[];
+}
+
 export interface HttpRequest {
   name?: string;
   method: string;
   url: string;
   headers: Record<string, string>;
   body?: string;
+  documentation?: Documentation;
 }
 
 export interface ParsedHttpFile {
@@ -44,6 +65,7 @@ export function parseTraditionalHttpFile(content: string): ParsedHttpFile {
     let url = '';
     const headers: Record<string, string> = {};
     let bodyStartIndex = -1;
+    const documentation: Documentation = {};
 
     // Find method and URL first
     let methodLineIdx = -1;
@@ -62,13 +84,23 @@ export function parseTraditionalHttpFile(content: string): ParsedHttpFile {
       }
     }
 
-    // If we found a method line and there are lines before it, the first non-empty line is the name
+    // Parse lines before method line for name and documentation annotations
     if (methodLineIdx > 0) {
       for (let i = 0; i < methodLineIdx; i++) {
         const line = lines[i].trim();
-        if (line) {
+        if (!line) continue;
+
+        // Check for documentation annotations (# @...)
+        const annotationMatch = line.match(/^#\s*@(\w+)\s+(.+)$/);
+        if (annotationMatch) {
+          const [, annotationType, annotationValue] = annotationMatch;
+          parseAnnotation(annotationType, annotationValue, documentation);
+        } else if (line.startsWith('#')) {
+          // Skip regular comments
+          continue;
+        } else if (!name) {
+          // First non-comment, non-annotation line is the name
           name = line;
-          break;
         }
       }
     }
@@ -98,10 +130,81 @@ export function parseTraditionalHttpFile(content: string): ParsedHttpFile {
     const bodyLines = lines.slice(bodyStartIndex).filter(l => l.trim() !== '###');
     const body = bodyLines.join('\n').trim() || undefined;
 
-    requests.push({ name, method, url, headers, body });
+    // Only include documentation if it has content
+    const hasDocumentation = documentation.description ||
+                             documentation.tags?.length ||
+                             documentation.parameters?.length ||
+                             documentation.responses?.length;
+
+    requests.push({
+      name,
+      method,
+      url,
+      headers,
+      body,
+      documentation: hasDocumentation ? documentation : undefined
+    });
   }
 
   return { requests };
+}
+
+/**
+ * Parse a documentation annotation
+ * Supports: @description, @tag, @param, @example, @response
+ */
+function parseAnnotation(type: string, value: string, documentation: Documentation): void {
+  switch (type) {
+    case 'description':
+      documentation.description = value;
+      break;
+
+    case 'tag':
+      if (!documentation.tags) documentation.tags = [];
+      documentation.tags.push(value);
+      break;
+
+    case 'param': {
+      // Format: name {type} required|optional - description
+      const paramMatch = value.match(/^(\w+)\s+\{(\w+)\}\s+(required|optional)(?:\s+-\s+(.+))?$/);
+      if (paramMatch) {
+        const [, name, type, requiredStr, description] = paramMatch;
+        if (!documentation.parameters) documentation.parameters = [];
+        documentation.parameters.push({
+          name,
+          type,
+          required: requiredStr === 'required',
+          description,
+        });
+      }
+      break;
+    }
+
+    case 'example': {
+      // Format: paramName value
+      const exampleMatch = value.match(/^(\w+)\s+(.+)$/);
+      if (exampleMatch && documentation.parameters) {
+        const [, paramName, exampleValue] = exampleMatch;
+        const param = documentation.parameters.find(p => p.name === paramName);
+        if (param) {
+          // Remove quotes if present
+          param.example = exampleValue.replace(/^["'](.+)["']$/, '$1');
+        }
+      }
+      break;
+    }
+
+    case 'response': {
+      // Format: code - description
+      const responseMatch = value.match(/^(\d{3})\s+-\s+(.+)$/);
+      if (responseMatch) {
+        const [, code, description] = responseMatch;
+        if (!documentation.responses) documentation.responses = [];
+        documentation.responses.push({ code, description });
+      }
+      break;
+    }
+  }
 }
 
 /**

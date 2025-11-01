@@ -1,0 +1,38 @@
+---
+name: Create User
+method: POST
+url: "{{baseUrl}}/api/v1/users"
+documentation:
+  description: Creates a new user in the system with the provided information
+  tags:
+    - users
+    - authentication
+  parameters:
+    - name: name
+      type: string
+      required: true
+      description: User's full name
+      example: "John Doe"
+    - name: email
+      type: string
+      required: true
+      description: User's email address
+      example: "john@example.com"
+    - name: age
+      type: number
+      required: false
+      description: User's age
+      example: 30
+  responses:
+    - "201": "User created successfully"
+    - "400": "Invalid request data"
+    - "409": "User already exists"
+headers:
+  Content-Type: application/json
+  Authorization: "Bearer {{token}}"
+body: |
+  {
+    "name": "{{name}}",
+    "email": "{{email}}",
+    "age": {{age}}
+  }
