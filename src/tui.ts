@@ -2491,7 +2491,44 @@ async function runCLI() {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--profile" || arg === "-p") {
+    if (arg === "--help" || arg === "-h") {
+      console.log(`
+restcli - Terminal HTTP Request Tool
+
+USAGE:
+  restcli                              # Open interactive TUI
+  restcli <file.http> [OPTIONS]        # Execute request in CLI mode
+
+OPTIONS:
+  -h, --help                Show this help message
+  -f, --full                Show full output (status, headers, body)
+                            Default: body only (perfect for piping)
+  -y, --yaml                Convert JSON response to YAML format
+  -p, --profile <name>      Use a specific profile for the request
+
+EXAMPLES:
+  # TUI mode
+  restcli
+
+  # CLI mode - body only (pipe to jq)
+  restcli requests/users.http | jq '.users[]'
+
+  # Full output
+  restcli --full requests/users.http
+
+  # YAML output
+  restcli --yaml requests/users.http
+
+  # With profile
+  restcli --profile Admin requests/users.http
+
+  # Combine flags
+  restcli --full --yaml --profile Admin requests/users.http
+
+For more information, see: https://github.com/your-repo/http-tui
+`);
+      Deno.exit(0);
+    } else if (arg === "--profile" || arg === "-p") {
       if (i + 1 < args.length) {
         profileOverride = args[i + 1];
         i++; // Skip next arg
@@ -2669,11 +2706,11 @@ if (import.meta.main) {
   // If args exist and first arg is not a flag, it's a file path → CLI mode
   if (args.length > 0 && !args[0].startsWith("-")) {
     await runCLI();
-  } else if (args.length > 0 && (args[0] === "--profile" || args[0] === "-p" || args[0] === "--full" || args[0] === "-f" || args[0] === "--yaml" || args[0] === "-y")) {
-    // Flags with file → CLI mode
+  } else if (args.length > 0 && (args[0] === "--help" || args[0] === "-h" || args[0] === "--profile" || args[0] === "-p" || args[0] === "--full" || args[0] === "-f" || args[0] === "--yaml" || args[0] === "-y")) {
+    // Flags with file (or help flag) → CLI mode
     await runCLI();
   } else {
-    // No args or just flags → TUI mode
+    // No args → TUI mode
     const tui = new TUI();
     await tui.start();
   }

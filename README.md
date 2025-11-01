@@ -16,6 +16,8 @@ A simple, keyboard-driven TUI for testing HTTP endpoints without the bloat of GU
 - 🧾 YAML format support with JSON schema for autocomplete
 - ✨ JSON response beautification (automatic pretty-printing)
 - 📄 Response scrolling with vim-style j/k keys
+- 🖥️ CLI mode - pipe-friendly output for automation and scripting
+- 🔀 YAML conversion - transform JSON responses to YAML
 
 ## Quick Start
 
@@ -52,6 +54,68 @@ See [INSTALL.md](./docs/INSTALL.md) for detailed installation and setup guide.
 See [PROFILES.md](./docs/PROFILES.md) for detailed profile configuration guide.
 See [HEX-REFERENCE.md](./docs/HEX-REFERENCE.md) for hexadecimal numbering explanation.
 See [CURL2HTTP.md](./docs/CURL2HTTP.md) for converting cURL commands to `.http` files.
+
+## CLI Mode
+
+`restcli` can run in two modes:
+
+### TUI Mode (Interactive)
+
+Run without any arguments to open the interactive TUI:
+
+```bash
+restcli           # Opens the TUI
+./restcli         # If using local binary
+deno task dev     # Using Deno
+```
+
+### CLI Mode (Non-interactive)
+
+Run requests directly from the command line:
+
+```bash
+# Basic usage - outputs only response body (perfect for piping)
+restcli requests/example.http
+
+# Pipe to jq for JSON processing
+restcli requests/users/list.http | jq '.users[] | .name'
+
+# Full output mode - shows status, headers, and body
+restcli --full requests/example.http
+restcli -f requests/example.http
+
+# YAML output - converts JSON response to YAML
+restcli --yaml requests/example.http
+restcli -y requests/example.http
+
+# Combine flags
+restcli --full --yaml requests/example.http
+
+# Use with profile
+restcli --profile Admin requests/example.http
+restcli -p Admin --yaml requests/example.http
+
+# Show help
+restcli --help
+restcli -h
+```
+
+**CLI Flags:**
+- `--help`, `-h`: Show help message
+- `--full`, `-f`: Show full output (status line, headers, and body). Default: body only.
+- `--yaml`, `-y`: Convert JSON response to YAML format
+- `--profile <name>`, `-p <name>`: Use a specific profile for the request
+
+**Default behavior** (without `--full`):
+- Only the response body is printed to stdout
+- Informational messages are suppressed
+- Perfect for piping to tools like `jq`, `grep`, or scripts
+
+**With `--full`:**
+- Status line with response time and sizes
+- All response headers
+- Response body
+- Traditional full output format
 
 ## File Structure
 
