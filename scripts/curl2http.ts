@@ -153,14 +153,43 @@ function detectVariables(url: string, body?: string): {
 }
 
 /**
+ * List of sensitive headers that should be managed via profiles instead of hardcoded
+ */
+const SENSITIVE_HEADERS = [
+  "authorization",
+  "cookie",
+  "x-api-key",
+  "x-auth-token",
+  "api-key",
+  "auth-token",
+  "bearer",
+  "x-session-token",
+  "x-csrf-token",
+];
+
+/**
+ * Check if a header is sensitive and should be excluded by default
+ */
+function isSensitiveHeader(headerName: string): boolean {
+  const lowerName = headerName.toLowerCase();
+  return SENSITIVE_HEADERS.some(sensitive => lowerName.includes(sensitive));
+}
+
+/**
  * Generate .http file content
  */
-function generateHttpFile(parsed: ParsedCurl, detectVars: boolean = true): {
+function generateHttpFile(
+  parsed: ParsedCurl,
+  detectVars: boolean = true,
+  importHeaders: boolean = false
+): {
   content: string;
   variables: Record<string, string>;
+  filteredHeaders: string[];
 } {
   let { url, body, headers } = parsed;
   let variables: Record<string, string> = {};
+  const filteredHeaders: string[] = [];
 
   if (detectVars) {
     const detected = detectVariables(url, body);
@@ -183,8 +212,12 @@ function generateHttpFile(parsed: ParsedCurl, detectVars: boolean = true): {
   content += "\n";
   content += `${parsed.method} ${url}\n`;
 
-  // Add headers
+  // Add headers (filter sensitive ones unless --import-headers is set)
   for (const [key, value] of Object.entries(headers)) {
+    if (!importHeaders && isSensitiveHeader(key)) {
+      filteredHeaders.push(`${key}: ${value}`);
+      continue; // Skip this header
+    }
     content += `${key}: ${value}\n`;
   }
 
@@ -201,7 +234,7 @@ function generateHttpFile(parsed: ParsedCurl, detectVars: boolean = true): {
     content += "\n";
   }
 
-  return { content, variables };
+  return { content, variables, filteredHeaders };
 }
 
 /**
@@ -234,7 +267,7 @@ function suggestFilename(parsed: ParsedCurl): string {
 /**
  * Interactive mode - prompt user for details
  */
-async function interactiveMode(parsed: ParsedCurl, result: { content: string; variables: Record<string, string> }): Promise<void> {
+async function interactiveMode(parsed: ParsedCurl, result: { content: string; variables: Record<string, string>; filteredHeaders: string[] }): Promise<void> {
   console.log("\n📝 Converted curl to .http format:\n");
   console.log("─".repeat(60));
   console.log(result.content);
@@ -245,6 +278,14 @@ async function interactiveMode(parsed: ParsedCurl, result: { content: string; va
     for (const [key, value] of Object.entries(result.variables)) {
       console.log(`  ${key}: ${value}`);
     }
+  }
+
+  if (result.filteredHeaders.length > 0) {
+    console.log("\n🔒 Excluded sensitive headers:");
+    for (const header of result.filteredHeaders) {
+      console.log(`  ${header}`);
+    }
+    console.log("💡 Tip: Use --import-headers flag to include these in the .http file");
   }
 
   const suggestedName = suggestFilename(parsed);
@@ -298,6 +339,15 @@ async function main() {
 
   let curlCommand = "";
   let stdoutOnly = false;
+  let outputPath: string | null = null;
+  let importHeaders = false;
+
+  // Check for --output or -o flag
+  const outputFlagIndex = args.findIndex(arg => arg === "--output" || arg === "-o");
+  if (outputFlagIndex !== -1 && args[outputFlagIndex + 1]) {
+    outputPath = args[outputFlagIndex + 1];
+    args.splice(outputFlagIndex, 2); // Remove the flag and its value
+  }
 
   // Check for --stdout flag
   const stdoutFlagIndex = args.indexOf("--stdout");
@@ -306,10 +356,17 @@ async function main() {
     args.splice(stdoutFlagIndex, 1); // Remove the flag
   }
 
+  // Check for --import-headers flag
+  const importHeadersIndex = args.indexOf("--import-headers");
+  if (importHeadersIndex !== -1) {
+    importHeaders = true;
+    args.splice(importHeadersIndex, 1); // Remove the flag
+  }
+
   if (args.length === 0) {
     // Read from stdin
     // Auto-detect if stdin is piped (non-interactive)
-    const isStdinPiped = !Deno.stdin.isTerminal?.() ?? false;
+    const isStdinPiped = !(Deno.stdin.isTerminal?.() ?? true);
 
     if (isStdinPiped) {
       stdoutOnly = true; // Auto-enable stdout mode when piped
@@ -349,18 +406,39 @@ async function main() {
       Deno.exit(1);
     }
 
-    const result = generateHttpFile(parsed, true);
+    const result = generateHttpFile(parsed, true, importHeaders);
 
     if (stdoutOnly) {
-      // Auto-save to suggested location
-      const suggestedName = suggestFilename(parsed);
-      const fullPath = `requests/${suggestedName}`;
+      // Determine output path
+      let fullPath: string;
+      if (outputPath) {
+        // User specified a custom path
+        fullPath = outputPath;
 
-      // Create directory if it doesn't exist
+        // If it's a directory path (ends with /), append the suggested filename
+        if (fullPath.endsWith("/")) {
+          const suggestedName = suggestFilename(parsed);
+          fullPath = `${fullPath}${suggestedName}`;
+        }
+
+        // Ensure it has .http extension
+        if (!fullPath.endsWith(".http")) {
+          fullPath = `${fullPath}.http`;
+        }
+      } else {
+        // Use suggested location
+        const suggestedName = suggestFilename(parsed);
+        fullPath = `requests/${suggestedName}`;
+      }
+
+      // Create parent directory if it doesn't exist
       try {
-        await Deno.mkdir("requests", { recursive: true });
+        const parentDir = fullPath.substring(0, fullPath.lastIndexOf("/"));
+        if (parentDir) {
+          await Deno.mkdir(parentDir, { recursive: true });
+        }
       } catch {
-        // Directory already exists
+        // Directory already exists or no parent directory needed
       }
 
       await Deno.writeTextFile(fullPath, result.content);
@@ -373,6 +451,14 @@ async function main() {
           console.log(`  ${key}: ${value}`);
         }
         console.log("\n📝 Add these to .session.json or .profiles.json");
+      }
+
+      if (result.filteredHeaders.length > 0) {
+        console.log("\n🔒 Excluded sensitive headers (use --import-headers to include):");
+        for (const header of result.filteredHeaders) {
+          console.log(`  ${header}`);
+        }
+        console.log("\n💡 Add these to your profile headers in .profiles.json instead");
       }
     } else {
       // Interactive mode

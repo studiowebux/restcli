@@ -4,7 +4,8 @@
     "jsr:@std/fs@1": "1.0.19",
     "jsr:@std/internal@^1.0.9": "1.0.10",
     "jsr:@std/path@1": "1.1.1",
-    "jsr:@std/path@^1.1.1": "1.1.1"
+    "jsr:@std/path@^1.1.1": "1.1.1",
+    "jsr:@std/yaml@1": "1.0.9"
   },
   "jsr": {
     "@std/fs@1.0.19": {
@@ -22,13 +23,17 @@
       "dependencies": [
         "jsr:@std/internal"
       ]
+    },
+    "@std/yaml@1.0.9": {
+      "integrity": "6bad3dc766dd85b4b37eabcba81b6aa4eac7a392792ae29abcfb0f90602d55bb"
     }
   },
   "workspace": {
     "dependencies": [
       "jsr:@std/fmt@1",
       "jsr:@std/fs@1",
-      "jsr:@std/path@1"
+      "jsr:@std/path@1",
+      "jsr:@std/yaml@1"
     ]
   }
 }

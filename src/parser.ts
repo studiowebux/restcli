@@ -1,3 +1,5 @@
+import { isYamlFormat, parseYamlHttpFile } from "./yaml-parser.ts";
+
 export interface HttpRequest {
   name?: string;
   method: string;
@@ -11,7 +13,17 @@ export interface ParsedHttpFile {
 }
 
 /**
- * Parse HTTP file format
+ * Parse HTTP file - auto-detects format (traditional HTTP or YAML/JSON)
+ */
+export function parseHttpFile(content: string): ParsedHttpFile {
+  if (isYamlFormat(content)) {
+    return parseYamlHttpFile(content);
+  }
+  return parseTraditionalHttpFile(content);
+}
+
+/**
+ * Parse traditional HTTP file format
  * Supports:
  * ### Request Name
  * METHOD url
@@ -21,7 +33,7 @@ export interface ParsedHttpFile {
  *
  * ###
  */
-export function parseHttpFile(content: string): ParsedHttpFile {
+export function parseTraditionalHttpFile(content: string): ParsedHttpFile {
   const requests: HttpRequest[] = [];
   const sections = content.split(/^###\s*/m).filter(s => s.trim());
 

@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/your-repo/http-request-schema",
+  "title": "HTTP Request File",
+  "description": "Schema for HTTP request files in YAML or JSON format",
+  "oneOf": [
+    {
+      "$ref": "#/definitions/SingleRequest"
+    },
+    {
+      "$ref": "#/definitions/MultipleRequests"
+    }
+  ],
+  "definitions": {
+    "SingleRequest": {
+      "type": "object",
+      "required": ["method", "url"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional name for the request"
+        },
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+          "description": "HTTP method"
+        },
+        "url": {
+          "type": "string",
+          "description": "Request URL (can include {{variables}})"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "HTTP headers"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body (for POST, PUT, PATCH)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MultipleRequests": {
+      "type": "object",
+      "required": ["requests"],
+      "properties": {
+        "requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SingleRequest"
+          },
+          "minItems": 1,
+          "description": "Array of HTTP requests"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

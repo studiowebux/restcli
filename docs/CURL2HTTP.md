@@ -64,6 +64,54 @@ Authorization: Bearer eyJhbGc...
 }
 ```
 
+### 🔒 Security Header Filtering
+
+By default, sensitive headers are excluded from generated `.http` files for security:
+
+**Filtered headers:**
+- `Authorization`
+- `Cookie`
+- `X-API-Key`
+- `X-Auth-Token`
+- `API-Key`
+- `Auth-Token`
+- `Bearer`
+- `X-Session-Token`
+- `X-CSRF-Token`
+
+**Example:**
+
+```bash
+curl http://localhost:3000/api/users -H "Authorization: Bearer secret123"
+```
+
+**Output:**
+
+```http
+### GET api/users
+GET {{baseUrl}}/api/users
+```
+
+```
+🔒 Excluded sensitive headers (use --import-headers to include):
+  Authorization: Bearer secret123
+
+💡 Add these to your profile headers in .profiles.json instead
+```
+
+**To include sensitive headers:**
+
+```bash
+pbpaste | deno task curl2http --import-headers
+```
+
+This is useful for:
+- Generating quick test files where you'll manually replace tokens with `{{token}}`
+- Documenting API endpoints with actual auth examples
+- One-off testing scenarios
+
+**Best practice:** Keep auth credentials in `.profiles.json` for reusability and security.
+
 ### 📁 Smart Filename Suggestions
 
 Based on the URL path:
@@ -187,7 +235,25 @@ curl 'https://api.example.com/data' \
   -H 'user-agent: Mozilla/5.0'
 ```
 
-**Output:**
+**Output (default - filters sensitive headers):**
+
+```http
+### GET data
+GET {{baseUrl}}/data
+accept: application/json
+accept-language: en-US,en;q=0.9
+cache-control: no-cache
+user-agent: Mozilla/5.0
+```
+
+```
+🔒 Excluded sensitive headers (use --import-headers to include):
+  authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+💡 Add these to your profile headers in .profiles.json instead
+```
+
+**Output (with --import-headers):**
 
 ```http
 ### GET data
@@ -201,11 +267,30 @@ user-agent: Mozilla/5.0
 
 ## Tips
 
+### Security Best Practices
+
+1. **By default, sensitive headers are excluded** - this prevents accidentally committing credentials to git
+
+2. **Use profile headers for auth** - store credentials in `.profiles.json` (add to `.gitignore`):
+   ```json
+   {
+     "name": "Production",
+     "headers": {
+       "Authorization": "Bearer {{prodToken}}"
+     },
+     "variables": {
+       "prodToken": "your-secret-token"
+     }
+   }
+   ```
+
+3. **Only use --import-headers when needed** - for quick testing or when you'll replace tokens with variables
+
 ### Clean Up Generated Files
 
 After conversion, you might want to:
 
-1. **Replace auth tokens with variables:**
+1. **Replace auth tokens with variables** (if using --import-headers):
 
    ```http
    Authorization: Bearer {{token}}
@@ -227,8 +312,14 @@ When copying from browser DevTools, the curl command might include:
 - Compressed data (`--compressed`)
 - Cookies (`--cookie`)
 - Lots of headers
+- Authorization tokens
 
-The tool handles these, but you may want to clean up the generated file manually.
+The tool automatically:
+- Filters out sensitive headers like `Authorization` and `Cookie` (unless `--import-headers` is used)
+- Handles common curl flags
+- Pretty-prints JSON bodies
+
+You may still want to clean up unnecessary headers like `user-agent` and `accept-language` manually.
 
 ### Batch Conversion
 

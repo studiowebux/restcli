@@ -1,0 +1,2 @@
+### POST api/users
+POST {{baseUrl}}/api/users

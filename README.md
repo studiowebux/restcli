@@ -4,26 +4,47 @@ A simple, keyboard-driven TUI for testing HTTP endpoints without the bloat of GU
 
 ## Features
 
-- 📁 File-based request management (`.http` files)
+- 📁 File-based request management (`.http` and `.yaml` files)
 - 🎯 Keyboard-driven navigation
 - 👤 Header profiles for quick account switching
 - 🔄 Variable substitution
 - 📋 Quick file duplication
 - 💾 Auto-save session state
+- 📜 Request/response history with timestamps
+- 🏠 Global config directory (`~/.restcli/`) - use from anywhere
+- 🔨 Compiled binaries - no runtime dependencies
+- 🧾 YAML format support with JSON schema for autocomplete
 
 ## Quick Start
 
-```bash
-# Set up profiles (optional but recommended)
-./setup-profiles.sh
+### Using Compiled Binary (Recommended)
 
+```bash
+# Build the binary
+deno task build
+
+# Run it (auto-initializes ~/.restcli/ on first run)
+./restcli
+
+# Or install globally
+sudo mv restcli /usr/local/bin/
+restcli  # Use from anywhere!
+```
+
+### Using Deno
+
+```bash
 # Run the TUI
 deno task dev
+
+# Run a specific request file
+deno task run requests/example.http
 
 # Convert cURL to .http (from browser DevTools, docs, etc.)
 pbpaste | deno task curl2http
 ```
 
+See [INSTALL.md](./docs/INSTALL.md) for detailed installation and setup guide.
 See [PROFILES.md](./docs/PROFILES.md) for detailed profile configuration guide.
 See [HEX-REFERENCE.md](./docs/HEX-REFERENCE.md) for hexadecimal numbering explanation.
 See [CURL2HTTP.md](./docs/CURL2HTTP.md) for converting cURL commands to `.http` files.
@@ -139,10 +160,43 @@ Press `p` in the TUI to cycle through profiles.
 - `c` - Copy response body/error to clipboard
 - `r` - Refresh file list
 - `p` - Switch profile (cycles through profiles)
+- `v` - Open variable editor (add, edit, delete variables)
 
 ### Utilities
 - `ESC` - Clear status message / Cancel search or goto
 - `q` - Quit
+
+## Variable Editor
+
+Press `v` to open the interactive variable editor. This allows you to manage **profile variables** without editing `.profiles.json` manually:
+
+### List Mode
+- Navigate variables with `↑` / `↓`
+- `A` - Add new variable
+- `E` or `Enter` - Edit selected variable's value
+- `D` - Delete selected variable
+- `ESC` - Exit variable editor
+
+### Add Mode
+- Type to enter key and value
+- `Tab` - Switch between key and value fields
+- `Enter` - Save variable to active profile
+- `ESC` - Cancel
+
+### Edit Mode
+- Type to change the value (key cannot be changed)
+- `Enter` - Save changes to active profile
+- `ESC` - Cancel
+
+### Delete Mode
+- `Y` - Confirm deletion from profile
+- `N` or `ESC` - Cancel
+
+**Important Notes:**
+- Variables are saved to the **active profile** in `.profiles.json`
+- Session variables (`.session.json`) are temporary state that gets cleared when switching profiles
+- Profile variables are permanent configuration
+- Long values are automatically truncated to prevent overlap
 
 ## Tips
 
