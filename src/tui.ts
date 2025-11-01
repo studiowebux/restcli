@@ -1,5 +1,6 @@
 import { walk } from "@std/fs";
 import * as path from "@std/path";
+import { stringify as yamlStringify } from "@std/yaml";
 import { applyVariables, parseHttpFile } from "./parser.ts";
 import { RequestExecutor, type RequestResult } from "./executor.ts";
 import { SessionManager } from "./session.ts";
@@ -2479,6 +2480,7 @@ async function runCLI() {
   let filePath = "";
   let profileOverride: string | null = null;
   let fullOutput = false;
+  let yamlOutput = false;
 
   // Conditional logger - only logs when --full is set
   // Default: noop (suppressed for clean piping to jq)
@@ -2499,6 +2501,8 @@ async function runCLI() {
       }
     } else if (arg === "--full" || arg === "-f") {
       fullOutput = true;
+    } else if (arg === "--yaml" || arg === "-y") {
+      yamlOutput = true;
     } else if (!filePath) {
       filePath = arg;
     }
@@ -2625,7 +2629,11 @@ async function runCLI() {
     // Body (always shown on stdout)
     try {
       const json = JSON.parse(result.body);
-      console.log(JSON.stringify(json, null, 2));
+      if (yamlOutput) {
+        console.log(yamlStringify(json));
+      } else {
+        console.log(JSON.stringify(json, null, 2));
+      }
     } catch {
       console.log(result.body);
     }
@@ -2661,7 +2669,7 @@ if (import.meta.main) {
   // If args exist and first arg is not a flag, it's a file path → CLI mode
   if (args.length > 0 && !args[0].startsWith("-")) {
     await runCLI();
-  } else if (args.length > 0 && (args[0] === "--profile" || args[0] === "-p" || args[0] === "--full" || args[0] === "-f")) {
+  } else if (args.length > 0 && (args[0] === "--profile" || args[0] === "-p" || args[0] === "--full" || args[0] === "-f" || args[0] === "--yaml" || args[0] === "-y")) {
     // Flags with file → CLI mode
     await runCLI();
   } else {
