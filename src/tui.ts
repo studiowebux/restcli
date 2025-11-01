@@ -1,10 +1,10 @@
 import { walk } from "@std/fs";
 import * as path from "@std/path";
-import { parseHttpFile, applyVariables } from "./parser.ts";
+import { applyVariables, parseHttpFile } from "./parser.ts";
 import { RequestExecutor, type RequestResult } from "./executor.ts";
 import { SessionManager } from "./session.ts";
 import { ConfigManager } from "./config.ts";
-import { HistoryManager, type HistoryEntry } from "./history.ts";
+import { type HistoryEntry, HistoryManager } from "./history.ts";
 
 interface FileEntry {
   path: string;
@@ -46,6 +46,13 @@ class TUI {
   private headerEditKey = "";
   private headerEditValue = "";
   private headerEditField: "key" | "value" = "key";
+  private responseScrollOffset = 0; // For scrolling through response body
+  private maxResponseScrollOffset = 0; // Maximum scroll offset for response body
+  private showResponseHeaders = true; // Toggle response headers visibility
+  private showResponseBody = true; // Toggle response body visibility
+  private helpMode = false; // Show help modal
+  private helpScrollOffset = 0; // Scroll offset for help modal
+  private maxHelpScrollOffset = 0; // Maximum scroll offset for help modal
 
   constructor() {
     this.sessionManager = new SessionManager();
@@ -65,7 +72,8 @@ class TUI {
       this.requestsDir = path.join(this.baseDir, "requests");
     } else {
       // Check if running in a directory with requests/
-      const hasLocalRequests = await Deno.stat("./requests").then(() => true).catch(() => false);
+      const hasLocalRequests = await Deno.stat("./requests").then(() => true)
+        .catch(() => false);
 
       if (hasLocalRequests) {
         // Use current directory (backward compatibility for local development)
@@ -75,9 +83,11 @@ class TUI {
         this.requestsDir = "./requests";
 
         // Show helpful message
-        console.log("\n💡 Tip: Run 'deno task init --migrate' to migrate to ~/.restcli/");
+        console.log(
+          "\n💡 Tip: Run 'deno task init --migrate' to migrate to ~/.restcli/",
+        );
         console.log("   This allows you to use restcli from any directory!\n");
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Show for 2 seconds
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Show for 2 seconds
       } else {
         // No local requests/ and no ~/.restcli/, auto-initialize
         console.log("\n🚀 First time setup: Initializing restcli...\n");
@@ -86,9 +96,11 @@ class TUI {
 
         console.log(`\n✅ Initialized at: ${configManager.getConfigDir()}`);
         console.log("\n📝 Example files created. Edit them to get started!");
-        console.log("   Config: ~/.restcli/.profiles.json and ~/.restcli/.session.json");
+        console.log(
+          "   Config: ~/.restcli/.profiles.json and ~/.restcli/.session.json",
+        );
         console.log("   Requests: ~/.restcli/requests/\n");
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Show for 3 seconds
+        await new Promise((resolve) => setTimeout(resolve, 3000)); // Show for 3 seconds
 
         this.baseDir = configManager.getConfigDir();
         this.sessionManager = new SessionManager(this.baseDir);
@@ -108,7 +120,11 @@ class TUI {
   async loadFiles(): Promise<void> {
     this.files = [];
     try {
-      for await (const entry of walk(this.requestsDir, { exts: [".http", ".yaml", ".yml"] })) {
+      for await (
+        const entry of walk(this.requestsDir, {
+          exts: [".http", ".yaml", ".yml"],
+        })
+      ) {
         if (entry.isFile) {
           const relativePath = path.relative(this.requestsDir, entry.path);
           this.files.push({
@@ -160,6 +176,30 @@ class TUI {
   }
 
   /**
+   * Beautify JSON response body if it's valid JSON
+   */
+  private beautifyJson(body: string): string {
+    try {
+      const json = JSON.parse(body);
+      return JSON.stringify(json, null, 2);
+    } catch {
+      // Not JSON, return as-is
+      return body;
+    }
+  }
+
+  /**
+   * Format bytes to human-readable size
+   */
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 10) / 10 + " " + sizes[i];
+  }
+
+  /**
    * Check if a line contains a URL
    * @param text The text to check
    * @returns true if the line contains a URL pattern
@@ -177,7 +217,11 @@ class TUI {
    * @param allowFullUrls If true (fullscreen), show full URLs; if false, truncate them
    * @returns Array of wrapped lines
    */
-  private wrapLine(text: string, maxWidth: number, allowFullUrls = false): string[] {
+  private wrapLine(
+    text: string,
+    maxWidth: number,
+    allowFullUrls = false,
+  ): string[] {
     if (text.length <= maxWidth) {
       return [text];
     }
@@ -255,7 +299,7 @@ class TUI {
       mainWidth = width;
     } else {
       // Normal mode: show sidebar
-      sidebarWidth = Math.min(40, Math.floor(width * 0.3));
+      sidebarWidth = Math.min(60, Math.floor(width * 0.4));
       separatorCol = sidebarWidth + 1;
       mainStartCol = separatorCol + 2;
       mainWidth = width - mainStartCol;
@@ -269,14 +313,14 @@ class TUI {
 
     if (!this.fullscreenMode) {
       // Sidebar (only in normal mode)
-      this.drawSidebar(sidebarWidth, height - 3);
+      this.drawSidebar(sidebarWidth, height - 1);
 
       // Vertical separator (only in normal mode)
-      this.drawSeparator(separatorCol, height - 2);
+      this.drawSeparator(separatorCol, height);
     }
 
     // Main content
-    this.drawMain(mainStartCol, mainWidth, height - 3);
+    this.drawMain(mainStartCol, mainWidth, height - 1);
 
     // Status bar
     this.drawStatusBar(width, height);
@@ -313,7 +357,13 @@ class TUI {
     this.write(`\x1b[1m${title}\x1b[0m${titlePadding}`);
 
     const maxVisibleLines = height - 4; // Reserve one line for scroll indicator
-    const startIdx = Math.max(0, Math.min(this.selectedIndex - Math.floor(maxVisibleLines / 2), totalFiles - maxVisibleLines));
+    const startIdx = Math.max(
+      0,
+      Math.min(
+        this.selectedIndex - Math.floor(maxVisibleLines / 2),
+        totalFiles - maxVisibleLines,
+      ),
+    );
     const endIdx = Math.min(startIdx + maxVisibleLines, totalFiles);
     const visibleFiles = this.files.slice(startIdx, endIdx);
 
@@ -329,7 +379,10 @@ class TUI {
         const isSelected = globalIdx === this.selectedIndex;
 
         // Line number in hex
-        const lineNum = (globalIdx + 1).toString(16).toUpperCase().padStart(numWidth, " ");
+        const lineNum = (globalIdx + 1).toString(16).toUpperCase().padStart(
+          numWidth,
+          " ",
+        );
         const lineNumDisplay = `\x1b[2m${lineNum}\x1b[0m`;
 
         // Prefix
@@ -348,9 +401,13 @@ class TUI {
 
         // Apply styling
         if (isSelected) {
-          this.write(`${lineNumDisplay}\x1b[7m${prefixVisible}${displayName}\x1b[0m${padding}`);
+          this.write(
+            `${lineNumDisplay}\x1b[7m${prefixVisible}${displayName}\x1b[0m${padding}`,
+          );
         } else {
-          this.write(`${lineNumDisplay}${prefixVisible}${displayName}${padding}`);
+          this.write(
+            `${lineNumDisplay}${prefixVisible}${displayName}${padding}`,
+          );
         }
       } else {
         const clearLine = " ".repeat(width);
@@ -361,7 +418,9 @@ class TUI {
     // Scroll indicator
     this.moveCursor(3 + maxVisibleLines, 1);
     if (totalFiles > maxVisibleLines) {
-      const scrollPercent = Math.round((this.selectedIndex / (totalFiles - 1)) * 100);
+      const scrollPercent = Math.round(
+        (this.selectedIndex / (totalFiles - 1)) * 100,
+      );
       const hasMore = endIdx < totalFiles;
       const hasPrevious = startIdx > 0;
 
@@ -386,6 +445,12 @@ class TUI {
   }
 
   private drawMain(startCol: number, width: number, height: number): void {
+    // Check if in help mode
+    if (this.helpMode) {
+      this.drawHelpModal(startCol, width, height);
+      return;
+    }
+
     // Check if in variable mode
     if (this.variableMode) {
       this.drawVariableEditor(startCol, width, height);
@@ -427,11 +492,12 @@ class TUI {
     this.moveCursor(line++, startCol);
 
     // Status line
-    const statusColor = this.response.status >= 200 && this.response.status < 300
-      ? "\x1b[32m" // Green
-      : this.response.status >= 400
-      ? "\x1b[31m" // Red
-      : "\x1b[33m"; // Yellow
+    const statusColor =
+      this.response.status >= 200 && this.response.status < 300
+        ? "\x1b[32m" // Green
+        : this.response.status >= 400
+        ? "\x1b[31m" // Red
+        : "\x1b[33m"; // Yellow
 
     if (this.response.error) {
       // Wrap error message across multiple lines
@@ -458,123 +524,89 @@ class TUI {
 
       line++;
     } else {
-      const statusText = `${this.response.status} ${this.response.statusText} | ${Math.round(this.response.duration)}ms`.slice(0, width - 2);
+      const statusText =
+        `${this.response.status} ${this.response.statusText} | ${
+          Math.round(this.response.duration)
+        }ms | Req: ${this.formatBytes(this.response.requestSize)} | Res: ${this.formatBytes(this.response.responseSize)}`.slice(0, width - 2);
       this.write(`${statusColor}${statusText}\x1b[0m\x1b[K`);
       line++;
     }
 
-    this.moveCursor(line++, startCol);
-    this.write("\x1b[K");
-
     // Headers
     if (Object.keys(this.response.headers).length > 0) {
       this.moveCursor(line++, startCol);
-      this.write("\x1b[2mHeaders:\x1b[0m\x1b[K");
-      for (const [key, value] of Object.entries(this.response.headers).slice(0, 5)) {
+      const headerCount = Object.keys(this.response.headers).length;
+      const headerToggle = this.showResponseHeaders ? "[-]" : "[+]";
+      this.write(
+        `\x1b[2mHeaders (${headerCount}) ${headerToggle} Press Shift+H to toggle\x1b[0m\x1b[K`,
+      );
+
+      if (this.showResponseHeaders) {
+        for (
+          const [key, value] of Object.entries(this.response.headers).slice(
+            0,
+            5,
+          )
+        ) {
+          this.moveCursor(line++, startCol);
+          const display = `${key}: ${value}`.slice(0, width - 2);
+          this.write(`  ${display}\x1b[K`);
+        }
         this.moveCursor(line++, startCol);
-        const display = `${key}: ${value}`.slice(0, width - 2);
-        this.write(`  ${display}\x1b[K`);
+        this.write("\x1b[K");
       }
-      this.moveCursor(line++, startCol);
-      this.write("\x1b[K");
     }
 
     // Body
-    this.moveCursor(line++, startCol);
-    this.write("\x1b[2mBody:\x1b[0m\x1b[K");
-
     const bodyLines = this.response.body.split("\n");
-    const maxLines = height - line;
     const maxWidth = Math.max(1, width - 2); // Ensure at least 1 char width
 
     // Wrap long lines and flatten into a single array
+    // Process ALL lines to enable scrolling through long responses
     const wrappedLines: string[] = [];
     for (const bodyLine of bodyLines) {
       const wrapped = this.wrapLine(bodyLine, maxWidth, this.fullscreenMode);
       wrappedLines.push(...wrapped);
-
-      // Stop processing if we've already exceeded available space
-      if (wrappedLines.length >= maxLines) break;
     }
 
-    // Display wrapped lines, accounting for terminal wrapping in fullscreen mode
-    for (let i = 0; i < wrappedLines.length && line < height - 1; i++) {
-      const wrappedLine = wrappedLines[i];
-
-      // Calculate how many visual lines this will take
-      // In fullscreen, URLs can wrap naturally; in non-fullscreen they're already truncated
-      const visualLinesNeeded = this.fullscreenMode
-        ? Math.max(1, Math.ceil(wrappedLine.length / maxWidth))
-        : 1; // Non-fullscreen: already truncated, takes 1 line
-
-      // Stop if we don't have enough space
-      if (line + visualLinesNeeded > height - 1) break;
-
-      this.moveCursor(line, startCol);
-      this.write(`${wrappedLine}\x1b[K`);
-
-      // Increment by the number of visual lines this took
-      line += visualLinesNeeded;
-    }
-
-    // Clear remaining lines
-    while (line < height) {
-      this.moveCursor(line++, startCol);
-      this.write("\x1b[K");
-    }
-  }
-
-  private drawInspection(startCol: number, width: number, height: number): void {
-    const inspectionData = (this.response as any).inspectionData;
-    let line = 3;
-
-    // Request line
+    // Show "Body:" with scroll indicator and toggle
     this.moveCursor(line++, startCol);
-    const requestLine = `${inspectionData.method} ${inspectionData.url}`.slice(0, width - 2);
-    this.write(`\x1b[1;36m${requestLine}\x1b[0m\x1b[K`);
+    const bodyToggle = this.showResponseBody ? "[-]" : "[+]";
+    this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m`);
 
-    line++;
-    this.moveCursor(line++, startCol);
+    // Calculate maxLines AFTER writing the Body: header
+    const maxLines = height - line;
+
+    // Calculate scroll position
+    const totalWrappedLines = wrappedLines.length;
+    this.maxResponseScrollOffset = Math.max(0, totalWrappedLines - maxLines);
+    const startIndex = Math.max(
+      0,
+      Math.min(
+        this.responseScrollOffset,
+        this.maxResponseScrollOffset,
+      ),
+    );
+
+    if (this.showResponseBody && totalWrappedLines > maxLines) {
+      const scrollProgress = `[${startIndex + 1}-${
+        Math.min(startIndex + maxLines, totalWrappedLines)
+      }/${totalWrappedLines}] j/k to scroll`;
+      const indicatorCol = Math.max(
+        startCol + 30,
+        width - scrollProgress.length,
+      );
+      this.moveCursor(line - 1, indicatorCol);
+      this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
+    }
+    this.moveCursor(line - 1, width);
     this.write("\x1b[K");
 
-    // Headers
-    if (this.response && Object.keys(this.response.headers).length > 0) {
-      this.moveCursor(line++, startCol);
-      this.write("\x1b[2mHeaders (merged with profile):\x1b[0m\x1b[K");
-
-      for (const [key, value] of Object.entries(this.response.headers)) {
-        this.moveCursor(line++, startCol);
-        const display = `  ${key}: ${value}`.slice(0, width - 2);
-        this.write(`${display}\x1b[K`);
-
-        if (line >= height - 5) break; // Leave room for body
-      }
-
-      this.moveCursor(line++, startCol);
-      this.write("\x1b[K");
-    }
-
-    // Body
-    if (this.response && this.response.body) {
-      this.moveCursor(line++, startCol);
-      this.write("\x1b[2mBody:\x1b[0m\x1b[K");
-
-      const bodyLines = this.response.body.split("\n");
-      const maxLines = height - line - 2;
-      const maxWidth = Math.max(1, width - 2); // Ensure at least 1 char width
-
-      // Wrap long lines and flatten into a single array
-      const wrappedLines: string[] = [];
-      for (const bodyLine of bodyLines) {
-        const wrapped = this.wrapLine(bodyLine, maxWidth, this.fullscreenMode);
-        wrappedLines.push(...wrapped);
-
-        // Stop processing if we've already exceeded available space
-        if (wrappedLines.length >= maxLines) break;
-      }
-
-      // Display wrapped lines, accounting for terminal wrapping in fullscreen mode
-      for (let i = 0; i < wrappedLines.length && line < height - 2; i++) {
+    // Display wrapped lines with scrolling
+    if (this.showResponseBody) {
+      for (
+        let i = startIndex; i < wrappedLines.length && line <= height; i++
+      ) {
         const wrappedLine = wrappedLines[i];
 
         // Calculate how many visual lines this will take
@@ -584,7 +616,7 @@ class TUI {
           : 1; // Non-fullscreen: already truncated, takes 1 line
 
         // Stop if we don't have enough space
-        if (line + visualLinesNeeded > height - 2) break;
+        if (line + visualLinesNeeded > height + 1) break;
 
         this.moveCursor(line, startCol);
         this.write(`${wrappedLine}\x1b[K`);
@@ -595,13 +627,134 @@ class TUI {
     }
 
     // Clear remaining lines
-    while (line < height) {
+    while (line <= height) {
       this.moveCursor(line++, startCol);
       this.write("\x1b[K");
     }
   }
 
-  private drawVariableEditor(startCol: number, width: number, height: number): void {
+  private drawInspection(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
+    const inspectionData = (this.response as any).inspectionData;
+    let line = 3;
+
+    // Request line
+    this.moveCursor(line++, startCol);
+    const requestLine = `${inspectionData.method} ${inspectionData.url}`.slice(
+      0,
+      width - 2,
+    );
+    this.write(`\x1b[1;36m${requestLine}\x1b[0m\x1b[K`);
+
+    // Headers
+    if (this.response && Object.keys(this.response.headers).length > 0) {
+      this.moveCursor(line++, startCol);
+      const headerCount = Object.keys(this.response.headers).length;
+      const headerToggle = this.showResponseHeaders ? "[-]" : "[+]";
+      this.write(
+        `\x1b[2mHeaders (${headerCount}, merged with profile) ${headerToggle} Press Shift+H to toggle\x1b[0m\x1b[K`,
+      );
+
+      if (this.showResponseHeaders) {
+        for (const [key, value] of Object.entries(this.response.headers)) {
+          this.moveCursor(line++, startCol);
+          const display = `  ${key}: ${value}`.slice(0, width - 2);
+          this.write(`${display}\x1b[K`);
+
+          if (line >= height - 5) break; // Leave room for body
+        }
+
+        this.moveCursor(line++, startCol);
+        this.write("\x1b[K");
+      }
+    }
+
+    // Body
+    if (this.response && this.response.body) {
+      const bodyLines = this.response.body.split("\n");
+      const maxWidth = Math.max(1, width - 2); // Ensure at least 1 char width
+
+      // Wrap long lines and flatten into a single array
+      // Process ALL lines to enable scrolling through long responses
+      const wrappedLines: string[] = [];
+      for (const bodyLine of bodyLines) {
+        const wrapped = this.wrapLine(bodyLine, maxWidth, this.fullscreenMode);
+        wrappedLines.push(...wrapped);
+      }
+
+      // Show "Body:" with scroll indicator and toggle
+      this.moveCursor(line++, startCol);
+      const bodyToggle = this.showResponseBody ? "[-]" : "[+]";
+      this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m`);
+
+      // Calculate maxLines AFTER writing the Body: header
+      const maxLines = height - line;
+
+      // Calculate scroll position
+      const totalWrappedLines = wrappedLines.length;
+      this.maxResponseScrollOffset = Math.max(0, totalWrappedLines - maxLines);
+      const startIndex = Math.max(
+        0,
+        Math.min(
+          this.responseScrollOffset,
+          this.maxResponseScrollOffset,
+        ),
+      );
+
+      if (this.showResponseBody && totalWrappedLines > maxLines) {
+        const scrollProgress = `[${startIndex + 1}-${
+          Math.min(startIndex + maxLines, totalWrappedLines)
+        }/${totalWrappedLines}] j/k to scroll`;
+        const indicatorCol = Math.max(
+          startCol + 30,
+          width - scrollProgress.length,
+        );
+        this.moveCursor(line - 1, indicatorCol);
+        this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
+      }
+      this.moveCursor(line - 1, width);
+      this.write("\x1b[K");
+
+      // Display wrapped lines with scrolling
+      if (this.showResponseBody) {
+        for (
+          let i = startIndex; i < wrappedLines.length && line <= height; i++
+        ) {
+          const wrappedLine = wrappedLines[i];
+
+          // Calculate how many visual lines this will take
+          // In fullscreen, URLs can wrap naturally; in non-fullscreen they're already truncated
+          const visualLinesNeeded = this.fullscreenMode
+            ? Math.max(1, Math.ceil(wrappedLine.length / maxWidth))
+            : 1; // Non-fullscreen: already truncated, takes 1 line
+
+          // Stop if we don't have enough space
+          if (line + visualLinesNeeded > height + 1) break;
+
+          this.moveCursor(line, startCol);
+          this.write(`${wrappedLine}\x1b[K`);
+
+          // Increment by the number of visual lines this took
+          line += visualLinesNeeded;
+        }
+      }
+    }
+
+    // Clear remaining lines
+    while (line <= height) {
+      this.moveCursor(line++, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
+  private drawVariableEditor(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
     this.moveCursor(2, startCol);
     const activeProfile = this.sessionManager.getActiveProfile();
     const profileName = activeProfile ? activeProfile.name : "No Profile";
@@ -624,7 +777,9 @@ class TUI {
         const [key, value] = varEntries[i];
         const isSelected = i === this.variableIndex;
 
-        const truncatedValue = value.length > width - key.length - 8 ? value.slice(0, width - key.length - 11) + "..." : value;
+        const truncatedValue = value.length > width - key.length - 8
+          ? value.slice(0, width - key.length - 11) + "..."
+          : value;
         const display = `${key}: ${truncatedValue}`;
         const displayTruncated = display.slice(0, width - 4);
 
@@ -634,8 +789,7 @@ class TUI {
           this.write(`  ${displayTruncated}\x1b[K`);
         }
       }
-    }
-    // Add mode
+    } // Add mode
     else if (this.variableEditMode === "add") {
       this.moveCursor(line++, startCol);
       this.write(`\x1b[1mAdd New Variable\x1b[0m\x1b[K`);
@@ -644,7 +798,9 @@ class TUI {
       this.moveCursor(line++, startCol);
       const keyLabel = "Key: ";
       const maxKeyWidth = width - keyLabel.length - 2;
-      const keyDisplay = (this.variableEditKey + (this.variableEditField === "key" ? "_" : "")).slice(0, maxKeyWidth);
+      const keyDisplay =
+        (this.variableEditKey + (this.variableEditField === "key" ? "_" : ""))
+          .slice(0, maxKeyWidth);
       const keyLine = keyLabel + keyDisplay;
       if (this.variableEditField === "key") {
         this.write(`${keyLabel}\x1b[7m${keyDisplay}\x1b[0m\x1b[K`);
@@ -655,18 +811,25 @@ class TUI {
       this.moveCursor(line++, startCol);
       const valueLabel = "Value: ";
       const maxValueWidth = width - valueLabel.length - 2;
-      const valueDisplay = (this.variableEditValue + (this.variableEditField === "value" ? "_" : "")).slice(0, maxValueWidth);
+      const valueDisplay =
+        (this.variableEditValue +
+          (this.variableEditField === "value" ? "_" : "")).slice(
+            0,
+            maxValueWidth,
+          );
       const valueLine = valueLabel + valueDisplay;
       if (this.variableEditField === "value") {
         this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
       } else {
         this.write(`${valueLine}\x1b[K`);
       }
-    }
-    // Edit mode
+    } // Edit mode
     else if (this.variableEditMode === "edit") {
       this.moveCursor(line++, startCol);
-      const editTitle = `Edit Variable: ${this.variableEditKey}`.slice(0, width - 2);
+      const editTitle = `Edit Variable: ${this.variableEditKey}`.slice(
+        0,
+        width - 2,
+      );
       this.write(`\x1b[1m${editTitle}\x1b[0m\x1b[K`);
       line++;
 
@@ -679,8 +842,7 @@ class TUI {
         ? valueWithCursor.slice(-maxValueWidth)
         : valueWithCursor;
       this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
-    }
-    // Delete confirmation
+    } // Delete confirmation
     else if (this.variableEditMode === "delete") {
       this.moveCursor(line++, startCol);
       this.write(`\x1b[1;31mDelete Variable?\x1b[0m\x1b[K`);
@@ -695,13 +857,17 @@ class TUI {
     }
 
     // Clear remaining lines
-    while (line < height) {
+    while (line <= height) {
       this.moveCursor(line++, startCol);
       this.write("\x1b[K");
     }
   }
 
-  private drawHeaderEditor(startCol: number, width: number, height: number): void {
+  private drawHeaderEditor(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
     this.moveCursor(2, startCol);
     const activeProfile = this.sessionManager.getActiveProfile();
     const profileName = activeProfile ? activeProfile.name : "No Profile";
@@ -719,12 +885,16 @@ class TUI {
       line++;
 
       const maxVisibleLines = height - line - 5;
-      for (let i = 0; i < Math.min(headerEntries.length, maxVisibleLines); i++) {
+      for (
+        let i = 0; i < Math.min(headerEntries.length, maxVisibleLines); i++
+      ) {
         this.moveCursor(line++, startCol);
         const [key, value] = headerEntries[i];
         const isSelected = i === this.headerIndex;
 
-        const truncatedValue = value.length > width - key.length - 8 ? value.slice(0, width - key.length - 11) + "..." : value;
+        const truncatedValue = value.length > width - key.length - 8
+          ? value.slice(0, width - key.length - 11) + "..."
+          : value;
         const display = `${key}: ${truncatedValue}`;
         const displayTruncated = display.slice(0, width - 4);
 
@@ -734,8 +904,7 @@ class TUI {
           this.write(`  ${displayTruncated}\x1b[K`);
         }
       }
-    }
-    // Add mode
+    } // Add mode
     else if (this.headerEditMode === "add") {
       this.moveCursor(line++, startCol);
       this.write(`\x1b[1mAdd New Header\x1b[0m\x1b[K`);
@@ -744,7 +913,9 @@ class TUI {
       this.moveCursor(line++, startCol);
       const keyLabel = "Key: ";
       const maxKeyWidth = width - keyLabel.length - 2;
-      const keyDisplay = (this.headerEditKey + (this.headerEditField === "key" ? "_" : "")).slice(0, maxKeyWidth);
+      const keyDisplay =
+        (this.headerEditKey + (this.headerEditField === "key" ? "_" : ""))
+          .slice(0, maxKeyWidth);
       const keyLine = keyLabel + keyDisplay;
       if (this.headerEditField === "key") {
         this.write(`${keyLabel}\x1b[7m${keyDisplay}\x1b[0m\x1b[K`);
@@ -755,18 +926,22 @@ class TUI {
       this.moveCursor(line++, startCol);
       const valueLabel = "Value: ";
       const maxValueWidth = width - valueLabel.length - 2;
-      const valueDisplay = (this.headerEditValue + (this.headerEditField === "value" ? "_" : "")).slice(0, maxValueWidth);
+      const valueDisplay =
+        (this.headerEditValue + (this.headerEditField === "value" ? "_" : ""))
+          .slice(0, maxValueWidth);
       const valueLine = valueLabel + valueDisplay;
       if (this.headerEditField === "value") {
         this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
       } else {
         this.write(`${valueLine}\x1b[K`);
       }
-    }
-    // Edit mode
+    } // Edit mode
     else if (this.headerEditMode === "edit") {
       this.moveCursor(line++, startCol);
-      const editTitle = `Edit Header: ${this.headerEditKey}`.slice(0, width - 2);
+      const editTitle = `Edit Header: ${this.headerEditKey}`.slice(
+        0,
+        width - 2,
+      );
       this.write(`\x1b[1m${editTitle}\x1b[0m\x1b[K`);
       line++;
 
@@ -779,8 +954,7 @@ class TUI {
         ? valueWithCursor.slice(-maxValueWidth)
         : valueWithCursor;
       this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
-    }
-    // Delete confirmation
+    } // Delete confirmation
     else if (this.headerEditMode === "delete") {
       this.moveCursor(line++, startCol);
       this.write(`\x1b[1;31mDelete Header?\x1b[0m\x1b[K`);
@@ -795,13 +969,17 @@ class TUI {
     }
 
     // Clear remaining lines
-    while (line < height) {
+    while (line <= height) {
       this.moveCursor(line++, startCol);
       this.write("\x1b[K");
     }
   }
 
-  private drawHistoryViewer(startCol: number, width: number, height: number): void {
+  private drawHistoryViewer(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
     const file = this.files[this.selectedIndex];
     this.moveCursor(2, startCol);
     const title = ` History for ${file.name} `;
@@ -815,10 +993,14 @@ class TUI {
       line++;
 
       this.moveCursor(line++, startCol);
-      this.write(`\x1b[2mExecute this request to create history entries\x1b[0m\x1b[K`);
+      this.write(
+        `\x1b[2mExecute this request to create history entries\x1b[0m\x1b[K`,
+      );
     } else {
       this.moveCursor(line++, startCol);
-      this.write(`\x1b[2mTotal: ${this.historyEntries.length} entries (newest first)\x1b[0m\x1b[K`);
+      this.write(
+        `\x1b[2mTotal: ${this.historyEntries.length} entries (newest first)\x1b[0m\x1b[K`,
+      );
       line++;
 
       const maxVisibleLines = height - line - 2;
@@ -839,16 +1021,18 @@ class TUI {
         });
 
         // Status color
-        const statusColor = entry.responseStatus >= 200 && entry.responseStatus < 300
-          ? "\x1b[32m" // Green
-          : entry.responseStatus >= 400
-          ? "\x1b[31m" // Red
-          : "\x1b[33m"; // Yellow
+        const statusColor =
+          entry.responseStatus >= 200 && entry.responseStatus < 300
+            ? "\x1b[32m" // Green
+            : entry.responseStatus >= 400
+            ? "\x1b[31m" // Red
+            : "\x1b[33m"; // Yellow
 
         // Format display line
         const status = entry.error ? "ERR" : `${entry.responseStatus}`;
         const duration = `${Math.round(entry.duration)}ms`;
-        const prefix = `${timeStr} | ${statusColor}${status}\x1b[0m | ${duration} | ${entry.method} `;
+        const prefix =
+          `${timeStr} | ${statusColor}${status}\x1b[0m | ${duration} | ${entry.method} `;
 
         let display: string;
         let linesNeeded: number;
@@ -856,11 +1040,18 @@ class TUI {
         if (this.fullscreenMode) {
           // Fullscreen: show full URL, let it wrap
           display = prefix + entry.url;
-          const visibleLength = timeStr.length + 3 + status.length + 3 + duration.length + 3 + entry.method.length + 1 + entry.url.length + 2; // +2 for "> "
-          linesNeeded = Math.max(1, Math.ceil(visibleLength / Math.max(1, width)));
+          const visibleLength = timeStr.length + 3 + status.length + 3 +
+            duration.length + 3 + entry.method.length + 1 + entry.url.length +
+            2; // +2 for "> "
+          linesNeeded = Math.max(
+            1,
+            Math.ceil(visibleLength / Math.max(1, width)),
+          );
         } else {
           // Non-fullscreen: truncate URL to prevent sidebar clash
-          const maxUrlLength = width - (timeStr.length + 3 + status.length + 3 + duration.length + 3 + entry.method.length + 1 + 2 + 10); // +10 for safety margin
+          const maxUrlLength = width -
+            (timeStr.length + 3 + status.length + 3 + duration.length + 3 +
+              entry.method.length + 1 + 2 + 10); // +10 for safety margin
           const truncatedUrl = entry.url.length > maxUrlLength
             ? entry.url.slice(0, Math.max(10, maxUrlLength)) + "..."
             : entry.url;
@@ -884,7 +1075,110 @@ class TUI {
     }
 
     // Clear remaining lines
-    while (line < height) {
+    while (line <= height) {
+      this.moveCursor(line++, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
+  private drawHelpModal(startCol: number, width: number, height: number): void {
+    this.moveCursor(2, startCol);
+    const title = " Keyboard Shortcuts ";
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    const shortcuts = [
+      {
+        category: "Navigation",
+        items: [
+          { key: "↑/↓", desc: "Navigate files (circular wrapping)" },
+          { key: "Page Up/Down", desc: "Fast scroll through file list" },
+          { key: ":", desc: "Goto line in hex (e.g., :64 → file #100)" },
+          {
+            key: "Ctrl+R",
+            desc: "Search files by name (Ctrl+R again to cycle)",
+          },
+        ],
+      },
+      {
+        category: "Actions",
+        items: [
+          { key: "Enter", desc: "Execute selected request" },
+          { key: "i", desc: "Inspect request (preview without executing)" },
+          { key: "d", desc: "Duplicate current file" },
+          { key: "s", desc: "Save response to file (timestamp)" },
+          { key: "c", desc: "Copy response body to clipboard" },
+          { key: "r", desc: "Refresh file list" },
+        ],
+      },
+      {
+        category: "Response View",
+        items: [
+          { key: "j/k", desc: "Scroll response down/up" },
+          { key: "Shift+H", desc: "Toggle response headers visibility" },
+          { key: "Shift+B", desc: "Toggle response body visibility" },
+          { key: "f", desc: "Toggle fullscreen mode" },
+        ],
+      },
+      {
+        category: "Profiles & Variables",
+        items: [
+          { key: "p", desc: "Switch profile (cycles through profiles)" },
+          { key: "v", desc: "Open variable editor" },
+          { key: "h", desc: "Open header editor" },
+          { key: "Ctrl+H", desc: "View request history" },
+        ],
+      },
+      {
+        category: "Other",
+        items: [
+          { key: "?", desc: "Show this help (you are here!)" },
+          { key: "ESC", desc: "Clear status / Cancel search or goto" },
+          { key: "q", desc: "Quit" },
+        ],
+      },
+    ];
+
+    // Build all content lines first
+    const contentLines: string[] = [];
+    for (const section of shortcuts) {
+      contentLines.push(`\x1b[1;36m${section.category}:\x1b[0m`);
+      contentLines.push(""); // Empty line
+
+      for (const item of section.items) {
+        const keyPart = `  \x1b[33m${item.key.padEnd(15)}\x1b[0m`;
+        const descPart = item.desc.slice(0, width - 20);
+        contentLines.push(`${keyPart} ${descPart}`);
+      }
+
+      contentLines.push(""); // Empty line between sections
+    }
+
+    // Add footer
+    contentLines.push("");
+    contentLines.push("\x1b[2mPress ESC or ? to close | ↑/↓ to scroll\x1b[0m");
+
+    // Calculate scrolling
+    const maxLines = height - 4; // Reserve space for title and scroll indicator
+    const totalLines = contentLines.length;
+    this.maxHelpScrollOffset = Math.max(0, totalLines - maxLines);
+    const startIndex = Math.max(0, Math.min(this.helpScrollOffset, this.maxHelpScrollOffset));
+
+    // Display content with scrolling
+    let line = 4;
+    for (let i = startIndex; i < contentLines.length && line < height - 1; i++) {
+      this.moveCursor(line++, startCol);
+      this.write(`${contentLines[i]}\x1b[K`);
+    }
+
+    // Show scroll indicator if needed
+    if (totalLines > maxLines) {
+      const scrollProgress = `[${startIndex + 1}-${Math.min(startIndex + maxLines, totalLines)}/${totalLines}]`;
+      this.moveCursor(height - 1, width - scrollProgress.length - 1);
+      this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
+    }
+
+    // Clear remaining lines
+    while (line <= height) {
       this.moveCursor(line++, startCol);
       this.write("\x1b[K");
     }
@@ -897,11 +1191,14 @@ class TUI {
 
     if (this.variableMode) {
       if (this.variableEditMode === "list") {
-        statusText = " [↑↓] Navigate | [A] Add | [E/Enter] Edit | [D] Delete | [ESC] Exit ";
+        statusText =
+          " [↑↓] Navigate | [A] Add | [E/Enter] Edit | [D] Delete | [ESC] Exit ";
       } else if (this.variableEditMode === "add") {
-        statusText = " [Tab] Switch field | [Ctrl+K] Clear | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
+        statusText =
+          " [Tab] Switch field | [Ctrl+K] Clear | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
       } else if (this.variableEditMode === "edit") {
-        statusText = " [Ctrl+K] Clear all | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
+        statusText =
+          " [Ctrl+K] Clear all | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
       } else if (this.variableEditMode === "delete") {
         statusText = " [Y] Confirm Delete | [N] Cancel ";
       } else {
@@ -909,11 +1206,14 @@ class TUI {
       }
     } else if (this.headerMode) {
       if (this.headerEditMode === "list") {
-        statusText = " [↑↓] Navigate | [A] Add | [E/Enter] Edit | [D] Delete | [ESC] Exit ";
+        statusText =
+          " [↑↓] Navigate | [A] Add | [E/Enter] Edit | [D] Delete | [ESC] Exit ";
       } else if (this.headerEditMode === "add") {
-        statusText = " [Tab] Switch field | [Ctrl+K] Clear | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
+        statusText =
+          " [Tab] Switch field | [Ctrl+K] Clear | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
       } else if (this.headerEditMode === "edit") {
-        statusText = " [Ctrl+K] Clear all | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
+        statusText =
+          " [Ctrl+K] Clear all | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
       } else if (this.headerEditMode === "delete") {
         statusText = " [Y] Confirm Delete | [N] Cancel ";
       } else {
@@ -924,17 +1224,21 @@ class TUI {
       if (count === 0) {
         statusText = " [ESC] Exit History ";
       } else {
-        statusText = ` [↑↓] Navigate ${count} entries | [Enter] View response | [ESC] Exit `;
+        statusText =
+          ` [↑↓] Navigate ${count} entries | [Enter] View response | [ESC] Exit `;
       }
     } else if (this.gotoMode) {
-      statusText = ` Go to (hex): :${this.gotoQuery}_ | [Enter] Jump | [ESC] Cancel `;
+      statusText =
+        ` Go to (hex): :${this.gotoQuery}_ | [Enter] Jump | [ESC] Cancel `;
     } else if (this.searchMode) {
       const matchCount = this.searchResults.length;
       const currentMatch = matchCount > 0 ? this.searchResultIndex + 1 : 0;
-      statusText = ` Search: ${this.searchQuery}_ | ${currentMatch}/${matchCount} matches | [Ctrl+R] Next | [ESC] Cancel | [Enter] Select `;
+      statusText =
+        ` Search: ${this.searchQuery}_ | ${currentMatch}/${matchCount} matches | [Ctrl+R] Next | [ESC] Cancel | [Enter] Select `;
     } else {
       const fullscreenHint = this.fullscreenMode ? " [FULLSCREEN] " : "";
-      const help = `${fullscreenHint}[↑↓] Nav | [Enter] Execute | [i] Inspect | [f] Fullscreen | [v] Vars | [h] Headers | [Ctrl+H] History | [d] Dup | [p] Profile | [q] Quit `;
+      const help =
+        `${fullscreenHint}[↑↓] Nav | [Enter] Execute | [i] Inspect | [f] Fullscreen | [v] Vars | [h] Headers | [Ctrl+H] History | [d] Dup | [p] Profile | [q] Quit `;
       statusText = this.statusMessage || help;
     }
 
@@ -951,6 +1255,34 @@ class TUI {
       if (!n) continue;
 
       const input = buf.subarray(0, n);
+
+      // Handle help mode
+      if (this.helpMode) {
+        // ESC or ? to close help
+        if (input.length === 1 && (input[0] === 27 || input[0] === 63)) {
+          this.helpMode = false;
+          this.helpScrollOffset = 0; // Reset scroll
+          this.draw();
+          continue;
+        }
+
+        // Arrow keys for scrolling
+        if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+          if (input[2] === 65) {
+            // Up
+            this.helpScrollOffset = Math.max(0, this.helpScrollOffset - 1);
+            this.draw();
+          } else if (input[2] === 66) {
+            // Down
+            this.helpScrollOffset = Math.min(
+              this.maxHelpScrollOffset,
+              this.helpScrollOffset + 1,
+            );
+            this.draw();
+          }
+        }
+        continue;
+      }
 
       // Handle variable mode
       if (this.variableMode) {
@@ -1017,6 +1349,7 @@ class TUI {
           } else {
             this.selectedIndex--;
           }
+          this.responseScrollOffset = 0; // Reset scroll when changing files
           this.draw();
         } else if (input[2] === 66) {
           // Down
@@ -1025,6 +1358,7 @@ class TUI {
           } else {
             this.selectedIndex++;
           }
+          this.responseScrollOffset = 0; // Reset scroll when changing files
           this.draw();
         }
       } else if (input.length === 4 && input[0] === 27 && input[1] === 91) {
@@ -1035,7 +1369,10 @@ class TUI {
           this.draw();
         } else if (input[2] === 54 && input[3] === 126) {
           // Page Down
-          this.selectedIndex = Math.min(this.files.length - 1, this.selectedIndex + this.pageSize);
+          this.selectedIndex = Math.min(
+            this.files.length - 1,
+            this.selectedIndex + this.pageSize,
+          );
           this.draw();
         }
       } else if (input.length === 1) {
@@ -1064,6 +1401,39 @@ class TUI {
           this.enterHeaderMode();
         } else if (char === "f") {
           this.toggleFullscreen();
+        } else if (char === "j") {
+          // Scroll response down
+          if (this.response && this.response.body) {
+            this.responseScrollOffset = Math.min(
+              this.maxResponseScrollOffset,
+              this.responseScrollOffset + 1,
+            );
+            this.draw();
+          }
+        } else if (char === "k") {
+          // Scroll response up
+          if (this.response && this.response.body) {
+            this.responseScrollOffset = Math.max(
+              0,
+              this.responseScrollOffset - 1,
+            );
+            this.draw();
+          }
+        } else if (char === "H") {
+          // Toggle response headers visibility
+          this.showResponseHeaders = !this.showResponseHeaders;
+          this.draw();
+        } else if (char === "B") {
+          // Toggle response body visibility
+          this.showResponseBody = !this.showResponseBody;
+          this.draw();
+        } else if (char === "?") {
+          // Toggle help modal
+          this.helpMode = !this.helpMode;
+          if (this.helpMode) {
+            this.helpScrollOffset = 0; // Reset scroll when opening
+          }
+          this.draw();
         }
       }
     }
@@ -1073,7 +1443,8 @@ class TUI {
     // Ctrl+R - cycle through results
     if (input.length === 1 && input[0] === 18) {
       if (this.searchResults.length > 0) {
-        this.searchResultIndex = (this.searchResultIndex + 1) % this.searchResults.length;
+        this.searchResultIndex = (this.searchResultIndex + 1) %
+          this.searchResults.length;
         this.selectedIndex = this.searchResults[this.searchResultIndex];
         this.draw();
       }
@@ -1178,9 +1549,11 @@ class TUI {
     // Hex characters: 0-9, A-F, a-f
     if (input.length === 1) {
       const char = String.fromCharCode(input[0]);
-      if ((input[0] >= 48 && input[0] <= 57) || // 0-9
-          (input[0] >= 65 && input[0] <= 70) || // A-F
-          (input[0] >= 97 && input[0] <= 102)) { // a-f
+      if (
+        (input[0] >= 48 && input[0] <= 57) || // 0-9
+        (input[0] >= 65 && input[0] <= 70) || // A-F
+        (input[0] >= 97 && input[0] <= 102)
+      ) { // a-f
         this.gotoQuery += char.toUpperCase();
         this.draw();
       }
@@ -1238,7 +1611,10 @@ class TUI {
           this.draw();
         } else if (input[2] === 66) {
           // Down
-          this.variableIndex = Math.min(varEntries.length, this.variableIndex + 1);
+          this.variableIndex = Math.min(
+            varEntries.length,
+            this.variableIndex + 1,
+          );
           this.draw();
         }
         return;
@@ -1274,9 +1650,10 @@ class TUI {
           }
         }
       }
-    }
-    // In add/edit mode
-    else if (this.variableEditMode === "add" || this.variableEditMode === "edit") {
+    } // In add/edit mode
+    else if (
+      this.variableEditMode === "add" || this.variableEditMode === "edit"
+    ) {
       // Ctrl+K - clear entire value
       if (input.length === 1 && input[0] === 11) {
         if (this.variableEditMode === "edit") {
@@ -1310,7 +1687,9 @@ class TUI {
       // Tab - switch between key and value fields (only in add mode)
       if (input.length === 1 && input[0] === 9) {
         if (this.variableEditMode === "add") {
-          this.variableEditField = this.variableEditField === "key" ? "value" : "key";
+          this.variableEditField = this.variableEditField === "key"
+            ? "value"
+            : "key";
           this.draw();
         }
         return;
@@ -1319,9 +1698,13 @@ class TUI {
       // Enter - save
       if (input.length === 1 && input[0] === 13) {
         if (this.variableEditKey.trim()) {
-          this.sessionManager.setProfileVariable(this.variableEditKey.trim(), this.variableEditValue);
+          this.sessionManager.setProfileVariable(
+            this.variableEditKey.trim(),
+            this.variableEditValue,
+          );
           await this.sessionManager.saveProfiles();
-          this.statusMessage = ` Variable '${this.variableEditKey}' saved to profile `;
+          this.statusMessage =
+            ` Variable '${this.variableEditKey}' saved to profile `;
           this.variableEditMode = "list";
           this.draw();
         }
@@ -1338,10 +1721,15 @@ class TUI {
           }
         } else {
           // In add mode, respect the current field
-          if (this.variableEditField === "key" && this.variableEditKey.length > 0) {
+          if (
+            this.variableEditField === "key" && this.variableEditKey.length > 0
+          ) {
             this.variableEditKey = this.variableEditKey.slice(0, -1);
             this.draw();
-          } else if (this.variableEditField === "value" && this.variableEditValue.length > 0) {
+          } else if (
+            this.variableEditField === "value" &&
+            this.variableEditValue.length > 0
+          ) {
             this.variableEditValue = this.variableEditValue.slice(0, -1);
             this.draw();
           }
@@ -1372,8 +1760,7 @@ class TUI {
       if (hasValidChars) {
         this.draw();
       }
-    }
-    // In delete confirmation mode
+    } // In delete confirmation mode
     else if (this.variableEditMode === "delete") {
       if (input.length === 1) {
         const char = String.fromCharCode(input[0]).toLowerCase();
@@ -1382,7 +1769,8 @@ class TUI {
           // Confirm delete
           this.sessionManager.deleteProfileVariable(this.variableEditKey);
           await this.sessionManager.saveProfiles();
-          this.statusMessage = ` Variable '${this.variableEditKey}' deleted from profile `;
+          this.statusMessage =
+            ` Variable '${this.variableEditKey}' deleted from profile `;
           this.variableEditMode = "list";
           this.variableIndex = Math.max(0, this.variableIndex - 1);
           this.draw();
@@ -1432,7 +1820,9 @@ class TUI {
       this.statusMessage = "";
       this.draw();
     } catch (error) {
-      this.statusMessage = ` Error loading history: ${error instanceof Error ? error.message : String(error)} `;
+      this.statusMessage = ` Error loading history: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
       this.draw();
     }
   }
@@ -1467,7 +1857,10 @@ class TUI {
         this.draw();
       } else if (input[2] === 66) {
         // Down
-        this.historyIndex = Math.min(this.historyEntries.length - 1, this.historyIndex + 1);
+        this.historyIndex = Math.min(
+          this.historyEntries.length - 1,
+          this.historyIndex + 1,
+        );
         this.draw();
       }
       return;
@@ -1482,10 +1875,13 @@ class TUI {
           status: entry.responseStatus,
           statusText: entry.responseStatusText,
           headers: entry.responseHeaders,
-          body: entry.responseBody,
+          body: this.beautifyJson(entry.responseBody),
           duration: entry.duration,
+          requestSize: entry.requestSize || 0,
+          responseSize: entry.responseSize || 0,
           error: entry.error,
         };
+        this.responseScrollOffset = 0; // Reset scroll for new response
         this.exitHistoryMode();
       }
       return;
@@ -1512,7 +1908,10 @@ class TUI {
           this.draw();
         } else if (input[2] === 66) {
           // Down
-          this.headerIndex = Math.min(headerEntries.length, this.headerIndex + 1);
+          this.headerIndex = Math.min(
+            headerEntries.length,
+            this.headerIndex + 1,
+          );
           this.draw();
         }
         return;
@@ -1548,8 +1947,7 @@ class TUI {
           }
         }
       }
-    }
-    // In add/edit mode
+    } // In add/edit mode
     else if (this.headerEditMode === "add" || this.headerEditMode === "edit") {
       // Ctrl+K - clear entire value
       if (input.length === 1 && input[0] === 11) {
@@ -1584,7 +1982,9 @@ class TUI {
       // Tab - switch between key and value fields (only in add mode)
       if (input.length === 1 && input[0] === 9) {
         if (this.headerEditMode === "add") {
-          this.headerEditField = this.headerEditField === "key" ? "value" : "key";
+          this.headerEditField = this.headerEditField === "key"
+            ? "value"
+            : "key";
           this.draw();
         }
         return;
@@ -1593,9 +1993,13 @@ class TUI {
       // Enter - save
       if (input.length === 1 && input[0] === 13) {
         if (this.headerEditKey.trim()) {
-          this.sessionManager.setProfileHeader(this.headerEditKey.trim(), this.headerEditValue);
+          this.sessionManager.setProfileHeader(
+            this.headerEditKey.trim(),
+            this.headerEditValue,
+          );
           await this.sessionManager.saveProfiles();
-          this.statusMessage = ` Header '${this.headerEditKey}' saved to profile `;
+          this.statusMessage =
+            ` Header '${this.headerEditKey}' saved to profile `;
           this.headerEditMode = "list";
           this.draw();
         }
@@ -1615,7 +2019,9 @@ class TUI {
           if (this.headerEditField === "key" && this.headerEditKey.length > 0) {
             this.headerEditKey = this.headerEditKey.slice(0, -1);
             this.draw();
-          } else if (this.headerEditField === "value" && this.headerEditValue.length > 0) {
+          } else if (
+            this.headerEditField === "value" && this.headerEditValue.length > 0
+          ) {
             this.headerEditValue = this.headerEditValue.slice(0, -1);
             this.draw();
           }
@@ -1646,8 +2052,7 @@ class TUI {
       if (hasValidChars) {
         this.draw();
       }
-    }
-    // In delete confirmation mode
+    } // In delete confirmation mode
     else if (this.headerEditMode === "delete") {
       if (input.length === 1) {
         const char = String.fromCharCode(input[0]).toLowerCase();
@@ -1656,7 +2061,8 @@ class TUI {
           // Confirm delete
           this.sessionManager.deleteProfileHeader(this.headerEditKey);
           await this.sessionManager.saveProfiles();
-          this.statusMessage = ` Header '${this.headerEditKey}' deleted from profile `;
+          this.statusMessage =
+            ` Header '${this.headerEditKey}' deleted from profile `;
           this.headerEditMode = "list";
           this.headerIndex = Math.max(0, this.headerIndex - 1);
           this.draw();
@@ -1691,7 +2097,19 @@ class TUI {
       const variables = this.sessionManager.getVariables();
       const profileHeaders = this.sessionManager.getActiveHeaders();
 
-      this.response = await this.executor.execute(request, variables, profileHeaders);
+      this.response = await this.executor.execute(
+        request,
+        variables,
+        profileHeaders,
+      );
+
+      // Beautify JSON response body
+      if (this.response && this.response.body) {
+        this.response.body = this.beautifyJson(this.response.body);
+      }
+
+      // Reset scroll offset for new response
+      this.responseScrollOffset = 0;
 
       // Save to history if enabled
       if (this.sessionManager.isHistoryEnabled()) {
@@ -1712,6 +2130,8 @@ class TUI {
             responseHeaders: this.response.headers,
             responseBody: this.response.body,
             duration: this.response.duration,
+            requestSize: this.response.requestSize,
+            responseSize: this.response.responseSize,
             error: this.response.error,
           });
         } catch (historyError) {
@@ -1724,7 +2144,9 @@ class TUI {
       try {
         const json = JSON.parse(this.response.body);
         if (json.token) this.sessionManager.setVariable("token", json.token);
-        if (json.accessToken) this.sessionManager.setVariable("token", json.accessToken);
+        if (json.accessToken) {
+          this.sessionManager.setVariable("token", json.accessToken);
+        }
         await this.sessionManager.save();
       } catch {
         // Not JSON or no token
@@ -1733,7 +2155,9 @@ class TUI {
       this.statusMessage = "";
       this.draw();
     } catch (error) {
-      this.statusMessage = ` Error: ${error instanceof Error ? error.message : String(error)} `;
+      this.statusMessage = ` Error: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
       this.draw();
     }
   }
@@ -1757,11 +2181,13 @@ class TUI {
       const content = await Deno.readTextFile(file.path);
       await Deno.writeTextFile(newPath, content);
       await this.loadFiles();
-      this.selectedIndex = this.files.findIndex(f => f.path === newPath);
+      this.selectedIndex = this.files.findIndex((f) => f.path === newPath);
       this.statusMessage = ` Duplicated to ${path.basename(newPath)} `;
       this.draw();
     } catch (error) {
-      this.statusMessage = ` Error duplicating: ${error instanceof Error ? error.message : String(error)} `;
+      this.statusMessage = ` Error duplicating: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
       this.draw();
     }
   }
@@ -1770,14 +2196,17 @@ class TUI {
     const profiles = this.sessionManager.getProfiles();
 
     if (profiles.length === 0) {
-      this.statusMessage = " No profiles available. Add them to .profiles.json ";
+      this.statusMessage =
+        " No profiles available. Add them to .profiles.json ";
       this.draw();
       return;
     }
 
     // Simple profile selection (cycle through)
     const current = this.sessionManager.getActiveProfile();
-    const currentIdx = current ? profiles.findIndex(p => p.name === current.name) : -1;
+    const currentIdx = current
+      ? profiles.findIndex((p) => p.name === current.name)
+      : -1;
     const nextIdx = (currentIdx + 1) % profiles.length;
 
     this.sessionManager.setActiveProfile(profiles[nextIdx].name);
@@ -1793,7 +2222,9 @@ class TUI {
     await this.loadFiles();
     this.selectedIndex = 0; // Reset selection
 
-    this.statusMessage = ` Switched to profile: ${profiles[nextIdx].name} (session cleared) `;
+    this.statusMessage = ` Switched to profile: ${
+      profiles[nextIdx].name
+    } (session cleared) `;
     this.draw();
   }
 
@@ -1805,9 +2236,12 @@ class TUI {
     }
 
     try {
-      const timestamp = new Date().toISOString().replace(/:/g, "-").split(".")[0];
+      const timestamp =
+        new Date().toISOString().replace(/:/g, "-").split(".")[0];
       const inspectionMode = (this.response as any).inspectionMode;
-      const filename = inspectionMode ? `inspection-${timestamp}.txt` : `response-${timestamp}.txt`;
+      const filename = inspectionMode
+        ? `inspection-${timestamp}.txt`
+        : `response-${timestamp}.txt`;
 
       let content = "";
 
@@ -1830,7 +2264,8 @@ class TUI {
           content += this.response.body;
         }
       } else {
-        content += `Status: ${this.response.status} ${this.response.statusText}\n`;
+        content +=
+          `Status: ${this.response.status} ${this.response.statusText}\n`;
         content += `Duration: ${Math.round(this.response.duration)}ms\n\n`;
 
         if (this.response.error) {
@@ -1854,7 +2289,9 @@ class TUI {
       this.statusMessage = ` Saved to ${filename} `;
       this.draw();
     } catch (error) {
-      this.statusMessage = ` Error saving: ${error instanceof Error ? error.message : String(error)} `;
+      this.statusMessage = ` Error saving: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
       this.draw();
     }
   }
@@ -1902,7 +2339,9 @@ class TUI {
         : " Response body copied to clipboard ";
       this.draw();
     } catch (error) {
-      this.statusMessage = ` Error copying: ${error instanceof Error ? error.message : String(error)} `;
+      this.statusMessage = ` Error copying: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
       this.draw();
     }
   }
@@ -1947,15 +2386,18 @@ class TUI {
           name: request.name || "Unnamed Request",
           method: substituted.method,
           url: substituted.url,
-        }
+        },
       };
 
       // Store as response to display it
       this.response = inspection as any;
-      this.statusMessage = " [Inspection Mode] Press Enter to execute, ESC to clear ";
+      this.statusMessage =
+        " [Inspection Mode] Press Enter to execute, ESC to clear ";
       this.draw();
     } catch (error) {
-      this.statusMessage = ` Error inspecting: ${error instanceof Error ? error.message : String(error)} `;
+      this.statusMessage = ` Error inspecting: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
       this.draw();
     }
   }
@@ -1966,11 +2408,16 @@ class TUI {
 
     try {
       await this.loadFiles();
-      this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.files.length - 1));
+      this.selectedIndex = Math.min(
+        this.selectedIndex,
+        Math.max(0, this.files.length - 1),
+      );
       this.statusMessage = ` Refreshed - ${this.files.length} file(s) found `;
       this.draw();
     } catch (error) {
-      this.statusMessage = ` Error refreshing: ${error instanceof Error ? error.message : String(error)} `;
+      this.statusMessage = ` Error refreshing: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
       this.draw();
     }
   }
@@ -2000,7 +2447,193 @@ class TUI {
   }
 }
 
+/**
+ * CLI runner for executing HTTP requests without TUI
+ * Usage: restcli <path-to-http-file> [--profile <profile-name>]
+ */
+async function runCLI() {
+  const args = Deno.args;
+
+  // Parse command line arguments
+  let filePath = "";
+  let profileOverride: string | null = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--profile" || arg === "-p") {
+      if (i + 1 < args.length) {
+        profileOverride = args[i + 1];
+        i++; // Skip next arg
+      } else {
+        console.error("Error: --profile requires a profile name");
+        Deno.exit(1);
+      }
+    } else if (!filePath) {
+      filePath = arg;
+    }
+  }
+
+  if (!filePath) {
+    console.error("Error: No file path specified");
+    Deno.exit(1);
+  }
+
+  try {
+    // Check if config directory exists, use it if available
+    const configManager = new ConfigManager();
+    const isInitialized = await configManager.isInitialized();
+
+    let baseDir = ".";
+    if (isInitialized) {
+      baseDir = configManager.getConfigDir();
+    }
+
+    // Load session
+    const sessionManager = new SessionManager(baseDir);
+    await sessionManager.load();
+
+    // Override profile if specified
+    if (profileOverride) {
+      const profiles = sessionManager.getProfiles();
+      const profile = profiles.find((p) => p.name === profileOverride);
+      if (!profile) {
+        console.error(`Error: Profile "${profileOverride}" not found`);
+        console.error("Available profiles:");
+        profiles.forEach((p) => console.error(`  - ${p.name}`));
+        Deno.exit(1);
+      }
+      sessionManager.setActiveProfile(profileOverride);
+      console.log(`Using profile: ${profileOverride}\n`);
+    }
+
+    // Read and parse file
+    const content = await Deno.readTextFile(filePath);
+    const parsed = parseHttpFile(content);
+
+    if (parsed.requests.length === 0) {
+      console.error("No requests found in file");
+      Deno.exit(1);
+    }
+
+    console.log(`Found ${parsed.requests.length} request(s) in ${filePath}\n`);
+
+    // Execute first request
+    const request = parsed.requests[0];
+    console.log(`Executing: ${request.name || "Unnamed Request"}`);
+    console.log(`${request.method} ${request.url}\n`);
+
+    const executor = new RequestExecutor();
+    const variables = sessionManager.getVariables();
+    const profileHeaders = sessionManager.getActiveHeaders();
+
+    const result = await executor.execute(request, variables, profileHeaders);
+
+    // Save to history if enabled
+    if (sessionManager.isHistoryEnabled()) {
+      const historyManager = new HistoryManager(baseDir);
+      const substituted = applyVariables(request, variables);
+      const mergedHeaders = { ...profileHeaders, ...substituted.headers };
+
+      const historyPath = await historyManager.save({
+        timestamp: new Date().toISOString(),
+        requestFile: filePath,
+        requestName: request.name,
+        method: substituted.method,
+        url: substituted.url,
+        headers: mergedHeaders,
+        body: substituted.body,
+        responseStatus: result.status,
+        responseStatusText: result.statusText,
+        responseHeaders: result.headers,
+        responseBody: result.body,
+        duration: result.duration,
+        requestSize: result.requestSize,
+        responseSize: result.responseSize,
+        error: result.error,
+      });
+      console.log(`📝 History saved to: ${historyPath}\n`);
+    }
+
+    // Display result
+    if (result.error) {
+      console.error(`❌ Error: ${result.error}`);
+      Deno.exit(1);
+    }
+
+    const statusColor = result.status >= 200 && result.status < 300
+      ? "\x1b[32m"
+      : result.status >= 400
+      ? "\x1b[31m"
+      : "\x1b[33m";
+
+    // Helper function to format bytes
+    function formatBytes(bytes: number): string {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + " " + sizes[i];
+    }
+
+    console.log(
+      `${statusColor}${result.status} ${result.statusText}\x1b[0m | ${
+        Math.round(result.duration)
+      }ms | Req: ${formatBytes(result.requestSize)} | Res: ${
+        formatBytes(result.responseSize)
+      }\n`,
+    );
+
+    console.log("Headers:");
+    for (const [key, value] of Object.entries(result.headers)) {
+      console.log(`  ${key}: ${value}`);
+    }
+
+    console.log("\nBody:");
+    // Try to beautify JSON
+    try {
+      const json = JSON.parse(result.body);
+      console.log(JSON.stringify(json, null, 2));
+    } catch {
+      console.log(result.body);
+    }
+
+    // Try to extract token
+    try {
+      const json = JSON.parse(result.body);
+      if (json.token) {
+        sessionManager.setVariable("token", json.token);
+        await sessionManager.save();
+        console.log("\n✓ Saved token to session");
+      }
+      if (json.accessToken) {
+        sessionManager.setVariable("token", json.accessToken);
+        await sessionManager.save();
+        console.log("\n✓ Saved accessToken to session");
+      }
+    } catch {
+      // Not JSON or no token
+    }
+  } catch (error) {
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    Deno.exit(1);
+  }
+}
+
 if (import.meta.main) {
-  const tui = new TUI();
-  await tui.start();
+  // Check if we should run in CLI mode or TUI mode
+  const args = Deno.args;
+
+  // If args exist and first arg is not a flag, it's a file path → CLI mode
+  if (args.length > 0 && !args[0].startsWith("-")) {
+    await runCLI();
+  } else if (args.length > 0 && (args[0] === "--profile" || args[0] === "-p")) {
+    // Profile flag with file → CLI mode
+    await runCLI();
+  } else {
+    // No args or just flags → TUI mode
+    const tui = new TUI();
+    await tui.start();
+  }
 }

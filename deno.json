@@ -5,7 +5,7 @@
     "curl2http": "deno run --allow-read --allow-write --allow-env scripts/curl2http.ts",
     "init": "deno run --allow-read --allow-write --allow-env src/init.ts",
     "build": "deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli src/tui.ts",
-    "build:all": "deno task build && deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-run src/run.ts && deno compile --allow-read --allow-write --allow-env --output bin/restcli-curl2http scripts/curl2http.ts"
+    "build:all": "deno task build && deno compile --allow-read --allow-write --allow-env --output bin/restcli-curl2http scripts/curl2http.ts"
   },
   "imports": {
     "@std/fmt": "jsr:@std/fmt@1",

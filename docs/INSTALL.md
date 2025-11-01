@@ -23,8 +23,7 @@ deno task build:all
 chmod +x bin/restcli*
 
 # This creates:
-# - restcli          (TUI)
-# - restcli-run      (CLI runner)
+# - restcli          (TUI & CLI runner)
 # - restcli-curl2http (cURL converter)
 
 # Move to your PATH (optional)
@@ -32,7 +31,6 @@ sudo mv bin/restcli* /usr/local/bin/
 
 # Or create symlinks
 ln -s $(pwd)/bin/restcli /usr/local/bin/restcli
-ln -s $(pwd)/bin/restcli-run /usr/local/bin/restcli-run
 ln -s $(pwd)/bin/restcli-curl2http /usr/local/bin/restcli-curl2http
 ```
 
@@ -150,8 +148,7 @@ deno task build:all
 chmod +x bin/restcli*
 
 # Or build individually
-deno task build  # Just the TUI
-deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output restcli-run src/run.ts
+deno task build  # Just the TUI & CLI
 deno compile --allow-read --allow-write --allow-env --output restcli-curl2http scripts/curl2http.ts
 ```
 
@@ -184,7 +181,7 @@ rm restcli*
 ## Troubleshooting
 
 ### "No such device" error
-This happens when running in non-interactive mode (background, piped, etc.). The TUI requires a terminal. Use `restcli-run` for scripting instead.
+This happens when running in non-interactive mode (background, piped, etc.). The TUI requires a terminal. Use `restcli` with a filepath for scripting instead.
 
 ### Config not found
 If `~/.restcli/` exists but seems empty:

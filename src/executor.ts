@@ -6,6 +6,8 @@ export interface RequestResult {
   headers: Record<string, string>;
   body: string;
   duration: number;
+  requestSize: number; // Size of request body in bytes
+  responseSize: number; // Size of response body in bytes
   error?: string;
 }
 
@@ -54,12 +56,18 @@ export class RequestExecutor {
       // Get body
       const body = await response.text();
 
+      // Calculate sizes
+      const requestSize = substituted.body ? new TextEncoder().encode(substituted.body).length : 0;
+      const responseSize = new TextEncoder().encode(body).length;
+
       return {
         status: response.status,
         statusText: response.statusText,
         headers: responseHeaders,
         body,
         duration,
+        requestSize,
+        responseSize,
       };
     } catch (error) {
       const duration = performance.now() - start;
@@ -69,6 +77,8 @@ export class RequestExecutor {
         headers: {},
         body: "",
         duration,
+        requestSize: 0,
+        responseSize: 0,
         error: error instanceof Error ? error.message : String(error),
       };
     }

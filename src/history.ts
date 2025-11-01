@@ -14,6 +14,8 @@ export interface HistoryEntry {
   responseHeaders: Record<string, string>;
   responseBody: string;
   duration: number;
+  requestSize?: number; // Optional for backward compatibility
+  responseSize?: number; // Optional for backward compatibility
   error?: string;
 }
 

@@ -23,9 +23,6 @@ jobs:
       - name: Compile TUI
         run: "deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-${{ matrix.platform }} src/tui.ts"
 
-      - name: Compile CLI
-        run: "deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-run-${{ matrix.platform }} src/run.ts"
-
       - name: Compile curl2http
         run: "deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-curl2http-${{ matrix.platform }} scripts/curl2http.ts"
 
@@ -35,5 +32,4 @@ jobs:
         with:
           files: |
             bin/restcli-${{ matrix.platform }}
-            bin/restcli-run-${{ matrix.platform }}
             bin/restcli-curl2http-${{ matrix.platform }}

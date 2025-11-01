@@ -14,6 +14,8 @@ A simple, keyboard-driven TUI for testing HTTP endpoints without the bloat of GU
 - 🏠 Global config directory (`~/.restcli/`) - use from anywhere
 - 🔨 Compiled binaries - no runtime dependencies
 - 🧾 YAML format support with JSON schema for autocomplete
+- ✨ JSON response beautification (automatic pretty-printing)
+- 📄 Response scrolling with vim-style j/k keys
 
 ## Quick Start
 
@@ -161,6 +163,8 @@ Press `p` in the TUI to cycle through profiles.
 - `r` - Refresh file list
 - `p` - Switch profile (cycles through profiles)
 - `v` - Open variable editor (add, edit, delete variables)
+- `j` - Scroll response down (useful for long JSON responses)
+- `k` - Scroll response up
 
 ### Utilities
 - `ESC` - Clear status message / Cancel search or goto
