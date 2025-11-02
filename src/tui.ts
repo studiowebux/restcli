@@ -68,6 +68,8 @@ class TUI {
   private oauthConfigIndex = 0; // Current field index in OAuth config
   private oauthConfigEditField = ""; // Current field being edited
   private oauthConfigEditValue = ""; // Current value being edited
+  private editorConfigMode = false; // Editor configuration modal
+  private editorConfigValue = ""; // Editor command being edited
 
   constructor() {
     this.sessionManager = new SessionManager();
@@ -525,6 +527,12 @@ class TUI {
     // Check if in OAuth config mode
     if (this.oauthConfigMode) {
       this.drawOAuthConfigEditor(startCol, width, height);
+      return;
+    }
+
+    // Check if in editor config mode
+    if (this.editorConfigMode) {
+      this.drawEditorConfigModal(startCol, width, height);
       return;
     }
 
@@ -1169,6 +1177,76 @@ class TUI {
     }
   }
 
+  private drawEditorConfigModal(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
+    this.moveCursor(2, startCol);
+    const activeProfile = this.sessionManager.getActiveProfile();
+    const profileName = activeProfile ? activeProfile.name : "No Profile";
+    const title = ` Editor Configuration (${profileName}) `;
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    let line = 3;
+    const profile = activeProfile;
+    if (!profile) {
+      this.moveCursor(line++, startCol);
+      this.write("\x1b[31mNo active profile\x1b[0m\x1b[K");
+      return;
+    }
+
+    this.moveCursor(line++, startCol);
+    this.write("\x1b[K");
+    line++;
+
+    // Show current editor
+    const currentEditor = this.sessionManager.getEditor();
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[1mCurrent Editor:\x1b[0m\x1b[K`);
+    this.moveCursor(line++, startCol);
+    if (currentEditor) {
+      this.write(`  \x1b[32m${currentEditor}\x1b[0m\x1b[K`);
+    } else {
+      this.write(`  \x1b[2m(not set)\x1b[0m\x1b[K`);
+    }
+    line++;
+
+    // Show input field
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[1mNew Editor Command:\x1b[0m\x1b[K`);
+    this.moveCursor(line++, startCol);
+    const valueLabel = "  ";
+    const maxValueWidth = width - valueLabel.length - 2;
+    const valueWithCursor = this.editorConfigValue + "_";
+    const valueDisplay = valueWithCursor.length > maxValueWidth
+      ? valueWithCursor.slice(-maxValueWidth)
+      : valueWithCursor;
+    this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+    line++;
+
+    // Show examples
+    line++;
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[2mExamples:\x1b[0m\x1b[K`);
+    this.moveCursor(line++, startCol);
+    this.write(`  \x1b[33mzed\x1b[0m      - Zed editor\x1b[K`);
+    this.moveCursor(line++, startCol);
+    this.write(`  \x1b[33mcode\x1b[0m     - VS Code\x1b[K`);
+    this.moveCursor(line++, startCol);
+    this.write(`  \x1b[33mvim\x1b[0m      - Vim\x1b[K`);
+    this.moveCursor(line++, startCol);
+    this.write(`  \x1b[33mnvim\x1b[0m     - Neovim\x1b[K`);
+    this.moveCursor(line++, startCol);
+    this.write(`  \x1b[33msubl\x1b[0m     - Sublime Text\x1b[K`);
+
+    // Clear remaining lines
+    for (let i = line; i < height - 2; i++) {
+      this.moveCursor(i, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
   private drawHistoryViewer(
     startCol: number,
     width: number,
@@ -1298,6 +1376,8 @@ class TUI {
         items: [
           { key: "Enter", desc: "Execute selected request" },
           { key: "i", desc: "Inspect request (preview without executing)" },
+          { key: "x", desc: "Open file in external editor (from profile)" },
+          { key: "X", desc: "Configure external editor for active profile" },
           { key: "d", desc: "Duplicate current file" },
           { key: "s", desc: "Save response to file (timestamp)" },
           { key: "c", desc: "Copy response body to clipboard" },
@@ -2014,6 +2094,9 @@ class TUI {
         statusText =
           " [↑↓] Navigate | [E/Enter] Edit (boolean: toggle) | [D] Delete | [ESC] Exit ";
       }
+    } else if (this.editorConfigMode) {
+      statusText =
+        " [Ctrl+K] Clear all | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
     } else if (this.documentationMode) {
       statusText =
         " [↑↓/PgUp/PgDn] Navigate | [Space] Expand/Collapse | [m/ESC] Close ";
@@ -2172,6 +2255,12 @@ class TUI {
         continue;
       }
 
+      // Handle editor config mode
+      if (this.editorConfigMode) {
+        await this.handleEditorConfigInput(input);
+        continue;
+      }
+
       // Handle history mode
       if (this.historyMode) {
         await this.handleHistoryInput(input);
@@ -2320,6 +2409,12 @@ class TUI {
             this.initializeCollapsedFields();
           }
           this.draw();
+        } else if (char === "x") {
+          // Open file in external editor
+          await this.openInEditor();
+        } else if (char === "X") {
+          // Configure editor for active profile
+          this.enterEditorConfigMode();
         } else if (char === "o") {
           // Start OAuth flow
           await this.startOAuthFlow();
@@ -3084,6 +3179,44 @@ class TUI {
     }
   }
 
+  async openInEditor(): Promise<void> {
+    if (this.selectedIndex >= this.files.length) return;
+
+    const file = this.files[this.selectedIndex];
+    const editor = this.sessionManager.getEditor();
+
+    if (!editor) {
+      this.statusMessage =
+        " No editor configured. Add 'editor' field to profile in .profiles.json ";
+      this.draw();
+      return;
+    }
+
+    try {
+      // Launch editor as a background process
+      const command = new Deno.Command(editor, {
+        args: [file.path],
+        stdout: "null",
+        stderr: "null",
+      });
+
+      const child = command.spawn();
+
+      // Don't wait for the editor to close
+      child.status.catch(() => {
+        // Ignore errors from the background process
+      });
+
+      this.statusMessage = ` Opened ${file.name} in ${editor} `;
+      this.draw();
+    } catch (error) {
+      this.statusMessage = ` Error opening editor: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
+      this.draw();
+    }
+  }
+
   async selectProfile(): Promise<void> {
     const profiles = this.sessionManager.getProfiles();
 
@@ -3212,6 +3345,25 @@ class TUI {
     this.oauthConfigIndex = 0;
     this.oauthConfigEditField = "";
     this.oauthConfigEditValue = "";
+    this.draw();
+  }
+
+  enterEditorConfigMode(): void {
+    const profile = this.sessionManager.getActiveProfile();
+    if (!profile) {
+      this.statusMessage = " No active profile. Press [p] to select a profile ";
+      this.draw();
+      return;
+    }
+
+    this.editorConfigMode = true;
+    this.editorConfigValue = this.sessionManager.getEditor() || "";
+    this.draw();
+  }
+
+  exitEditorConfigMode(): void {
+    this.editorConfigMode = false;
+    this.editorConfigValue = "";
     this.draw();
   }
 
@@ -3390,6 +3542,72 @@ class TUI {
       if (hasValidChars) {
         this.draw();
       }
+    }
+  }
+
+  async handleEditorConfigInput(input: Uint8Array): Promise<void> {
+    // ESC - exit editor config mode
+    if (input.length === 1 && input[0] === 27) {
+      this.exitEditorConfigMode();
+      return;
+    }
+
+    const profile = this.sessionManager.getActiveProfile();
+    if (!profile) {
+      this.exitEditorConfigMode();
+      return;
+    }
+
+    // Enter - save
+    if (input.length === 1 && input[0] === 13) {
+      if (this.editorConfigValue.trim()) {
+        profile.editor = this.editorConfigValue.trim();
+        await this.sessionManager.saveProfiles();
+        this.statusMessage = ` Editor set to '${this.editorConfigValue.trim()}' `;
+      } else {
+        // Empty value clears the editor
+        delete profile.editor;
+        await this.sessionManager.saveProfiles();
+        this.statusMessage = " Editor configuration cleared ";
+      }
+      this.exitEditorConfigMode();
+      return;
+    }
+
+    // Backspace
+    if (input.length === 1 && input[0] === 127) {
+      if (this.editorConfigValue.length > 0) {
+        this.editorConfigValue = this.editorConfigValue.slice(0, -1);
+        this.draw();
+      }
+      return;
+    }
+
+    // Ctrl+K - clear entire value
+    if (input.length === 1 && input[0] === 11) {
+      this.editorConfigValue = "";
+      this.draw();
+      return;
+    }
+
+    // Option+Delete (macOS) or Alt+Backspace - delete previous word
+    if (input.length === 2 && input[0] === 27 && input[1] === 127) {
+      this.editorConfigValue = this.deleteLastWord(this.editorConfigValue);
+      this.draw();
+      return;
+    }
+
+    // Printable characters (handles paste)
+    let hasValidChars = false;
+    for (let i = 0; i < input.length; i++) {
+      if (input[i] >= 32 && input[i] <= 126) {
+        const char = String.fromCharCode(input[i]);
+        hasValidChars = true;
+        this.editorConfigValue += char;
+      }
+    }
+    if (hasValidChars) {
+      this.draw();
     }
   }
 

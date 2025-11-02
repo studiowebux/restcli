@@ -14,6 +14,7 @@ export interface HeaderProfile {
   variables?: Record<string, string>;
   workdir?: string; // Custom working directory for this profile
   oauth?: OAuthConfig; // OAuth configuration
+  editor?: string; // External editor command (e.g., "code", "zed", "vim")
 }
 
 export class SessionManager {
@@ -204,6 +205,15 @@ export class SessionManager {
 
     // Make it absolute relative to baseDir
     return path.join(this.baseDir, relativeWorkdir);
+  }
+
+  /**
+   * Get configured editor for the active profile
+   * Returns undefined if no editor is configured
+   */
+  getEditor(): string | undefined {
+    const profile = this.getActiveProfile();
+    return profile?.editor;
   }
 
   /**
