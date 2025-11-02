@@ -43,12 +43,16 @@ class TUI {
   private variableEditKey = "";
   private variableEditValue = "";
   private variableEditField: "key" | "value" = "key";
+  private variableEditKeyCursor = 0; // Cursor position in key field
+  private variableEditValueCursor = 0; // Cursor position in value field
   private headerMode = false;
   private headerIndex = 0;
   private headerEditMode: "list" | "add" | "edit" | "delete" = "list";
   private headerEditKey = "";
   private headerEditValue = "";
   private headerEditField: "key" | "value" = "key";
+  private headerEditKeyCursor = 0; // Cursor position in key field
+  private headerEditValueCursor = 0; // Cursor position in value field
   private responseScrollOffset = 0; // For scrolling through response body
   private maxResponseScrollOffset = 0; // Maximum scroll offset for response body
   private showResponseHeaders = true; // Toggle response headers visibility
@@ -68,8 +72,10 @@ class TUI {
   private oauthConfigIndex = 0; // Current field index in OAuth config
   private oauthConfigEditField = ""; // Current field being edited
   private oauthConfigEditValue = ""; // Current value being edited
+  private oauthConfigEditCursor = 0; // Cursor position in OAuth config value field
   private editorConfigMode = false; // Editor configuration modal
   private editorConfigValue = ""; // Editor command being edited
+  private editorConfigCursor = 0; // Cursor position in editor config field
 
   constructor() {
     this.sessionManager = new SessionManager();
@@ -192,6 +198,60 @@ class TUI {
 
     // If no word boundary found, clear everything
     return "";
+  }
+
+  /**
+   * Insert text at cursor position
+   */
+  private insertAtCursor(text: string, insertion: string, cursor: number): { text: string; cursor: number } {
+    const before = text.slice(0, cursor);
+    const after = text.slice(cursor);
+    return {
+      text: before + insertion + after,
+      cursor: cursor + insertion.length,
+    };
+  }
+
+  /**
+   * Delete character at cursor position (backspace)
+   */
+  private deleteAtCursor(text: string, cursor: number): { text: string; cursor: number } {
+    if (cursor === 0) return { text, cursor };
+    const before = text.slice(0, cursor - 1);
+    const after = text.slice(cursor);
+    return {
+      text: before + after,
+      cursor: cursor - 1,
+    };
+  }
+
+  /**
+   * Delete word before cursor
+   */
+  private deleteWordAtCursor(text: string, cursor: number): { text: string; cursor: number } {
+    if (cursor === 0) return { text, cursor };
+
+    const before = text.slice(0, cursor);
+    const after = text.slice(cursor);
+
+    // Remove trailing whitespace first
+    let trimmed = before.trimEnd();
+    if (trimmed === "") return { text: after, cursor: 0 };
+
+    // Find the last word boundary
+    const wordBoundaryRegex = /[\s.\-_/\\]+[^\s.\-_/\\]*$/;
+    const match = trimmed.match(wordBoundaryRegex);
+
+    if (match && match.index !== undefined) {
+      const newBefore = trimmed.slice(0, match.index);
+      return {
+        text: newBefore + after,
+        cursor: newBefore.length,
+      };
+    }
+
+    // If no word boundary found, delete everything before cursor
+    return { text: after, cursor: 0 };
   }
 
   /**
@@ -871,9 +931,13 @@ class TUI {
       this.moveCursor(line++, startCol);
       const keyLabel = "Key: ";
       const maxKeyWidth = width - keyLabel.length - 2;
-      const keyDisplay =
-        (this.variableEditKey + (this.variableEditField === "key" ? "_" : ""))
-          .slice(0, maxKeyWidth);
+      let keyDisplay = this.variableEditKey;
+      if (this.variableEditField === "key") {
+        // Insert cursor at position
+        keyDisplay = keyDisplay.slice(0, this.variableEditKeyCursor) + "_" +
+                     keyDisplay.slice(this.variableEditKeyCursor);
+      }
+      keyDisplay = keyDisplay.slice(0, maxKeyWidth);
       const keyLine = keyLabel + keyDisplay;
       if (this.variableEditField === "key") {
         this.write(`${keyLabel}\x1b[7m${keyDisplay}\x1b[0m\x1b[K`);
@@ -884,11 +948,13 @@ class TUI {
       this.moveCursor(line++, startCol);
       const valueLabel = "Value: ";
       const maxValueWidth = width - valueLabel.length - 2;
-      const valueDisplay = (this.variableEditValue +
-        (this.variableEditField === "value" ? "_" : "")).slice(
-          0,
-          maxValueWidth,
-        );
+      let valueDisplay = this.variableEditValue;
+      if (this.variableEditField === "value") {
+        // Insert cursor at position
+        valueDisplay = valueDisplay.slice(0, this.variableEditValueCursor) + "_" +
+                       valueDisplay.slice(this.variableEditValueCursor);
+      }
+      valueDisplay = valueDisplay.slice(0, maxValueWidth);
       const valueLine = valueLabel + valueDisplay;
       if (this.variableEditField === "value") {
         this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
@@ -907,12 +973,24 @@ class TUI {
 
       this.moveCursor(line++, startCol);
       const valueLabel = "Value: ";
-      const maxValueWidth = width - valueLabel.length - 2; // -2 for cursor and padding
-      const valueWithCursor = this.variableEditValue + "_";
-      // Show the END of the value so user can see what they're typing (important for long values like JWTs)
-      const valueDisplay = valueWithCursor.length > maxValueWidth
-        ? valueWithCursor.slice(-maxValueWidth)
-        : valueWithCursor;
+      const maxValueWidth = width - valueLabel.length - 2;
+      // Insert cursor at position
+      const valueWithCursor = this.variableEditValue.slice(0, this.variableEditValueCursor) + "_" +
+                              this.variableEditValue.slice(this.variableEditValueCursor);
+      // Show portion around cursor (important for long values like JWTs)
+      let valueDisplay;
+      if (valueWithCursor.length > maxValueWidth) {
+        // If cursor is near the end, show the end
+        if (this.variableEditValueCursor > this.variableEditValue.length - maxValueWidth / 2) {
+          valueDisplay = valueWithCursor.slice(-maxValueWidth);
+        } else {
+          // Show from cursor position
+          const start = Math.max(0, this.variableEditValueCursor - maxValueWidth / 2);
+          valueDisplay = valueWithCursor.slice(start, start + maxValueWidth);
+        }
+      } else {
+        valueDisplay = valueWithCursor;
+      }
       this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
     } // Delete confirmation
     else if (this.variableEditMode === "delete") {
@@ -987,9 +1065,13 @@ class TUI {
       this.moveCursor(line++, startCol);
       const keyLabel = "Key: ";
       const maxKeyWidth = width - keyLabel.length - 2;
-      const keyDisplay =
-        (this.headerEditKey + (this.headerEditField === "key" ? "_" : ""))
-          .slice(0, maxKeyWidth);
+      let keyDisplay = this.headerEditKey;
+      if (this.headerEditField === "key") {
+        // Insert cursor at position
+        keyDisplay = keyDisplay.slice(0, this.headerEditKeyCursor) + "_" +
+                     keyDisplay.slice(this.headerEditKeyCursor);
+      }
+      keyDisplay = keyDisplay.slice(0, maxKeyWidth);
       const keyLine = keyLabel + keyDisplay;
       if (this.headerEditField === "key") {
         this.write(`${keyLabel}\x1b[7m${keyDisplay}\x1b[0m\x1b[K`);
@@ -1000,9 +1082,13 @@ class TUI {
       this.moveCursor(line++, startCol);
       const valueLabel = "Value: ";
       const maxValueWidth = width - valueLabel.length - 2;
-      const valueDisplay =
-        (this.headerEditValue + (this.headerEditField === "value" ? "_" : ""))
-          .slice(0, maxValueWidth);
+      let valueDisplay = this.headerEditValue;
+      if (this.headerEditField === "value") {
+        // Insert cursor at position
+        valueDisplay = valueDisplay.slice(0, this.headerEditValueCursor) + "_" +
+                       valueDisplay.slice(this.headerEditValueCursor);
+      }
+      valueDisplay = valueDisplay.slice(0, maxValueWidth);
       const valueLine = valueLabel + valueDisplay;
       if (this.headerEditField === "value") {
         this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
@@ -1021,12 +1107,22 @@ class TUI {
 
       this.moveCursor(line++, startCol);
       const valueLabel = "Value: ";
-      const maxValueWidth = width - valueLabel.length - 2; // -2 for cursor and padding
-      const valueWithCursor = this.headerEditValue + "_";
-      // Show the END of the value so user can see what they're typing (important for long values like JWTs)
-      const valueDisplay = valueWithCursor.length > maxValueWidth
-        ? valueWithCursor.slice(-maxValueWidth)
-        : valueWithCursor;
+      const maxValueWidth = width - valueLabel.length - 2;
+      // Insert cursor at position
+      const valueWithCursor = this.headerEditValue.slice(0, this.headerEditValueCursor) + "_" +
+                              this.headerEditValue.slice(this.headerEditValueCursor);
+      // Show portion around cursor
+      let valueDisplay;
+      if (valueWithCursor.length > maxValueWidth) {
+        if (this.headerEditValueCursor > this.headerEditValue.length - maxValueWidth / 2) {
+          valueDisplay = valueWithCursor.slice(-maxValueWidth);
+        } else {
+          const start = Math.max(0, this.headerEditValueCursor - maxValueWidth / 2);
+          valueDisplay = valueWithCursor.slice(start, start + maxValueWidth);
+        }
+      } else {
+        valueDisplay = valueWithCursor;
+      }
       this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
     } // Delete confirmation
     else if (this.headerEditMode === "delete") {
@@ -1124,10 +1220,21 @@ class TUI {
         this.moveCursor(line++, startCol);
         const valueLabel = "Value: ";
         const maxValueWidth = width - valueLabel.length - 2;
-        const valueWithCursor = this.oauthConfigEditValue + "_";
-        const valueDisplay = valueWithCursor.length > maxValueWidth
-          ? valueWithCursor.slice(-maxValueWidth)
-          : valueWithCursor;
+        // Insert cursor at position
+        const valueWithCursor = this.oauthConfigEditValue.slice(0, this.oauthConfigEditCursor) + "_" +
+                                this.oauthConfigEditValue.slice(this.oauthConfigEditCursor);
+        // Show portion around cursor
+        let valueDisplay;
+        if (valueWithCursor.length > maxValueWidth) {
+          if (this.oauthConfigEditCursor > this.oauthConfigEditValue.length - maxValueWidth / 2) {
+            valueDisplay = valueWithCursor.slice(-maxValueWidth);
+          } else {
+            const start = Math.max(0, this.oauthConfigEditCursor - maxValueWidth / 2);
+            valueDisplay = valueWithCursor.slice(start, start + maxValueWidth);
+          }
+        } else {
+          valueDisplay = valueWithCursor;
+        }
         this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
       }
     } else {
@@ -1218,10 +1325,21 @@ class TUI {
     this.moveCursor(line++, startCol);
     const valueLabel = "  ";
     const maxValueWidth = width - valueLabel.length - 2;
-    const valueWithCursor = this.editorConfigValue + "_";
-    const valueDisplay = valueWithCursor.length > maxValueWidth
-      ? valueWithCursor.slice(-maxValueWidth)
-      : valueWithCursor;
+    // Insert cursor at position
+    const valueWithCursor = this.editorConfigValue.slice(0, this.editorConfigCursor) + "_" +
+                            this.editorConfigValue.slice(this.editorConfigCursor);
+    // Show portion around cursor
+    let valueDisplay;
+    if (valueWithCursor.length > maxValueWidth) {
+      if (this.editorConfigCursor > this.editorConfigValue.length - maxValueWidth / 2) {
+        valueDisplay = valueWithCursor.slice(-maxValueWidth);
+      } else {
+        const start = Math.max(0, this.editorConfigCursor - maxValueWidth / 2);
+        valueDisplay = valueWithCursor.slice(start, start + maxValueWidth);
+      }
+    } else {
+      valueDisplay = valueWithCursor;
+    }
     this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
     line++;
 
@@ -2566,6 +2684,8 @@ class TUI {
     this.variableEditKey = "";
     this.variableEditValue = "";
     this.variableEditField = "key";
+    this.variableEditKeyCursor = 0;
+    this.variableEditValueCursor = 0;
     this.draw();
   }
 
@@ -2575,6 +2695,8 @@ class TUI {
     this.variableIndex = 0;
     this.variableEditKey = "";
     this.variableEditValue = "";
+    this.variableEditKeyCursor = 0;
+    this.variableEditValueCursor = 0;
     this.draw();
   }
 
@@ -2616,6 +2738,8 @@ class TUI {
           this.variableEditKey = "";
           this.variableEditValue = "";
           this.variableEditField = "key";
+          this.variableEditKeyCursor = 0;
+          this.variableEditValueCursor = 0;
           this.draw();
         } else if (char === "e" || char === "E" || char === "\r") {
           // Edit selected variable
@@ -2625,6 +2749,7 @@ class TUI {
             this.variableEditKey = key;
             this.variableEditValue = value;
             this.variableEditField = "value";
+            this.variableEditValueCursor = value.length; // Cursor at end
             this.draw();
           }
         } else if (char === "d" || char === "D") {
@@ -2641,16 +2766,72 @@ class TUI {
     else if (
       this.variableEditMode === "add" || this.variableEditMode === "edit"
     ) {
+      // Arrow keys for cursor navigation
+      if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 68) {
+          // Left arrow
+          if (this.variableEditMode === "edit") {
+            this.variableEditValueCursor = Math.max(0, this.variableEditValueCursor - 1);
+          } else if (this.variableEditField === "key") {
+            this.variableEditKeyCursor = Math.max(0, this.variableEditKeyCursor - 1);
+          } else {
+            this.variableEditValueCursor = Math.max(0, this.variableEditValueCursor - 1);
+          }
+          this.draw();
+        } else if (input[2] === 67) {
+          // Right arrow
+          if (this.variableEditMode === "edit") {
+            this.variableEditValueCursor = Math.min(this.variableEditValue.length, this.variableEditValueCursor + 1);
+          } else if (this.variableEditField === "key") {
+            this.variableEditKeyCursor = Math.min(this.variableEditKey.length, this.variableEditKeyCursor + 1);
+          } else {
+            this.variableEditValueCursor = Math.min(this.variableEditValue.length, this.variableEditValueCursor + 1);
+          }
+          this.draw();
+        }
+        return;
+      }
+
+      // Home/End keys
+      if (input.length === 4 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 72 || (input[2] === 49 && input[3] === 126)) {
+          // Home key
+          if (this.variableEditMode === "edit") {
+            this.variableEditValueCursor = 0;
+          } else if (this.variableEditField === "key") {
+            this.variableEditKeyCursor = 0;
+          } else {
+            this.variableEditValueCursor = 0;
+          }
+          this.draw();
+          return;
+        } else if (input[2] === 70 || (input[2] === 52 && input[3] === 126)) {
+          // End key
+          if (this.variableEditMode === "edit") {
+            this.variableEditValueCursor = this.variableEditValue.length;
+          } else if (this.variableEditField === "key") {
+            this.variableEditKeyCursor = this.variableEditKey.length;
+          } else {
+            this.variableEditValueCursor = this.variableEditValue.length;
+          }
+          this.draw();
+          return;
+        }
+      }
+
       // Ctrl+K - clear entire value
       if (input.length === 1 && input[0] === 11) {
         if (this.variableEditMode === "edit") {
           this.variableEditValue = "";
+          this.variableEditValueCursor = 0;
           this.draw();
         } else if (this.variableEditField === "key") {
           this.variableEditKey = "";
+          this.variableEditKeyCursor = 0;
           this.draw();
         } else if (this.variableEditField === "value") {
           this.variableEditValue = "";
+          this.variableEditValueCursor = 0;
           this.draw();
         }
         return;
@@ -2659,13 +2840,19 @@ class TUI {
       // Option+Delete (macOS) or Alt+Backspace - delete previous word
       if (input.length === 2 && input[0] === 27 && input[1] === 127) {
         if (this.variableEditMode === "edit") {
-          this.variableEditValue = this.deleteLastWord(this.variableEditValue);
+          const result = this.deleteWordAtCursor(this.variableEditValue, this.variableEditValueCursor);
+          this.variableEditValue = result.text;
+          this.variableEditValueCursor = result.cursor;
           this.draw();
         } else if (this.variableEditField === "key") {
-          this.variableEditKey = this.deleteLastWord(this.variableEditKey);
+          const result = this.deleteWordAtCursor(this.variableEditKey, this.variableEditKeyCursor);
+          this.variableEditKey = result.text;
+          this.variableEditKeyCursor = result.cursor;
           this.draw();
         } else if (this.variableEditField === "value") {
-          this.variableEditValue = this.deleteLastWord(this.variableEditValue);
+          const result = this.deleteWordAtCursor(this.variableEditValue, this.variableEditValueCursor);
+          this.variableEditValue = result.text;
+          this.variableEditValueCursor = result.cursor;
           this.draw();
         }
         return;
@@ -2700,51 +2887,48 @@ class TUI {
 
       // Backspace
       if (input.length === 1 && input[0] === 127) {
-        // In edit mode, only allow editing value
         if (this.variableEditMode === "edit") {
-          if (this.variableEditValue.length > 0) {
-            this.variableEditValue = this.variableEditValue.slice(0, -1);
-            this.draw();
-          }
+          const result = this.deleteAtCursor(this.variableEditValue, this.variableEditValueCursor);
+          this.variableEditValue = result.text;
+          this.variableEditValueCursor = result.cursor;
+          this.draw();
+        } else if (this.variableEditField === "key") {
+          const result = this.deleteAtCursor(this.variableEditKey, this.variableEditKeyCursor);
+          this.variableEditKey = result.text;
+          this.variableEditKeyCursor = result.cursor;
+          this.draw();
         } else {
-          // In add mode, respect the current field
-          if (
-            this.variableEditField === "key" && this.variableEditKey.length > 0
-          ) {
-            this.variableEditKey = this.variableEditKey.slice(0, -1);
-            this.draw();
-          } else if (
-            this.variableEditField === "value" &&
-            this.variableEditValue.length > 0
-          ) {
-            this.variableEditValue = this.variableEditValue.slice(0, -1);
-            this.draw();
-          }
+          const result = this.deleteAtCursor(this.variableEditValue, this.variableEditValueCursor);
+          this.variableEditValue = result.text;
+          this.variableEditValueCursor = result.cursor;
+          this.draw();
         }
         return;
       }
 
       // Printable characters (handles paste - multiple chars at once)
       let hasValidChars = false;
+      let chars = "";
       for (let i = 0; i < input.length; i++) {
         if (input[i] >= 32 && input[i] <= 126) {
-          const char = String.fromCharCode(input[i]);
+          chars += String.fromCharCode(input[i]);
           hasValidChars = true;
-
-          // In edit mode, only allow editing value
-          if (this.variableEditMode === "edit") {
-            this.variableEditValue += char;
-          } else {
-            // In add mode, respect the current field
-            if (this.variableEditField === "key") {
-              this.variableEditKey += char;
-            } else {
-              this.variableEditValue += char;
-            }
-          }
         }
       }
       if (hasValidChars) {
+        if (this.variableEditMode === "edit") {
+          const result = this.insertAtCursor(this.variableEditValue, chars, this.variableEditValueCursor);
+          this.variableEditValue = result.text;
+          this.variableEditValueCursor = result.cursor;
+        } else if (this.variableEditField === "key") {
+          const result = this.insertAtCursor(this.variableEditKey, chars, this.variableEditKeyCursor);
+          this.variableEditKey = result.text;
+          this.variableEditKeyCursor = result.cursor;
+        } else {
+          const result = this.insertAtCursor(this.variableEditValue, chars, this.variableEditValueCursor);
+          this.variableEditValue = result.text;
+          this.variableEditValueCursor = result.cursor;
+        }
         this.draw();
       }
     } // In delete confirmation mode
@@ -2768,25 +2952,6 @@ class TUI {
         }
       }
     }
-  }
-
-  enterHeaderMode(): void {
-    this.headerMode = true;
-    this.headerEditMode = "list";
-    this.headerIndex = 0;
-    this.headerEditKey = "";
-    this.headerEditValue = "";
-    this.headerEditField = "key";
-    this.draw();
-  }
-
-  exitHeaderMode(): void {
-    this.headerMode = false;
-    this.headerEditMode = "list";
-    this.headerIndex = 0;
-    this.headerEditKey = "";
-    this.headerEditValue = "";
-    this.draw();
   }
 
   async enterHistoryMode(): Promise<void> {
@@ -2922,6 +3087,7 @@ class TUI {
             this.headerEditKey = key;
             this.headerEditValue = value;
             this.headerEditField = "value";
+            this.headerEditValueCursor = value.length; // Cursor at end
             this.draw();
           }
         } else if (char === "d" || char === "D") {
@@ -2936,16 +3102,72 @@ class TUI {
       }
     } // In add/edit mode
     else if (this.headerEditMode === "add" || this.headerEditMode === "edit") {
+      // Arrow keys for cursor navigation
+      if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 68) {
+          // Left arrow
+          if (this.headerEditMode === "edit") {
+            this.headerEditValueCursor = Math.max(0, this.headerEditValueCursor - 1);
+          } else if (this.headerEditField === "key") {
+            this.headerEditKeyCursor = Math.max(0, this.headerEditKeyCursor - 1);
+          } else {
+            this.headerEditValueCursor = Math.max(0, this.headerEditValueCursor - 1);
+          }
+          this.draw();
+        } else if (input[2] === 67) {
+          // Right arrow
+          if (this.headerEditMode === "edit") {
+            this.headerEditValueCursor = Math.min(this.headerEditValue.length, this.headerEditValueCursor + 1);
+          } else if (this.headerEditField === "key") {
+            this.headerEditKeyCursor = Math.min(this.headerEditKey.length, this.headerEditKeyCursor + 1);
+          } else {
+            this.headerEditValueCursor = Math.min(this.headerEditValue.length, this.headerEditValueCursor + 1);
+          }
+          this.draw();
+        }
+        return;
+      }
+
+      // Home/End keys
+      if (input.length === 4 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 72 || (input[2] === 49 && input[3] === 126)) {
+          // Home key
+          if (this.headerEditMode === "edit") {
+            this.headerEditValueCursor = 0;
+          } else if (this.headerEditField === "key") {
+            this.headerEditKeyCursor = 0;
+          } else {
+            this.headerEditValueCursor = 0;
+          }
+          this.draw();
+          return;
+        } else if (input[2] === 70 || (input[2] === 52 && input[3] === 126)) {
+          // End key
+          if (this.headerEditMode === "edit") {
+            this.headerEditValueCursor = this.headerEditValue.length;
+          } else if (this.headerEditField === "key") {
+            this.headerEditKeyCursor = this.headerEditKey.length;
+          } else {
+            this.headerEditValueCursor = this.headerEditValue.length;
+          }
+          this.draw();
+          return;
+        }
+      }
+
       // Ctrl+K - clear entire value
       if (input.length === 1 && input[0] === 11) {
         if (this.headerEditMode === "edit") {
           this.headerEditValue = "";
+          this.headerEditValueCursor = 0;
           this.draw();
         } else if (this.headerEditField === "key") {
           this.headerEditKey = "";
+          this.headerEditKeyCursor = 0;
           this.draw();
         } else if (this.headerEditField === "value") {
           this.headerEditValue = "";
+          this.headerEditValueCursor = 0;
           this.draw();
         }
         return;
@@ -2954,13 +3176,19 @@ class TUI {
       // Option+Delete (macOS) or Alt+Backspace - delete previous word
       if (input.length === 2 && input[0] === 27 && input[1] === 127) {
         if (this.headerEditMode === "edit") {
-          this.headerEditValue = this.deleteLastWord(this.headerEditValue);
+          const result = this.deleteWordAtCursor(this.headerEditValue, this.headerEditValueCursor);
+          this.headerEditValue = result.text;
+          this.headerEditValueCursor = result.cursor;
           this.draw();
         } else if (this.headerEditField === "key") {
-          this.headerEditKey = this.deleteLastWord(this.headerEditKey);
+          const result = this.deleteWordAtCursor(this.headerEditKey, this.headerEditKeyCursor);
+          this.headerEditKey = result.text;
+          this.headerEditKeyCursor = result.cursor;
           this.draw();
         } else if (this.headerEditField === "value") {
-          this.headerEditValue = this.deleteLastWord(this.headerEditValue);
+          const result = this.deleteWordAtCursor(this.headerEditValue, this.headerEditValueCursor);
+          this.headerEditValue = result.text;
+          this.headerEditValueCursor = result.cursor;
           this.draw();
         }
         return;
@@ -2995,48 +3223,48 @@ class TUI {
 
       // Backspace
       if (input.length === 1 && input[0] === 127) {
-        // In edit mode, only allow editing value
         if (this.headerEditMode === "edit") {
-          if (this.headerEditValue.length > 0) {
-            this.headerEditValue = this.headerEditValue.slice(0, -1);
-            this.draw();
-          }
+          const result = this.deleteAtCursor(this.headerEditValue, this.headerEditValueCursor);
+          this.headerEditValue = result.text;
+          this.headerEditValueCursor = result.cursor;
+          this.draw();
+        } else if (this.headerEditField === "key") {
+          const result = this.deleteAtCursor(this.headerEditKey, this.headerEditKeyCursor);
+          this.headerEditKey = result.text;
+          this.headerEditKeyCursor = result.cursor;
+          this.draw();
         } else {
-          // In add mode, respect the current field
-          if (this.headerEditField === "key" && this.headerEditKey.length > 0) {
-            this.headerEditKey = this.headerEditKey.slice(0, -1);
-            this.draw();
-          } else if (
-            this.headerEditField === "value" && this.headerEditValue.length > 0
-          ) {
-            this.headerEditValue = this.headerEditValue.slice(0, -1);
-            this.draw();
-          }
+          const result = this.deleteAtCursor(this.headerEditValue, this.headerEditValueCursor);
+          this.headerEditValue = result.text;
+          this.headerEditValueCursor = result.cursor;
+          this.draw();
         }
         return;
       }
 
       // Printable characters (handles paste - multiple chars at once)
       let hasValidChars = false;
+      let chars = "";
       for (let i = 0; i < input.length; i++) {
         if (input[i] >= 32 && input[i] <= 126) {
-          const char = String.fromCharCode(input[i]);
+          chars += String.fromCharCode(input[i]);
           hasValidChars = true;
-
-          // In edit mode, only allow editing value
-          if (this.headerEditMode === "edit") {
-            this.headerEditValue += char;
-          } else {
-            // In add mode, respect the current field
-            if (this.headerEditField === "key") {
-              this.headerEditKey += char;
-            } else {
-              this.headerEditValue += char;
-            }
-          }
         }
       }
       if (hasValidChars) {
+        if (this.headerEditMode === "edit") {
+          const result = this.insertAtCursor(this.headerEditValue, chars, this.headerEditValueCursor);
+          this.headerEditValue = result.text;
+          this.headerEditValueCursor = result.cursor;
+        } else if (this.headerEditField === "key") {
+          const result = this.insertAtCursor(this.headerEditKey, chars, this.headerEditKeyCursor);
+          this.headerEditKey = result.text;
+          this.headerEditKeyCursor = result.cursor;
+        } else {
+          const result = this.insertAtCursor(this.headerEditValue, chars, this.headerEditValueCursor);
+          this.headerEditValue = result.text;
+          this.headerEditValueCursor = result.cursor;
+        }
         this.draw();
       }
     } // In delete confirmation mode
@@ -3095,8 +3323,20 @@ class TUI {
         this.response.body = this.beautifyJson(this.response.body);
       }
 
-      // Reset scroll offset for new response
-      this.responseScrollOffset = 0;
+      this.responseScrollOffset = 0; // Reset scroll for new response
+
+      // Calculate max scroll offset
+      if (this.response && this.response.body) {
+        const bodyLines = this.response.body.split("\n").length;
+        const headerLines = this.response.headers
+          ? Object.keys(this.response.headers).length
+          : 0;
+        const totalLines = headerLines + bodyLines + 5; // +5 for status line and spacing
+        const visibleLines = this.fullscreenMode
+          ? Deno.consoleSize().rows - 4
+          : Math.floor((Deno.consoleSize().rows - 2) * 0.6); // Approx 60% of screen
+        this.maxResponseScrollOffset = Math.max(0, totalLines - visibleLines);
+      }
 
       // Save to history if enabled
       if (this.sessionManager.isHistoryEnabled()) {
@@ -3127,19 +3367,7 @@ class TUI {
         }
       }
 
-      // Save response body variables if it's JSON
-      try {
-        const json = JSON.parse(this.response.body);
-        if (json.token) this.sessionManager.setVariable("token", json.token);
-        if (json.accessToken) {
-          this.sessionManager.setVariable("token", json.accessToken);
-        }
-        await this.sessionManager.save();
-      } catch {
-        // Not JSON or no token
-      }
-
-      this.statusMessage = "";
+      this.statusMessage = ` ${this.response.status} ${this.response.statusText} (${this.response.duration}ms) `;
       this.draw();
     } catch (error) {
       this.statusMessage = ` Error: ${
@@ -3278,51 +3506,67 @@ class TUI {
     this.draw();
 
     try {
-      // Execute OAuth flow
-      const result = await executeOAuthFlow(oauthConfig, (status: string) => {
-        this.oauthStatus = status;
+      // Start OAuth flow
+      const result = await executeOAuthFlow(oauthConfig);
+
+      if (result.error) {
+        this.oauthStatus = `Error: ${result.error}`;
         this.draw();
-      });
+        // Wait a bit before closing modal
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        this.oauthMode = false;
+        this.statusMessage = ` OAuth failed: ${result.error} `;
+        this.draw();
+        return;
+      }
 
-      if (result.success && result.accessToken) {
-        // Store token in profile variable
-        const defaults = getOAuthDefaults(oauthConfig);
-        const tokenKey = defaults.tokenStorageKey;
-
+      // Store token in profile variables
+      const tokenKey = oauthConfig.tokenStorageKey || "token";
+      if (result.accessToken) {
         this.sessionManager.setProfileVariable(tokenKey, result.accessToken);
-
-        // If refresh token received, store it too
-        if (result.refreshToken) {
-          this.sessionManager.setProfileVariable(
-            `${tokenKey}_refresh`,
-            result.refreshToken,
-          );
-        }
-
-        // Save to disk
         await this.sessionManager.saveProfiles();
-
-        this.oauthMode = false;
-        this.oauthStatus = "";
-        this.statusMessage =
-          " ✓ OAuth authentication successful! Token stored. ";
+        this.oauthStatus = `Success! Token saved to ${tokenKey}`;
         this.draw();
-      } else {
+        // Wait a bit before closing modal
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         this.oauthMode = false;
-        this.oauthStatus = "";
-        this.statusMessage = ` ✗ OAuth failed: ${
-          result.error || "Unknown error"
-        } `;
+        this.statusMessage = ` OAuth successful - token saved to ${tokenKey} `;
         this.draw();
       }
     } catch (error) {
-      this.oauthMode = false;
-      this.oauthStatus = "";
-      this.statusMessage = ` ✗ OAuth error: ${
+      this.oauthStatus = `Error: ${
         error instanceof Error ? error.message : String(error)
-      } `;
+      }`;
+      this.draw();
+      // Wait a bit before closing modal
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      this.oauthMode = false;
+      this.statusMessage = ` OAuth failed `;
       this.draw();
     }
+  }
+
+  enterHeaderMode(): void {
+    this.headerMode = true;
+    this.headerEditMode = "list";
+    this.headerIndex = 0;
+    this.headerEditKey = "";
+    this.headerEditValue = "";
+    this.headerEditField = "key";
+    this.headerEditKeyCursor = 0;
+    this.headerEditValueCursor = 0;
+    this.draw();
+  }
+
+  exitHeaderMode(): void {
+    this.headerMode = false;
+    this.headerEditMode = "list";
+    this.headerIndex = 0;
+    this.headerEditKey = "";
+    this.headerEditValue = "";
+    this.headerEditKeyCursor = 0;
+    this.headerEditValueCursor = 0;
+    this.draw();
   }
 
   enterOAuthConfigMode(): void {
@@ -3337,6 +3581,7 @@ class TUI {
     this.oauthConfigIndex = 0;
     this.oauthConfigEditField = "";
     this.oauthConfigEditValue = "";
+    this.oauthConfigEditCursor = 0;
     this.draw();
   }
 
@@ -3345,6 +3590,7 @@ class TUI {
     this.oauthConfigIndex = 0;
     this.oauthConfigEditField = "";
     this.oauthConfigEditValue = "";
+    this.oauthConfigEditCursor = 0;
     this.draw();
   }
 
@@ -3358,12 +3604,14 @@ class TUI {
 
     this.editorConfigMode = true;
     this.editorConfigValue = this.sessionManager.getEditor() || "";
+    this.editorConfigCursor = this.editorConfigValue.length;
     this.draw();
   }
 
   exitEditorConfigMode(): void {
     this.editorConfigMode = false;
     this.editorConfigValue = "";
+    this.editorConfigCursor = 0;
     this.draw();
   }
 
@@ -3470,6 +3718,7 @@ class TUI {
           this.oauthConfigEditValue = String(
             (oauthConfig as any)[field.key] || "",
           );
+          this.oauthConfigEditCursor = this.oauthConfigEditValue.length;
           this.draw();
         }
         return;
@@ -3490,9 +3739,33 @@ class TUI {
       const field = fields.find((f) => f.key === this.oauthConfigEditField);
       if (!field) return;
 
-      // Ignore arrow keys in edit mode (they would print escape sequences)
+      // Arrow keys for cursor navigation
       if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 68) {
+          // Left arrow
+          this.oauthConfigEditCursor = Math.max(0, this.oauthConfigEditCursor - 1);
+          this.draw();
+        } else if (input[2] === 67) {
+          // Right arrow
+          this.oauthConfigEditCursor = Math.min(this.oauthConfigEditValue.length, this.oauthConfigEditCursor + 1);
+          this.draw();
+        }
         return;
+      }
+
+      // Home/End keys
+      if (input.length === 4 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 72 || (input[2] === 49 && input[3] === 126)) {
+          // Home key
+          this.oauthConfigEditCursor = 0;
+          this.draw();
+          return;
+        } else if (input[2] === 70 || (input[2] === 52 && input[3] === 126)) {
+          // End key
+          this.oauthConfigEditCursor = this.oauthConfigEditValue.length;
+          this.draw();
+          return;
+        }
       }
 
       // Enter - save
@@ -3510,36 +3783,50 @@ class TUI {
         this.statusMessage = ` ${field.label} saved `;
         this.oauthConfigEditField = "";
         this.oauthConfigEditValue = "";
+        this.oauthConfigEditCursor = 0;
         this.draw();
         return;
       }
 
       // Backspace
       if (input.length === 1 && input[0] === 127) {
-        if (this.oauthConfigEditValue.length > 0) {
-          this.oauthConfigEditValue = this.oauthConfigEditValue.slice(0, -1);
-          this.draw();
-        }
+        const result = this.deleteAtCursor(this.oauthConfigEditValue, this.oauthConfigEditCursor);
+        this.oauthConfigEditValue = result.text;
+        this.oauthConfigEditCursor = result.cursor;
+        this.draw();
         return;
       }
 
       // Ctrl+K - clear entire value
       if (input.length === 1 && input[0] === 11) {
         this.oauthConfigEditValue = "";
+        this.oauthConfigEditCursor = 0;
+        this.draw();
+        return;
+      }
+
+      // Option+Delete (macOS) or Alt+Backspace - delete previous word
+      if (input.length === 2 && input[0] === 27 && input[1] === 127) {
+        const result = this.deleteWordAtCursor(this.oauthConfigEditValue, this.oauthConfigEditCursor);
+        this.oauthConfigEditValue = result.text;
+        this.oauthConfigEditCursor = result.cursor;
         this.draw();
         return;
       }
 
       // Printable characters (handles paste)
       let hasValidChars = false;
+      let chars = "";
       for (let i = 0; i < input.length; i++) {
         if (input[i] >= 32 && input[i] <= 126) {
-          const char = String.fromCharCode(input[i]);
+          chars += String.fromCharCode(input[i]);
           hasValidChars = true;
-          this.oauthConfigEditValue += char;
         }
       }
       if (hasValidChars) {
+        const result = this.insertAtCursor(this.oauthConfigEditValue, chars, this.oauthConfigEditCursor);
+        this.oauthConfigEditValue = result.text;
+        this.oauthConfigEditCursor = result.cursor;
         this.draw();
       }
     }
@@ -3556,6 +3843,35 @@ class TUI {
     if (!profile) {
       this.exitEditorConfigMode();
       return;
+    }
+
+    // Arrow keys for cursor navigation
+    if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+      if (input[2] === 68) {
+        // Left arrow
+        this.editorConfigCursor = Math.max(0, this.editorConfigCursor - 1);
+        this.draw();
+      } else if (input[2] === 67) {
+        // Right arrow
+        this.editorConfigCursor = Math.min(this.editorConfigValue.length, this.editorConfigCursor + 1);
+        this.draw();
+      }
+      return;
+    }
+
+    // Home/End keys
+    if (input.length === 4 && input[0] === 27 && input[1] === 91) {
+      if (input[2] === 72 || (input[2] === 49 && input[3] === 126)) {
+        // Home key
+        this.editorConfigCursor = 0;
+        this.draw();
+        return;
+      } else if (input[2] === 70 || (input[2] === 52 && input[3] === 126)) {
+        // End key
+        this.editorConfigCursor = this.editorConfigValue.length;
+        this.draw();
+        return;
+      }
     }
 
     // Enter - save
@@ -3576,37 +3892,43 @@ class TUI {
 
     // Backspace
     if (input.length === 1 && input[0] === 127) {
-      if (this.editorConfigValue.length > 0) {
-        this.editorConfigValue = this.editorConfigValue.slice(0, -1);
-        this.draw();
-      }
+      const result = this.deleteAtCursor(this.editorConfigValue, this.editorConfigCursor);
+      this.editorConfigValue = result.text;
+      this.editorConfigCursor = result.cursor;
+      this.draw();
       return;
     }
 
     // Ctrl+K - clear entire value
     if (input.length === 1 && input[0] === 11) {
       this.editorConfigValue = "";
+      this.editorConfigCursor = 0;
       this.draw();
       return;
     }
 
     // Option+Delete (macOS) or Alt+Backspace - delete previous word
     if (input.length === 2 && input[0] === 27 && input[1] === 127) {
-      this.editorConfigValue = this.deleteLastWord(this.editorConfigValue);
+      const result = this.deleteWordAtCursor(this.editorConfigValue, this.editorConfigCursor);
+      this.editorConfigValue = result.text;
+      this.editorConfigCursor = result.cursor;
       this.draw();
       return;
     }
 
     // Printable characters (handles paste)
     let hasValidChars = false;
+    let chars = "";
     for (let i = 0; i < input.length; i++) {
       if (input[i] >= 32 && input[i] <= 126) {
-        const char = String.fromCharCode(input[i]);
+        chars += String.fromCharCode(input[i]);
         hasValidChars = true;
-        this.editorConfigValue += char;
       }
     }
     if (hasValidChars) {
+      const result = this.insertAtCursor(this.editorConfigValue, chars, this.editorConfigCursor);
+      this.editorConfigValue = result.text;
+      this.editorConfigCursor = result.cursor;
       this.draw();
     }
   }
