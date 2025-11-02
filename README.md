@@ -235,6 +235,8 @@ The TUI auto-extracts `token` or `accessToken` from JSON responses and temporari
 ### Actions
 - `i` - Inspect request (preview what will be sent without executing)
 - `Enter` - Execute request
+- `x` - Open file in external editor (configured in profile)
+- `X` - Configure external editor for active profile
 - `d` - Duplicate current file
 - `s` - Save response/inspection to file (timestamp-based filename)
 - `c` - Copy response body/error to clipboard
@@ -289,6 +291,39 @@ Press `v` to open the interactive variable editor. This allows you to manage **p
 - Session variables (`.session.json`) are temporary state that gets cleared when switching profiles
 - Profile variables are permanent configuration
 - Long values are automatically truncated to prevent overlap
+
+## External Editor Integration
+
+Press `X` to configure an external editor for the active profile, then press `x` to open the selected file in that editor.
+
+### Configuration
+
+1. Press `X` to open the editor configuration modal
+2. Enter your editor command (e.g., `zed`, `code`, `vim`, `nvim`, `subl`)
+3. Press `Enter` to save
+
+The editor setting is saved per-profile in `.profiles.json`:
+
+```json
+{
+  "name": "My Profile",
+  "editor": "zed",
+  "headers": { ... },
+  "variables": { ... }
+}
+```
+
+### Usage
+
+Once configured, press `x` on any request file to open it in your editor. The editor opens in the background, so the TUI remains running.
+
+**Supported editors:**
+- `zed` - Zed
+- `code` - VS Code
+- `vim` - Vim
+- `nvim` - Neovim
+- `subl` - Sublime Text
+- Any command-line editor
 
 ## Header Editor
 
