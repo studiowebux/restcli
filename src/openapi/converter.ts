@@ -16,15 +16,17 @@ export class OpenAPIConverter {
   private spec: OpenAPISpec;
   private options: ConversionOptions;
   private baseUrl: string;
+  private usedFilePaths: Map<string, number>;
 
   constructor(spec: OpenAPISpec, options: ConversionOptions) {
     this.spec = spec;
     this.options = {
-      organizeBy: "tags",
+      organizeBy: "paths",
       baseUrlVariable: "baseUrl",
       ...options,
     };
     this.baseUrl = spec.servers?.[0]?.url || "http://localhost";
+    this.usedFilePaths = new Map();
   }
 
   /**
@@ -33,6 +35,9 @@ export class OpenAPIConverter {
   async convert(): Promise<{ filesCreated: number; summary: string }> {
     let filesCreated = 0;
     const filesByTag: Record<string, number> = {};
+
+    // Reset used paths tracker
+    this.usedFilePaths.clear();
 
     // Ensure output directory exists
     await Deno.mkdir(this.options.outputDir, { recursive: true });
@@ -51,8 +56,8 @@ export class OpenAPIConverter {
         // Generate .http file
         const content = this.generateHttpFile(urlPath, method, operation);
 
-        // Determine file location
-        const filePath = this.getFilePath(urlPath, method, operation);
+        // Determine file location with deduplication
+        const filePath = this.getUniqueFilePath(urlPath, method, operation);
 
         // Ensure directory exists
         const dir = path.dirname(filePath);
@@ -78,7 +83,10 @@ export class OpenAPIConverter {
    * Ensure .session.json exists with baseUrl variable
    */
   private async ensureSessionFile(): Promise<void> {
-    const sessionPath = path.join(this.options.outputDir, "..", ".session.json");
+    const { ConfigManager } = await import("../config.ts");
+    const configManager = new ConfigManager();
+    const configDir = configManager.getConfigDir();
+    const sessionPath = path.join(configDir, ".session.json");
 
     try {
       // Check if file exists
@@ -584,10 +592,34 @@ export class OpenAPIConverter {
       return path.join(this.options.outputDir, tag, baseName);
     }
 
-    // organize by paths
+    // organize by paths - mirror exact API path structure
     const pathParts = urlPath.split("/").filter(p => p && !p.startsWith("{"));
-    const dir = pathParts.length > 0 ? pathParts[0] : "root";
+    const dir = pathParts.length > 0 ? pathParts.join("/") : "root";
     return path.join(this.options.outputDir, dir, baseName);
+  }
+
+  /**
+   * Get unique file path with deduplication
+   */
+  private getUniqueFilePath(urlPath: string, method: string, operation: Operation): string {
+    const basePath = this.getFilePath(urlPath, method, operation);
+
+    // Check if this path was already used
+    const count = this.usedFilePaths.get(basePath);
+
+    if (count === undefined) {
+      // First time seeing this path
+      this.usedFilePaths.set(basePath, 1);
+      return basePath;
+    }
+
+    // Path conflict - append counter
+    this.usedFilePaths.set(basePath, count + 1);
+
+    // Insert counter before .http extension
+    const dir = path.dirname(basePath);
+    const filename = path.basename(basePath, '.http');
+    return path.join(dir, `${filename}-${count}.http`);
   }
 
   /**

@@ -1,5 +1,6 @@
 import { exists } from "@std/fs";
 import * as path from "@std/path";
+import type { OAuthConfig } from "./oauth-config.ts";
 
 export interface Session {
   variables: Record<string, string>;
@@ -12,6 +13,7 @@ export interface HeaderProfile {
   headers: Record<string, string>;
   variables?: Record<string, string>;
   workdir?: string; // Custom working directory for this profile
+  oauth?: OAuthConfig; // OAuth configuration
 }
 
 export class SessionManager {
@@ -47,13 +49,6 @@ export class SessionManager {
     await Deno.writeTextFile(
       this.sessionFile,
       JSON.stringify(this.session, null, 2)
-    );
-  }
-
-  async saveProfiles(): Promise<void> {
-    await Deno.writeTextFile(
-      this.profilesFile,
-      JSON.stringify(this.profiles, null, 2)
     );
   }
 
@@ -158,6 +153,24 @@ export class SessionManager {
 
   addProfile(profile: HeaderProfile): void {
     this.profiles.push(profile);
+  }
+
+  /**
+   * Save profiles to disk
+   */
+  async saveProfiles(): Promise<void> {
+    await Deno.writeTextFile(
+      this.profilesFile,
+      JSON.stringify(this.profiles, null, 2)
+    );
+  }
+
+  /**
+   * Get OAuth config for active profile
+   */
+  getOAuthConfig(): OAuthConfig | undefined {
+    const profile = this.getActiveProfile();
+    return profile?.oauth;
   }
 
   /**

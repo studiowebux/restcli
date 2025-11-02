@@ -6,6 +6,8 @@ import { RequestExecutor, type RequestResult } from "./executor.ts";
 import { SessionManager } from "./session.ts";
 import { ConfigManager } from "./config.ts";
 import { type HistoryEntry, HistoryManager } from "./history.ts";
+import { validateOAuthConfig, getOAuthDefaults } from "./oauth-config.ts";
+import { executeOAuthFlow } from "./oauth-flow.ts";
 
 interface FileEntry {
   path: string;
@@ -60,6 +62,12 @@ class TUI {
   private documentationCursorIndex = 0; // Current cursor position in documentation
   private documentationCollapsedFields = new Set<string>(); // Set of collapsed field paths
   private documentationMaxCursorIndex = 0; // Maximum cursor index
+  private oauthMode = false; // OAuth flow in progress
+  private oauthStatus = ""; // Current OAuth status message
+  private oauthConfigMode = false; // OAuth configuration editor
+  private oauthConfigIndex = 0; // Current field index in OAuth config
+  private oauthConfigEditField = ""; // Current field being edited
+  private oauthConfigEditValue = ""; // Current value being edited
 
   constructor() {
     this.sessionManager = new SessionManager();
@@ -148,8 +156,8 @@ class TUI {
   }
 
   private clear(): void {
-    // Don't clear entire screen - just move cursor to top
-    // We use \x1b[K on each line to clear to end of line
+    // Clear entire screen to avoid artifacts from modals
+    Deno.stdout.writeSync(new TextEncoder().encode("\x1b[2J"));
     this.moveCursor(1, 1);
   }
 
@@ -447,12 +455,13 @@ class TUI {
       const hasPrevious = startIdx > 0;
 
       let indicator = "\x1b[2m";
+      const currentPos = this.selectedIndex + 1;
       if (hasPrevious && hasMore) {
-        indicator += `↕ ${scrollPercent}% (${endIdx - startIdx}/${totalFiles})`;
+        indicator += `↕ ${scrollPercent}% (${currentPos}/${totalFiles})`;
       } else if (hasPrevious) {
-        indicator += `↑ Bottom (${endIdx - startIdx}/${totalFiles})`;
+        indicator += `↑ Bottom (${currentPos}/${totalFiles})`;
       } else if (hasMore) {
-        indicator += `↓ More below (${endIdx - startIdx}/${totalFiles})`;
+        indicator += `↓ More below (${currentPos}/${totalFiles})`;
       } else {
         indicator += `All ${totalFiles} files`;
       }
@@ -489,6 +498,12 @@ class TUI {
       return;
     }
 
+    // Check if in OAuth flow mode
+    if (this.oauthMode) {
+      this.drawOAuthFlowModal(startCol, width, height);
+      return;
+    }
+
     // Check if in documentation mode
     if (this.documentationMode) {
       this.drawDocumentation(startCol, width, height);
@@ -504,6 +519,12 @@ class TUI {
     // Check if in header mode
     if (this.headerMode) {
       this.drawHeaderEditor(startCol, width, height);
+      return;
+    }
+
+    // Check if in OAuth config mode
+    if (this.oauthConfigMode) {
+      this.drawOAuthConfigEditor(startCol, width, height);
       return;
     }
 
@@ -1009,6 +1030,104 @@ class TUI {
     }
   }
 
+  private drawOAuthConfigEditor(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
+    this.moveCursor(2, startCol);
+    const activeProfile = this.sessionManager.getActiveProfile();
+    const profileName = activeProfile ? activeProfile.name : "No Profile";
+    const title = ` OAuth Configuration (${profileName}) `;
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    let line = 3;
+    const profile = activeProfile;
+    if (!profile) {
+      this.moveCursor(line++, startCol);
+      this.write("\x1b[31mNo active profile\x1b[0m\x1b[K");
+      return;
+    }
+
+    const oauthConfig = profile.oauth || { enabled: false };
+
+    // Define fields in order
+    const fields = [
+      { key: "enabled", label: "Enabled", type: "boolean" },
+      { key: "authEndpoint", label: "Auth Endpoint (manual full URL)", type: "string" },
+      { key: "tokenUrl", label: "Token URL (required for code flow)", type: "string" },
+      { key: "responseType", label: "Response Type (code or token)", type: "string" },
+      { key: "authUrl", label: "Auth URL (auto-build mode)", type: "string" },
+      { key: "clientId", label: "Client ID (auto-build mode)", type: "string" },
+      { key: "redirectUri", label: "Redirect URI (default: localhost:8888)", type: "string" },
+      { key: "scope", label: "Scope (default: openid)", type: "string" },
+      { key: "clientSecret", label: "Client Secret (optional)", type: "string" },
+      { key: "webhookPort", label: "Webhook Port (default: 8888)", type: "number" },
+      { key: "tokenStorageKey", label: "Token Variable Name (default: token)", type: "string" },
+    ];
+
+    // If editing a field, show edit UI
+    if (this.oauthConfigEditField) {
+      const field = fields.find(f => f.key === this.oauthConfigEditField);
+      if (field) {
+        this.moveCursor(line++, startCol);
+        this.write(`\x1b[1mEdit: ${field.label}\x1b[0m\x1b[K`);
+        line++;
+
+        this.moveCursor(line++, startCol);
+        const valueLabel = "Value: ";
+        const maxValueWidth = width - valueLabel.length - 2;
+        const valueWithCursor = this.oauthConfigEditValue + "_";
+        const valueDisplay = valueWithCursor.length > maxValueWidth
+          ? valueWithCursor.slice(-maxValueWidth)
+          : valueWithCursor;
+        this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+      }
+    } else {
+      // List mode - show all fields
+      this.moveCursor(line++, startCol);
+      this.write(`\x1b[2mTotal: ${fields.length} configuration fields\x1b[0m\x1b[K`);
+      line++;
+
+      const maxVisibleLines = height - line - 5;
+      for (let i = 0; i < Math.min(fields.length, maxVisibleLines); i++) {
+        this.moveCursor(line++, startCol);
+        const field = fields[i];
+        const isSelected = i === this.oauthConfigIndex;
+        const value = (oauthConfig as any)[field.key];
+
+        let displayValue = "";
+        if (value === undefined || value === null) {
+          displayValue = "\x1b[2m(not set)\x1b[0m";
+        } else if (field.type === "boolean") {
+          displayValue = value ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m";
+        } else if (field.key === "clientSecret" && value) {
+          displayValue = "********";
+        } else {
+          const strValue = String(value);
+          displayValue = strValue.length > width - field.label.length - 10
+            ? strValue.slice(0, width - field.label.length - 13) + "..."
+            : strValue;
+        }
+
+        const display = `${field.label}: ${displayValue}`;
+        const displayTruncated = display.slice(0, width - 4);
+
+        if (isSelected) {
+          this.write(`\x1b[7m> ${field.label}: \x1b[0m${displayValue}\x1b[K`);
+        } else {
+          this.write(`  ${field.label}: ${displayValue}\x1b[K`);
+        }
+      }
+    }
+
+    // Clear remaining lines
+    for (let i = line; i < height - 2; i++) {
+      this.moveCursor(i, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
   private drawHistoryViewer(
     startCol: number,
     width: number,
@@ -1166,6 +1285,8 @@ class TUI {
         category: "Other",
         items: [
           { key: "m", desc: "View request documentation" },
+          { key: "o", desc: "Start OAuth/Cognito authentication" },
+          { key: "O", desc: "Configure OAuth for active profile" },
           { key: "?", desc: "Show this help (you are here!)" },
           { key: "ESC", desc: "Clear status / Cancel search or goto" },
           { key: "q", desc: "Quit" },
@@ -1217,6 +1338,76 @@ class TUI {
       this.moveCursor(line++, startCol);
       this.write("\x1b[K");
     }
+  }
+
+  private drawOAuthFlowModal(startCol: number, width: number, height: number): void {
+    // Center the modal on screen
+    const modalWidth = Math.min(60, width - 4);
+    const modalHeight = 12;
+    const modalTop = Math.floor((height - modalHeight) / 2);
+    const modalLeft = Math.floor((width - modalWidth) / 2);
+
+    // Draw modal border (top)
+    this.moveCursor(modalTop, modalLeft);
+    this.write(`\x1b[1;36m╔${"═".repeat(modalWidth - 2)}╗\x1b[0m`);
+
+    // Title
+    this.moveCursor(modalTop + 1, modalLeft);
+    const title = " OAuth Authentication ";
+    const titlePadding = " ".repeat(Math.floor((modalWidth - title.length - 2) / 2));
+    this.write(`\x1b[1;36m║\x1b[0m\x1b[1m${titlePadding}${title}${titlePadding}\x1b[0m\x1b[1;36m║\x1b[0m`);
+
+    // Separator
+    this.moveCursor(modalTop + 2, modalLeft);
+    this.write(`\x1b[1;36m╟${"─".repeat(modalWidth - 2)}╢\x1b[0m`);
+
+    // Status content
+    let line = modalTop + 3;
+
+    // Current status message
+    this.moveCursor(line++, modalLeft);
+    const statusText = this.oauthStatus || "Initializing...";
+    const statusPadding = " ".repeat(Math.max(0, modalWidth - statusText.length - 4));
+    this.write(`\x1b[1;36m║\x1b[0m  ${statusText}${statusPadding}\x1b[1;36m║\x1b[0m`);
+
+    line++;
+
+    // Progress indicator
+    this.moveCursor(line++, modalLeft);
+    const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const spinnerChar = spinner[Math.floor(Date.now() / 100) % spinner.length];
+    const progressText = `${spinnerChar} Please wait...`;
+    const progressPadding = " ".repeat(Math.max(0, modalWidth - progressText.length - 4));
+    this.write(`\x1b[1;36m║\x1b[0m  \x1b[33m${progressText}\x1b[0m${progressPadding}\x1b[1;36m║\x1b[0m`);
+
+    line++;
+
+    // Instructions
+    this.moveCursor(line++, modalLeft);
+    const instr1 = "1. Browser will open to OAuth provider";
+    const instr1Padding = " ".repeat(Math.max(0, modalWidth - instr1.length - 4));
+    this.write(`\x1b[1;36m║\x1b[0m  \x1b[2m${instr1}\x1b[0m${instr1Padding}\x1b[1;36m║\x1b[0m`);
+
+    this.moveCursor(line++, modalLeft);
+    const instr2 = "2. Complete authentication";
+    const instr2Padding = " ".repeat(Math.max(0, modalWidth - instr2.length - 4));
+    this.write(`\x1b[1;36m║\x1b[0m  \x1b[2m${instr2}\x1b[0m${instr2Padding}\x1b[1;36m║\x1b[0m`);
+
+    this.moveCursor(line++, modalLeft);
+    const instr3 = "3. Return to terminal";
+    const instr3Padding = " ".repeat(Math.max(0, modalWidth - instr3.length - 4));
+    this.write(`\x1b[1;36m║\x1b[0m  \x1b[2m${instr3}\x1b[0m${instr3Padding}\x1b[1;36m║\x1b[0m`);
+
+    line++;
+
+    // Empty line with border
+    this.moveCursor(line++, modalLeft);
+    const emptyPadding = " ".repeat(modalWidth - 2);
+    this.write(`\x1b[1;36m║\x1b[0m${emptyPadding}\x1b[1;36m║\x1b[0m`);
+
+    // Bottom border
+    this.moveCursor(line++, modalLeft);
+    this.write(`\x1b[1;36m╚${"═".repeat(modalWidth - 2)}╝\x1b[0m`);
   }
 
   /**
@@ -1653,6 +1844,12 @@ class TUI {
       } else {
         statusText = " Header Editor ";
       }
+    } else if (this.oauthConfigMode) {
+      if (this.oauthConfigEditField) {
+        statusText = " [Ctrl+K] Clear all | [Enter] Save | [ESC] Cancel ";
+      } else {
+        statusText = " [↑↓] Navigate | [E/Enter] Edit (boolean: toggle) | [D] Delete | [ESC] Exit ";
+      }
     } else if (this.documentationMode) {
       statusText = " [↑↓/PgUp/PgDn] Navigate | [Space] Expand/Collapse | [m/ESC] Close ";
     } else if (this.historyMode) {
@@ -1793,6 +1990,12 @@ class TUI {
       // Handle header mode
       if (this.headerMode) {
         await this.handleHeaderInput(input);
+        continue;
+      }
+
+      // Handle OAuth config mode
+      if (this.oauthConfigMode) {
+        await this.handleOAuthConfigInput(input);
         continue;
       }
 
@@ -1944,6 +2147,12 @@ class TUI {
             this.initializeCollapsedFields();
           }
           this.draw();
+        } else if (char === "o") {
+          // Start OAuth flow
+          await this.startOAuthFlow();
+        } else if (char === "O") {
+          // Configure OAuth for active profile
+          this.enterOAuthConfigMode();
         }
       }
     }
@@ -2736,6 +2945,234 @@ class TUI {
       profiles[nextIdx].name
     } (session cleared) `;
     this.draw();
+  }
+
+  async startOAuthFlow(): Promise<void> {
+    // Get OAuth config from active profile
+    const oauthConfig = this.sessionManager.getOAuthConfig();
+
+    if (!oauthConfig || !oauthConfig.enabled) {
+      this.statusMessage = " OAuth not configured for active profile. Press Shift+O to configure ";
+      this.draw();
+      return;
+    }
+
+    // Validate configuration
+    const errors = validateOAuthConfig(oauthConfig);
+    if (errors.length > 0) {
+      this.statusMessage = ` OAuth config error: ${errors[0].message} `;
+      this.draw();
+      return;
+    }
+
+    // Enter OAuth mode
+    this.oauthMode = true;
+    this.oauthStatus = "Initializing...";
+    this.draw();
+
+    try {
+      // Execute OAuth flow
+      const result = await executeOAuthFlow(oauthConfig, (status) => {
+        this.oauthStatus = status;
+        this.draw();
+      });
+
+      if (result.success && result.accessToken) {
+        // Store token in profile variable
+        const defaults = getOAuthDefaults(oauthConfig);
+        const tokenKey = defaults.tokenStorageKey;
+
+        this.sessionManager.setProfileVariable(tokenKey, result.accessToken);
+
+        // If refresh token received, store it too
+        if (result.refreshToken) {
+          this.sessionManager.setProfileVariable(`${tokenKey}_refresh`, result.refreshToken);
+        }
+
+        // Save to disk
+        await this.sessionManager.saveProfiles();
+
+        this.oauthMode = false;
+        this.oauthStatus = "";
+        this.statusMessage = " ✓ OAuth authentication successful! Token stored. ";
+        this.draw();
+      } else {
+        this.oauthMode = false;
+        this.oauthStatus = "";
+        this.statusMessage = ` ✗ OAuth failed: ${result.error || "Unknown error"} `;
+        this.draw();
+      }
+    } catch (error) {
+      this.oauthMode = false;
+      this.oauthStatus = "";
+      this.statusMessage = ` ✗ OAuth error: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
+      this.draw();
+    }
+  }
+
+  enterOAuthConfigMode(): void {
+    const profile = this.sessionManager.getActiveProfile();
+    if (!profile) {
+      this.statusMessage = " No active profile. Press [p] to select a profile ";
+      this.draw();
+      return;
+    }
+
+    this.oauthConfigMode = true;
+    this.oauthConfigIndex = 0;
+    this.oauthConfigEditField = "";
+    this.oauthConfigEditValue = "";
+    this.draw();
+  }
+
+  exitOAuthConfigMode(): void {
+    this.oauthConfigMode = false;
+    this.oauthConfigIndex = 0;
+    this.oauthConfigEditField = "";
+    this.oauthConfigEditValue = "";
+    this.draw();
+  }
+
+  async handleOAuthConfigInput(input: Uint8Array): Promise<void> {
+    // ESC - exit OAuth config mode
+    if (input.length === 1 && input[0] === 27) {
+      this.exitOAuthConfigMode();
+      return;
+    }
+
+    const profile = this.sessionManager.getActiveProfile();
+    if (!profile) {
+      this.exitOAuthConfigMode();
+      return;
+    }
+
+    // Get current OAuth config or create empty one
+    const oauthConfig = profile.oauth || {
+      enabled: false,
+    };
+
+    // Define fields in order
+    const fields = [
+      { key: "enabled", label: "Enabled", type: "boolean" },
+      { key: "authEndpoint", label: "Auth Endpoint (manual full URL)", type: "string" },
+      { key: "tokenUrl", label: "Token URL (required for code flow)", type: "string" },
+      { key: "responseType", label: "Response Type (code or token)", type: "string" },
+      { key: "authUrl", label: "Auth URL (auto-build mode)", type: "string" },
+      { key: "clientId", label: "Client ID (auto-build mode)", type: "string" },
+      { key: "redirectUri", label: "Redirect URI (default: localhost:8888)", type: "string" },
+      { key: "scope", label: "Scope (default: openid)", type: "string" },
+      { key: "clientSecret", label: "Client Secret (optional)", type: "string" },
+      { key: "webhookPort", label: "Webhook Port (default: 8888)", type: "number" },
+      { key: "tokenStorageKey", label: "Token Variable Name (default: token)", type: "string" },
+    ];
+
+    // If not editing a field, handle list navigation
+    if (!this.oauthConfigEditField) {
+      // Arrow keys
+      if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 65) {
+          // Up
+          this.oauthConfigIndex = Math.max(0, this.oauthConfigIndex - 1);
+          this.draw();
+        } else if (input[2] === 66) {
+          // Down
+          this.oauthConfigIndex = Math.min(fields.length - 1, this.oauthConfigIndex + 1);
+          this.draw();
+        }
+        return;
+      }
+
+      // Enter or 'e' - edit selected field
+      if (input.length === 1 && (input[0] === 13 || input[0] === 101 || input[0] === 69)) {
+        const field = fields[this.oauthConfigIndex];
+        this.oauthConfigEditField = field.key;
+
+        if (field.type === "boolean") {
+          // Toggle boolean value directly
+          (oauthConfig as any)[field.key] = !(oauthConfig as any)[field.key];
+          profile.oauth = oauthConfig;
+          await this.sessionManager.saveProfiles();
+          this.statusMessage = ` ${field.label} ${(oauthConfig as any)[field.key] ? "enabled" : "disabled"} `;
+          this.oauthConfigEditField = "";
+          this.draw();
+        } else {
+          // Start editing string/number field
+          this.oauthConfigEditValue = String((oauthConfig as any)[field.key] || "");
+          this.draw();
+        }
+        return;
+      }
+
+      // 'd' - delete/clear selected field
+      if (input.length === 1 && (input[0] === 100 || input[0] === 68)) {
+        const field = fields[this.oauthConfigIndex];
+        delete (oauthConfig as any)[field.key];
+        profile.oauth = oauthConfig;
+        await this.sessionManager.saveProfiles();
+        this.statusMessage = ` ${field.label} cleared `;
+        this.draw();
+        return;
+      }
+    } else {
+      // Currently editing a field
+      const field = fields.find(f => f.key === this.oauthConfigEditField);
+      if (!field) return;
+
+      // Ignore arrow keys in edit mode (they would print escape sequences)
+      if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+        return;
+      }
+
+      // Enter - save
+      if (input.length === 1 && input[0] === 13) {
+        if (field.type === "number") {
+          const num = parseInt(this.oauthConfigEditValue);
+          if (!isNaN(num)) {
+            (oauthConfig as any)[field.key] = num;
+          }
+        } else {
+          (oauthConfig as any)[field.key] = this.oauthConfigEditValue;
+        }
+        profile.oauth = oauthConfig;
+        await this.sessionManager.saveProfiles();
+        this.statusMessage = ` ${field.label} saved `;
+        this.oauthConfigEditField = "";
+        this.oauthConfigEditValue = "";
+        this.draw();
+        return;
+      }
+
+      // Backspace
+      if (input.length === 1 && input[0] === 127) {
+        if (this.oauthConfigEditValue.length > 0) {
+          this.oauthConfigEditValue = this.oauthConfigEditValue.slice(0, -1);
+          this.draw();
+        }
+        return;
+      }
+
+      // Ctrl+K - clear entire value
+      if (input.length === 1 && input[0] === 11) {
+        this.oauthConfigEditValue = "";
+        this.draw();
+        return;
+      }
+
+      // Printable characters (handles paste)
+      let hasValidChars = false;
+      for (let i = 0; i < input.length; i++) {
+        if (input[i] >= 32 && input[i] <= 126) {
+          const char = String.fromCharCode(input[i]);
+          hasValidChars = true;
+          this.oauthConfigEditValue += char;
+        }
+      }
+      if (hasValidChars) {
+        this.draw();
+      }
+    }
   }
 
   async saveResponse(): Promise<void> {
