@@ -1,5 +1,9 @@
 import { parse as parseYaml } from "@std/yaml";
-import { type HttpRequest, type ParsedHttpFile, type Documentation, type Parameter, type Response } from "./parser.ts";
+import {
+  type Documentation,
+  type HttpRequest,
+  type ParsedHttpFile,
+} from "./parser.ts";
 
 interface YamlParameter {
   name: string;
@@ -60,8 +64,7 @@ export function parseYamlHttpFile(content: string): ParsedHttpFile {
         body: data.body,
         documentation: convertYamlDocumentation(data.documentation),
       });
-    }
-    // Multiple requests format
+    } // Multiple requests format
     else if (data.requests && Array.isArray(data.requests)) {
       for (const req of data.requests) {
         requests.push({
@@ -74,19 +77,27 @@ export function parseYamlHttpFile(content: string): ParsedHttpFile {
         });
       }
     } else {
-      throw new Error("Invalid YAML format: must have either method+url or requests array");
+      throw new Error(
+        "Invalid YAML format: must have either method+url or requests array",
+      );
     }
 
     return { requests };
   } catch (error) {
-    throw new Error(`Failed to parse YAML: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to parse YAML: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 }
 
 /**
  * Convert YAML documentation format to internal Documentation format
  */
-function convertYamlDocumentation(yamlDoc?: YamlDocumentation): Documentation | undefined {
+function convertYamlDocumentation(
+  yamlDoc?: YamlDocumentation,
+): Documentation | undefined {
   if (!yamlDoc) return undefined;
 
   const documentation: Documentation = {};
@@ -100,7 +111,7 @@ function convertYamlDocumentation(yamlDoc?: YamlDocumentation): Documentation | 
   }
 
   if (yamlDoc.parameters && yamlDoc.parameters.length > 0) {
-    documentation.parameters = yamlDoc.parameters.map(p => ({
+    documentation.parameters = yamlDoc.parameters.map((p) => ({
       name: p.name,
       type: p.type,
       required: p.required ?? false,
@@ -110,24 +121,24 @@ function convertYamlDocumentation(yamlDoc?: YamlDocumentation): Documentation | 
   }
 
   if (yamlDoc.responses && yamlDoc.responses.length > 0) {
-    documentation.responses = yamlDoc.responses.map(r => {
+    documentation.responses = yamlDoc.responses.map((r) => {
       // Handle both formats: {code: "201", description: "..."} and {"201": "..."}
-      if (typeof r === 'object' && 'code' in r && 'description' in r) {
+      if (typeof r === "object" && "code" in r && "description" in r) {
         return { code: r.code!, description: r.description };
-      } else if (typeof r === 'object') {
+      } else if (typeof r === "object") {
         // Handle {"201": "Created"} format
         const [code, description] = Object.entries(r)[0];
         return { code, description };
       }
-      return { code: '200', description: String(r) };
+      return { code: "200", description: String(r) };
     });
   }
 
   // Only return documentation if it has content
   const hasContent = documentation.description ||
-                     documentation.tags?.length ||
-                     documentation.parameters?.length ||
-                     documentation.responses?.length;
+    documentation.tags?.length ||
+    documentation.parameters?.length ||
+    documentation.responses?.length;
 
   return hasContent ? documentation : undefined;
 }
@@ -159,13 +170,16 @@ export function isYamlFormat(content: string): boolean {
     /^headers\s*:/m,
   ];
 
-  return yamlPatterns.some(pattern => pattern.test(trimmed));
+  return yamlPatterns.some((pattern) => pattern.test(trimmed));
 }
 
 /**
  * Convert HttpRequest to YAML string
  */
-export function requestToYaml(request: HttpRequest, includeRequestsWrapper: boolean = false): string {
+export function requestToYaml(
+  request: HttpRequest,
+  includeRequestsWrapper: boolean = false,
+): string {
   const req: YamlRequest = {
     method: request.method,
     url: request.url,
@@ -186,7 +200,7 @@ export function requestToYaml(request: HttpRequest, includeRequestsWrapper: bool
   if (includeRequestsWrapper) {
     return `---
 requests:
-  - ${yamlStringify(req).split('\n').join('\n    ')}`;
+  - ${yamlStringify(req).split("\n").join("\n    ")}`;
   }
 
   return `---\n${yamlStringify(req)}`;
@@ -213,14 +227,17 @@ function yamlStringify(obj: unknown, indent: number = 0): string {
   }
 
   if (Array.isArray(obj)) {
-    return obj.map(item => `\n${spaces}- ${yamlStringify(item, indent + 2)}`).join("");
+    return obj.map((item) => `\n${spaces}- ${yamlStringify(item, indent + 2)}`)
+      .join("");
   }
 
   if (typeof obj === "object" && obj !== null) {
     const entries = Object.entries(obj);
     return entries.map(([key, value]) => {
       const valueStr = yamlStringify(value, indent + 2);
-      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      if (
+        typeof value === "object" && value !== null && !Array.isArray(value)
+      ) {
         return `\n${spaces}${key}:${valueStr}`;
       }
       if (typeof value === "string" && value.includes("\n")) {

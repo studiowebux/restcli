@@ -1,13 +1,13 @@
 import { walk } from "@std/fs";
 import * as path from "@std/path";
 import { stringify as yamlStringify } from "@std/yaml";
-import { applyVariables, parseHttpFile, type Documentation } from "./parser.ts";
+import { applyVariables, type Documentation, parseHttpFile } from "./parser.ts";
 import { RequestExecutor, type RequestResult } from "./executor.ts";
 import { SessionManager } from "./session.ts";
 import { ConfigManager } from "./config.ts";
 import { type HistoryEntry, HistoryManager } from "./history.ts";
-import { validateOAuthConfig, getOAuthDefaults } from "./oauth-config.ts";
-import { executeOAuthFlow } from "./oauth-flow.ts";
+import { getOAuthDefaults, validateOAuthConfig } from "./oauth/oauth-config.ts";
+import { executeOAuthFlow } from "./oauth/oauth-flow.ts";
 
 interface FileEntry {
   path: string;
@@ -592,7 +592,9 @@ class TUI {
       const statusText =
         `${this.response.status} ${this.response.statusText} | ${
           Math.round(this.response.duration)
-        }ms | Req: ${this.formatBytes(this.response.requestSize)} | Res: ${this.formatBytes(this.response.responseSize)}`.slice(0, width - 2);
+        }ms | Req: ${this.formatBytes(this.response.requestSize)} | Res: ${
+          this.formatBytes(this.response.responseSize)
+        }`.slice(0, width - 2);
       this.write(`${statusColor}${statusText}\x1b[0m\x1b[K`);
       line++;
     }
@@ -637,7 +639,9 @@ class TUI {
     // Show "Body:" with scroll indicator and toggle
     this.moveCursor(line++, startCol);
     const bodyToggle = this.showResponseBody ? "[-]" : "[+]";
-    this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m\x1b[K`);
+    this.write(
+      `\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m\x1b[K`,
+    );
 
     // Calculate maxLines AFTER writing the Body: header
     const maxLines = height - line;
@@ -665,7 +669,9 @@ class TUI {
     // Display wrapped lines with scrolling
     if (this.showResponseBody) {
       for (
-        let i = startIndex; i < wrappedLines.length && line <= height; i++
+        let i = startIndex;
+        i < wrappedLines.length && line <= height;
+        i++
       ) {
         const wrappedLine = wrappedLines[i];
 
@@ -748,7 +754,9 @@ class TUI {
       // Show "Body:" with scroll indicator and toggle
       this.moveCursor(line++, startCol);
       const bodyToggle = this.showResponseBody ? "[-]" : "[+]";
-      this.write(`\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m\x1b[K`);
+      this.write(
+        `\x1b[2mBody ${bodyToggle} Press Shift+B to toggle\x1b[0m\x1b[K`,
+      );
 
       // Calculate maxLines AFTER writing the Body: header
       const maxLines = height - line;
@@ -776,7 +784,9 @@ class TUI {
       // Display wrapped lines with scrolling
       if (this.showResponseBody) {
         for (
-          let i = startIndex; i < wrappedLines.length && line <= height; i++
+          let i = startIndex;
+          i < wrappedLines.length && line <= height;
+          i++
         ) {
           const wrappedLine = wrappedLines[i];
 
@@ -866,12 +876,11 @@ class TUI {
       this.moveCursor(line++, startCol);
       const valueLabel = "Value: ";
       const maxValueWidth = width - valueLabel.length - 2;
-      const valueDisplay =
-        (this.variableEditValue +
-          (this.variableEditField === "value" ? "_" : "")).slice(
-            0,
-            maxValueWidth,
-          );
+      const valueDisplay = (this.variableEditValue +
+        (this.variableEditField === "value" ? "_" : "")).slice(
+          0,
+          maxValueWidth,
+        );
       const valueLine = valueLabel + valueDisplay;
       if (this.variableEditField === "value") {
         this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
@@ -941,7 +950,9 @@ class TUI {
 
       const maxVisibleLines = height - line - 5;
       for (
-        let i = 0; i < Math.min(headerEntries.length, maxVisibleLines); i++
+        let i = 0;
+        i < Math.min(headerEntries.length, maxVisibleLines);
+        i++
       ) {
         this.moveCursor(line++, startCol);
         const [key, value] = headerEntries[i];
@@ -1054,21 +1065,49 @@ class TUI {
     // Define fields in order
     const fields = [
       { key: "enabled", label: "Enabled", type: "boolean" },
-      { key: "authEndpoint", label: "Auth Endpoint (manual full URL)", type: "string" },
-      { key: "tokenUrl", label: "Token URL (required for code flow)", type: "string" },
-      { key: "responseType", label: "Response Type (code or token)", type: "string" },
+      {
+        key: "authEndpoint",
+        label: "Auth Endpoint (manual full URL)",
+        type: "string",
+      },
+      {
+        key: "tokenUrl",
+        label: "Token URL (required for code flow)",
+        type: "string",
+      },
+      {
+        key: "responseType",
+        label: "Response Type (code or token)",
+        type: "string",
+      },
       { key: "authUrl", label: "Auth URL (auto-build mode)", type: "string" },
       { key: "clientId", label: "Client ID (auto-build mode)", type: "string" },
-      { key: "redirectUri", label: "Redirect URI (default: localhost:8888)", type: "string" },
+      {
+        key: "redirectUri",
+        label: "Redirect URI (default: localhost:8888)",
+        type: "string",
+      },
       { key: "scope", label: "Scope (default: openid)", type: "string" },
-      { key: "clientSecret", label: "Client Secret (optional)", type: "string" },
-      { key: "webhookPort", label: "Webhook Port (default: 8888)", type: "number" },
-      { key: "tokenStorageKey", label: "Token Variable Name (default: token)", type: "string" },
+      {
+        key: "clientSecret",
+        label: "Client Secret (optional)",
+        type: "string",
+      },
+      {
+        key: "webhookPort",
+        label: "Webhook Port (default: 8888)",
+        type: "number",
+      },
+      {
+        key: "tokenStorageKey",
+        label: "Token Variable Name (default: token)",
+        type: "string",
+      },
     ];
 
     // If editing a field, show edit UI
     if (this.oauthConfigEditField) {
-      const field = fields.find(f => f.key === this.oauthConfigEditField);
+      const field = fields.find((f) => f.key === this.oauthConfigEditField);
       if (field) {
         this.moveCursor(line++, startCol);
         this.write(`\x1b[1mEdit: ${field.label}\x1b[0m\x1b[K`);
@@ -1086,7 +1125,9 @@ class TUI {
     } else {
       // List mode - show all fields
       this.moveCursor(line++, startCol);
-      this.write(`\x1b[2mTotal: ${fields.length} configuration fields\x1b[0m\x1b[K`);
+      this.write(
+        `\x1b[2mTotal: ${fields.length} configuration fields\x1b[0m\x1b[K`,
+      );
       line++;
 
       const maxVisibleLines = height - line - 5;
@@ -1317,18 +1358,25 @@ class TUI {
     const maxLines = height - 4; // Reserve space for title and scroll indicator
     const totalLines = contentLines.length;
     this.maxHelpScrollOffset = Math.max(0, totalLines - maxLines);
-    const startIndex = Math.max(0, Math.min(this.helpScrollOffset, this.maxHelpScrollOffset));
+    const startIndex = Math.max(
+      0,
+      Math.min(this.helpScrollOffset, this.maxHelpScrollOffset),
+    );
 
     // Display content with scrolling
     let line = 4;
-    for (let i = startIndex; i < contentLines.length && line < height - 1; i++) {
+    for (
+      let i = startIndex; i < contentLines.length && line < height - 1; i++
+    ) {
       this.moveCursor(line++, startCol);
       this.write(`${contentLines[i]}\x1b[K`);
     }
 
     // Show scroll indicator if needed
     if (totalLines > maxLines) {
-      const scrollProgress = `[${startIndex + 1}-${Math.min(startIndex + maxLines, totalLines)}/${totalLines}]`;
+      const scrollProgress = `[${startIndex + 1}-${
+        Math.min(startIndex + maxLines, totalLines)
+      }/${totalLines}]`;
       this.moveCursor(height - 1, width - scrollProgress.length - 1);
       this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
     }
@@ -1340,7 +1388,11 @@ class TUI {
     }
   }
 
-  private drawOAuthFlowModal(startCol: number, width: number, height: number): void {
+  private drawOAuthFlowModal(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
     // Center the modal on screen
     const modalWidth = Math.min(60, width - 4);
     const modalHeight = 12;
@@ -1354,8 +1406,12 @@ class TUI {
     // Title
     this.moveCursor(modalTop + 1, modalLeft);
     const title = " OAuth Authentication ";
-    const titlePadding = " ".repeat(Math.floor((modalWidth - title.length - 2) / 2));
-    this.write(`\x1b[1;36m║\x1b[0m\x1b[1m${titlePadding}${title}${titlePadding}\x1b[0m\x1b[1;36m║\x1b[0m`);
+    const titlePadding = " ".repeat(
+      Math.floor((modalWidth - title.length - 2) / 2),
+    );
+    this.write(
+      `\x1b[1;36m║\x1b[0m\x1b[1m${titlePadding}${title}${titlePadding}\x1b[0m\x1b[1;36m║\x1b[0m`,
+    );
 
     // Separator
     this.moveCursor(modalTop + 2, modalLeft);
@@ -1367,8 +1423,12 @@ class TUI {
     // Current status message
     this.moveCursor(line++, modalLeft);
     const statusText = this.oauthStatus || "Initializing...";
-    const statusPadding = " ".repeat(Math.max(0, modalWidth - statusText.length - 4));
-    this.write(`\x1b[1;36m║\x1b[0m  ${statusText}${statusPadding}\x1b[1;36m║\x1b[0m`);
+    const statusPadding = " ".repeat(
+      Math.max(0, modalWidth - statusText.length - 4),
+    );
+    this.write(
+      `\x1b[1;36m║\x1b[0m  ${statusText}${statusPadding}\x1b[1;36m║\x1b[0m`,
+    );
 
     line++;
 
@@ -1377,26 +1437,42 @@ class TUI {
     const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     const spinnerChar = spinner[Math.floor(Date.now() / 100) % spinner.length];
     const progressText = `${spinnerChar} Please wait...`;
-    const progressPadding = " ".repeat(Math.max(0, modalWidth - progressText.length - 4));
-    this.write(`\x1b[1;36m║\x1b[0m  \x1b[33m${progressText}\x1b[0m${progressPadding}\x1b[1;36m║\x1b[0m`);
+    const progressPadding = " ".repeat(
+      Math.max(0, modalWidth - progressText.length - 4),
+    );
+    this.write(
+      `\x1b[1;36m║\x1b[0m  \x1b[33m${progressText}\x1b[0m${progressPadding}\x1b[1;36m║\x1b[0m`,
+    );
 
     line++;
 
     // Instructions
     this.moveCursor(line++, modalLeft);
     const instr1 = "1. Browser will open to OAuth provider";
-    const instr1Padding = " ".repeat(Math.max(0, modalWidth - instr1.length - 4));
-    this.write(`\x1b[1;36m║\x1b[0m  \x1b[2m${instr1}\x1b[0m${instr1Padding}\x1b[1;36m║\x1b[0m`);
+    const instr1Padding = " ".repeat(
+      Math.max(0, modalWidth - instr1.length - 4),
+    );
+    this.write(
+      `\x1b[1;36m║\x1b[0m  \x1b[2m${instr1}\x1b[0m${instr1Padding}\x1b[1;36m║\x1b[0m`,
+    );
 
     this.moveCursor(line++, modalLeft);
     const instr2 = "2. Complete authentication";
-    const instr2Padding = " ".repeat(Math.max(0, modalWidth - instr2.length - 4));
-    this.write(`\x1b[1;36m║\x1b[0m  \x1b[2m${instr2}\x1b[0m${instr2Padding}\x1b[1;36m║\x1b[0m`);
+    const instr2Padding = " ".repeat(
+      Math.max(0, modalWidth - instr2.length - 4),
+    );
+    this.write(
+      `\x1b[1;36m║\x1b[0m  \x1b[2m${instr2}\x1b[0m${instr2Padding}\x1b[1;36m║\x1b[0m`,
+    );
 
     this.moveCursor(line++, modalLeft);
     const instr3 = "3. Return to terminal";
-    const instr3Padding = " ".repeat(Math.max(0, modalWidth - instr3.length - 4));
-    this.write(`\x1b[1;36m║\x1b[0m  \x1b[2m${instr3}\x1b[0m${instr3Padding}\x1b[1;36m║\x1b[0m`);
+    const instr3Padding = " ".repeat(
+      Math.max(0, modalWidth - instr3.length - 4),
+    );
+    this.write(
+      `\x1b[1;36m║\x1b[0m  \x1b[2m${instr3}\x1b[0m${instr3Padding}\x1b[1;36m║\x1b[0m`,
+    );
 
     line++;
 
@@ -1452,9 +1528,9 @@ class TUI {
                 //   - account.characters[]
                 //   - account.characters[].inventory
                 //   - account.characters[].inventory.items[]
-                const parts = field.name.split('.');
+                const parts = field.name.split(".");
                 for (let i = 1; i < parts.length; i++) {
-                  const parentPath = parts.slice(0, i).join('.');
+                  const parentPath = parts.slice(0, i).join(".");
                   parentPaths.add(parentPath);
                 }
               }
@@ -1478,7 +1554,7 @@ class TUI {
   private addResponseFieldsToNav(
     fields: any[],
     navItems: any[],
-    width: number
+    width: number,
   ): void {
     // Build a complete list of all paths (including intermediate parents)
     const allPaths = new Set<string>();
@@ -1492,24 +1568,24 @@ class TUI {
 
     // Add all intermediate parent paths
     for (const field of fields) {
-      const parts = field.name.split('.');
+      const parts = field.name.split(".");
       for (let i = 1; i < parts.length; i++) {
-        const parentPath = parts.slice(0, i).join('.');
+        const parentPath = parts.slice(0, i).join(".");
         if (!allPaths.has(parentPath)) {
           allPaths.add(parentPath);
           // Create a virtual parent node
           fieldMap.set(parentPath, {
             name: parentPath,
-            type: 'object',
+            type: "object",
             required: false,
-            isVirtual: true  // Mark as virtual parent
+            isVirtual: true, // Mark as virtual parent
           });
         }
       }
     }
 
     // Convert to array for processing
-    const allFields = Array.from(allPaths).map(path => fieldMap.get(path)!);
+    const allFields = Array.from(allPaths).map((path) => fieldMap.get(path)!);
 
     // Pre-compute which fields have children (O(n) instead of O(n²))
     const hasChildrenCache = new Map<string, boolean>();
@@ -1517,15 +1593,22 @@ class TUI {
       hasChildrenCache.set(field.name, false);
     }
     for (const field of allFields) {
-      const parts = field.name.split('.');
+      const parts = field.name.split(".");
       if (parts.length > 1) {
-        const parent = parts.slice(0, -1).join('.');
+        const parent = parts.slice(0, -1).join(".");
         hasChildrenCache.set(parent, true);
       }
     }
 
     // Recursively add fields starting from root
-    this.addFieldsRecursive('', allFields, navItems, width, 0, hasChildrenCache);
+    this.addFieldsRecursive(
+      "",
+      allFields,
+      navItems,
+      width,
+      0,
+      hasChildrenCache,
+    );
   }
 
   /**
@@ -1537,7 +1620,7 @@ class TUI {
     navItems: any[],
     width: number,
     depth: number,
-    hasChildrenCache: Map<string, boolean>
+    hasChildrenCache: Map<string, boolean>,
   ): void {
     // Prevent excessive depth
     if (depth > 100) {
@@ -1545,14 +1628,14 @@ class TUI {
     }
 
     // Get direct children of this parent
-    const children = allFields.filter(f => {
-      const parts = f.name.split('.');
-      const fieldParent = parts.slice(0, -1).join('.');
+    const children = allFields.filter((f) => {
+      const parts = f.name.split(".");
+      const fieldParent = parts.slice(0, -1).join(".");
       return fieldParent === parentPath;
     });
 
     for (const field of children) {
-      const displayName = field.name.split('.').pop() || field.name;
+      const displayName = field.name.split(".").pop() || field.name;
       const baseIndent = 6 + (depth * 2);
       const indent = " ".repeat(baseIndent);
 
@@ -1561,25 +1644,32 @@ class TUI {
       const isCollapsed = this.documentationCollapsedFields.has(field.name);
 
       // Collapse indicator
-      const collapseIndicator = hasChildren ? (isCollapsed ? '▶ ' : '▼ ') : '  ';
+      const collapseIndicator = hasChildren
+        ? (isCollapsed ? "▶ " : "▼ ")
+        : "  ";
 
       // For virtual parent nodes (auto-generated from dot notation), show simpler format
       let fieldText: string;
       if (field.isVirtual) {
         fieldText = `${indent}${collapseIndicator}\x1b[1m${displayName}\x1b[0m`;
       } else {
-        const requiredBadge = field.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
-        const deprecatedBadge = field.deprecated ? " \x1b[33m[deprecated]\x1b[0m" : "";
-        fieldText = `${indent}${collapseIndicator}\x1b[1m${displayName}\x1b[0m \x1b[2m{${field.type}}\x1b[0m ${requiredBadge}${deprecatedBadge}`;
+        const requiredBadge = field.required
+          ? "\x1b[31m[required]\x1b[0m"
+          : "\x1b[33m[optional]\x1b[0m";
+        const deprecatedBadge = field.deprecated
+          ? " \x1b[33m[deprecated]\x1b[0m"
+          : "";
+        fieldText =
+          `${indent}${collapseIndicator}\x1b[1m${displayName}\x1b[0m \x1b[2m{${field.type}}\x1b[0m ${requiredBadge}${deprecatedBadge}`;
       }
 
       navItems.push({
-        type: 'field',
+        type: "field",
         text: fieldText,
         fieldPath: field.name,
         hasChildren,
         isCollapsible: hasChildren,
-        depth
+        depth,
       });
 
       // Add description and example if not collapsed (skip for virtual nodes)
@@ -1589,29 +1679,46 @@ class TUI {
 
         if (field.description) {
           navItems.push({
-            type: 'text',
-            text: `${textIndent}${field.description.slice(0, width - 10 - textIndent.length)}`,
-            parentField: field.name
+            type: "text",
+            text: `${textIndent}${
+              field.description.slice(0, width - 10 - textIndent.length)
+            }`,
+            parentField: field.name,
           });
         }
         if (field.example !== undefined) {
-          const exampleStr = typeof field.example === 'string' ? `"${field.example}"` : JSON.stringify(field.example);
+          const exampleStr = typeof field.example === "string"
+            ? `"${field.example}"`
+            : JSON.stringify(field.example);
           navItems.push({
-            type: 'text',
-            text: `${textIndent}\x1b[2mExample: ${exampleStr.slice(0, width - 20 - textIndent.length)}\x1b[0m`,
-            parentField: field.name
+            type: "text",
+            text: `${textIndent}\x1b[2mExample: ${
+              exampleStr.slice(0, width - 20 - textIndent.length)
+            }\x1b[0m`,
+            parentField: field.name,
           });
         }
       }
 
       // Recursively add children if not collapsed
       if (!isCollapsed && hasChildren) {
-        this.addFieldsRecursive(field.name, allFields, navItems, width, depth + 1, hasChildrenCache);
+        this.addFieldsRecursive(
+          field.name,
+          allFields,
+          navItems,
+          width,
+          depth + 1,
+          hasChildrenCache,
+        );
       }
     }
   }
 
-  private drawDocumentation(startCol: number, width: number, height: number): void {
+  private drawDocumentation(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
     this.moveCursor(2, startCol);
     const title = " Documentation ";
     this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
@@ -1637,7 +1744,9 @@ class TUI {
     } catch (error) {
       this.moveCursor(4, startCol);
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.write(`\x1b[31mError loading documentation: ${errorMsg}\x1b[0m\x1b[K`);
+      this.write(
+        `\x1b[31mError loading documentation: ${errorMsg}\x1b[0m\x1b[K`,
+      );
       return;
     }
 
@@ -1651,13 +1760,17 @@ class TUI {
 
     if (!hasContent) {
       this.moveCursor(4, startCol);
-      this.write(`\x1b[2mNo documentation available for this request\x1b[0m\x1b[K`);
+      this.write(
+        `\x1b[2mNo documentation available for this request\x1b[0m\x1b[K`,
+      );
       this.moveCursor(6, startCol);
       this.write(`\x1b[2mAdd documentation using:\x1b[0m\x1b[K`);
       this.moveCursor(7, startCol);
       this.write(`\x1b[2m  • # @description ... in .http files\x1b[0m\x1b[K`);
       this.moveCursor(8, startCol);
-      this.write(`\x1b[2m  • documentation: section in .yaml files\x1b[0m\x1b[K`);
+      this.write(
+        `\x1b[2m  • documentation: section in .yaml files\x1b[0m\x1b[K`,
+      );
       this.moveCursor(10, startCol);
       this.write(`\x1b[2mSee docs/DOCUMENTATION.md for details\x1b[0m\x1b[K`);
       return;
@@ -1665,11 +1778,11 @@ class TUI {
 
     // Build navigable items with collapse support
     interface NavItem {
-      type: 'text' | 'field' | 'header';
+      type: "text" | "field" | "header";
       text: string;
-      fieldPath?: string;  // For collapsible fields
-      hasChildren?: boolean;  // Whether this field has nested children
-      isCollapsible?: boolean;  // Whether this item can be collapsed
+      fieldPath?: string; // For collapsible fields
+      hasChildren?: boolean; // Whether this field has nested children
+      isCollapsible?: boolean; // Whether this item can be collapsed
     }
 
     const navItems: NavItem[] = [];
@@ -1677,87 +1790,129 @@ class TUI {
 
     // Description
     if (doc.description) {
-      navItems.push({ type: 'header', text: `\x1b[1;36mDescription:\x1b[0m` });
-      navItems.push({ type: 'text', text: "" });
+      navItems.push({ type: "header", text: `\x1b[1;36mDescription:\x1b[0m` });
+      navItems.push({ type: "text", text: "" });
       const maxDescWidth = width - 4;
-      const words = doc.description.split(' ');
+      const words = doc.description.split(" ");
       let currentLine = "  ";
       for (const word of words) {
         if (currentLine.length + word.length + 1 > maxDescWidth) {
-          navItems.push({ type: 'text', text: currentLine });
+          navItems.push({ type: "text", text: currentLine });
           currentLine = "  " + word;
         } else {
           currentLine += (currentLine.length > 2 ? " " : "") + word;
         }
       }
       if (currentLine.length > 2) {
-        navItems.push({ type: 'text', text: currentLine });
+        navItems.push({ type: "text", text: currentLine });
       }
-      navItems.push({ type: 'text', text: "" });
+      navItems.push({ type: "text", text: "" });
     }
 
     // Tags
     if (doc.tags && doc.tags.length > 0) {
-      navItems.push({ type: 'header', text: `\x1b[1;36mTags:\x1b[0m` });
-      navItems.push({ type: 'text', text: "" });
-      navItems.push({ type: 'text', text: `  ${doc.tags.map(t => `\x1b[35m#${t}\x1b[0m`).join("  ")}` });
-      navItems.push({ type: 'text', text: "" });
+      navItems.push({ type: "header", text: `\x1b[1;36mTags:\x1b[0m` });
+      navItems.push({ type: "text", text: "" });
+      navItems.push({
+        type: "text",
+        text: `  ${doc.tags.map((t) => `\x1b[35m#${t}\x1b[0m`).join("  ")}`,
+      });
+      navItems.push({ type: "text", text: "" });
     }
 
     // Parameters
     if (doc.parameters && doc.parameters.length > 0) {
-      navItems.push({ type: 'header', text: `\x1b[1;36mParameters:\x1b[0m` });
-      navItems.push({ type: 'text', text: "" });
+      navItems.push({ type: "header", text: `\x1b[1;36mParameters:\x1b[0m` });
+      navItems.push({ type: "text", text: "" });
       for (const param of doc.parameters) {
-        const requiredBadge = param.required ? "\x1b[31m[required]\x1b[0m" : "\x1b[33m[optional]\x1b[0m";
-        navItems.push({ type: 'field', text: `  \x1b[1m${param.name}\x1b[0m \x1b[2m{${param.type}}\x1b[0m ${requiredBadge}`, fieldPath: `param.${param.name}`, isCollapsible: false });
+        const requiredBadge = param.required
+          ? "\x1b[31m[required]\x1b[0m"
+          : "\x1b[33m[optional]\x1b[0m";
+        navItems.push({
+          type: "field",
+          text:
+            `  \x1b[1m${param.name}\x1b[0m \x1b[2m{${param.type}}\x1b[0m ${requiredBadge}`,
+          fieldPath: `param.${param.name}`,
+          isCollapsible: false,
+        });
         if (param.description) {
-          navItems.push({ type: 'text', text: `    ${param.description.slice(0, width - 6)}` });
+          navItems.push({
+            type: "text",
+            text: `    ${param.description.slice(0, width - 6)}`,
+          });
         }
         if (param.example !== undefined) {
-          const exampleStr = typeof param.example === 'string' ? `"${param.example}"` : String(param.example);
-          navItems.push({ type: 'text', text: `    \x1b[2mExample: ${exampleStr.slice(0, width - 16)}\x1b[0m` });
+          const exampleStr = typeof param.example === "string"
+            ? `"${param.example}"`
+            : String(param.example);
+          navItems.push({
+            type: "text",
+            text: `    \x1b[2mExample: ${
+              exampleStr.slice(0, width - 16)
+            }\x1b[0m`,
+          });
         }
-        navItems.push({ type: 'text', text: "" });
+        navItems.push({ type: "text", text: "" });
       }
     }
 
     // Responses with collapsible fields
     if (doc.responses && doc.responses.length > 0) {
-      navItems.push({ type: 'header', text: `\x1b[1;36mResponses:\x1b[0m` });
-      navItems.push({ type: 'text', text: "" });
+      navItems.push({ type: "header", text: `\x1b[1;36mResponses:\x1b[0m` });
+      navItems.push({ type: "text", text: "" });
       for (const response of doc.responses) {
-        const codeColor = response.code.startsWith('2') ? '\x1b[32m' :
-                          response.code.startsWith('4') || response.code.startsWith('5') ? '\x1b[31m' : '\x1b[33m';
-        navItems.push({ type: 'field', text: `  ${codeColor}${response.code}\x1b[0m  ${response.description.slice(0, width - 10)}`, fieldPath: `response.${response.code}`, isCollapsible: false });
+        const codeColor = response.code.startsWith("2")
+          ? "\x1b[32m"
+          : response.code.startsWith("4") || response.code.startsWith("5")
+          ? "\x1b[31m"
+          : "\x1b[33m";
+        navItems.push({
+          type: "field",
+          text: `  ${codeColor}${response.code}\x1b[0m  ${
+            response.description.slice(0, width - 10)
+          }`,
+          fieldPath: `response.${response.code}`,
+          isCollapsible: false,
+        });
 
         if (response.fields && response.fields.length > 0) {
-          navItems.push({ type: 'text', text: "" });
-          navItems.push({ type: 'text', text: `    \x1b[2mResponse Body:\x1b[0m` });
+          navItems.push({ type: "text", text: "" });
+          navItems.push({
+            type: "text",
+            text: `    \x1b[2mResponse Body:\x1b[0m`,
+          });
 
           // Build field tree and collapse by default
           this.addResponseFieldsToNav(response.fields, navItems, width);
         }
-        navItems.push({ type: 'text', text: "" });
+        navItems.push({ type: "text", text: "" });
       }
     }
 
     // Footer
-    navItems.push({ type: 'text', text: "" });
-    navItems.push({ type: 'text', text: "\x1b[2mPress ESC/m to close | ↑/↓/PgUp/PgDn to navigate | Space to expand/collapse\x1b[0m" });
+    navItems.push({ type: "text", text: "" });
+    navItems.push({
+      type: "text",
+      text:
+        "\x1b[2mPress ESC/m to close | ↑/↓/PgUp/PgDn to navigate | Space to expand/collapse\x1b[0m",
+    });
 
     // Cache navItems for keyboard handlers
     this.currentDocNavItems = navItems;
 
-    this.documentationMaxCursorIndex = navItems.filter(item => item.type === 'field').length - 1;
+    this.documentationMaxCursorIndex =
+      navItems.filter((item) => item.type === "field").length - 1;
 
     // Ensure cursor is in valid range
     if (this.documentationCursorIndex > this.documentationMaxCursorIndex) {
-      this.documentationCursorIndex = Math.max(0, this.documentationMaxCursorIndex);
+      this.documentationCursorIndex = Math.max(
+        0,
+        this.documentationMaxCursorIndex,
+      );
     }
 
     // Calculate which field is under the cursor
-    const fieldItems = navItems.filter(item => item.type === 'field');
+    const fieldItems = navItems.filter((item) => item.type === "field");
     const cursorField = fieldItems[this.documentationCursorIndex];
 
     // Auto-scroll to keep cursor visible
@@ -1777,7 +1932,13 @@ class TUI {
 
     const totalLines = navItems.length;
     this.maxDocumentationScrollOffset = Math.max(0, totalLines - maxLines);
-    const startIndex = Math.max(0, Math.min(this.documentationScrollOffset, this.maxDocumentationScrollOffset));
+    const startIndex = Math.max(
+      0,
+      Math.min(
+        this.documentationScrollOffset,
+        this.maxDocumentationScrollOffset,
+      ),
+    );
 
     // Display content with scrolling and cursor highlighting
     let line = 4;
@@ -1797,7 +1958,9 @@ class TUI {
 
     // Show scroll indicator if needed
     if (totalLines > maxLines) {
-      const scrollProgress = `[${startIndex + 1}-${Math.min(startIndex + maxLines, totalLines)}/${totalLines}]`;
+      const scrollProgress = `[${startIndex + 1}-${
+        Math.min(startIndex + maxLines, totalLines)
+      }/${totalLines}]`;
       this.moveCursor(height - 1, startCol + width - scrollProgress.length - 1);
       this.write(`\x1b[2m${scrollProgress}\x1b[0m`);
     }
@@ -1848,10 +2011,12 @@ class TUI {
       if (this.oauthConfigEditField) {
         statusText = " [Ctrl+K] Clear all | [Enter] Save | [ESC] Cancel ";
       } else {
-        statusText = " [↑↓] Navigate | [E/Enter] Edit (boolean: toggle) | [D] Delete | [ESC] Exit ";
+        statusText =
+          " [↑↓] Navigate | [E/Enter] Edit (boolean: toggle) | [D] Delete | [ESC] Exit ";
       }
     } else if (this.documentationMode) {
-      statusText = " [↑↓/PgUp/PgDn] Navigate | [Space] Expand/Collapse | [m/ESC] Close ";
+      statusText =
+        " [↑↓/PgUp/PgDn] Navigate | [Space] Expand/Collapse | [m/ESC] Close ";
     } else if (this.historyMode) {
       const count = this.historyEntries.length;
       if (count === 0) {
@@ -1933,7 +2098,9 @@ class TUI {
         if (input.length === 1 && input[0] === 32) {
           // Get current field under cursor
           const navItems = this.getCurrentDocNavItems();
-          const fieldItems = navItems.filter((item: any) => item.type === 'field');
+          const fieldItems = navItems.filter((item: any) =>
+            item.type === "field"
+          );
           const cursorField = fieldItems[this.documentationCursorIndex];
 
           if (cursorField && cursorField.isCollapsible) {
@@ -1951,7 +2118,10 @@ class TUI {
         if (input.length === 3 && input[0] === 27 && input[1] === 91) {
           if (input[2] === 65) {
             // Up - move cursor up
-            this.documentationCursorIndex = Math.max(0, this.documentationCursorIndex - 1);
+            this.documentationCursorIndex = Math.max(
+              0,
+              this.documentationCursorIndex - 1,
+            );
             this.draw();
           } else if (input[2] === 66) {
             // Down - move cursor down
@@ -1967,7 +2137,10 @@ class TUI {
         if (input.length === 4 && input[0] === 27 && input[1] === 91) {
           if (input[2] === 53 && input[3] === 126) {
             // Page Up
-            this.documentationCursorIndex = Math.max(0, this.documentationCursorIndex - 10);
+            this.documentationCursorIndex = Math.max(
+              0,
+              this.documentationCursorIndex - 10,
+            );
             this.draw();
           } else if (input[2] === 54 && input[3] === 126) {
             // Page Down
@@ -2952,7 +3125,8 @@ class TUI {
     const oauthConfig = this.sessionManager.getOAuthConfig();
 
     if (!oauthConfig || !oauthConfig.enabled) {
-      this.statusMessage = " OAuth not configured for active profile. Press Shift+O to configure ";
+      this.statusMessage =
+        " OAuth not configured for active profile. Press Shift+O to configure ";
       this.draw();
       return;
     }
@@ -2972,7 +3146,7 @@ class TUI {
 
     try {
       // Execute OAuth flow
-      const result = await executeOAuthFlow(oauthConfig, (status) => {
+      const result = await executeOAuthFlow(oauthConfig, (status: string) => {
         this.oauthStatus = status;
         this.draw();
       });
@@ -2986,7 +3160,10 @@ class TUI {
 
         // If refresh token received, store it too
         if (result.refreshToken) {
-          this.sessionManager.setProfileVariable(`${tokenKey}_refresh`, result.refreshToken);
+          this.sessionManager.setProfileVariable(
+            `${tokenKey}_refresh`,
+            result.refreshToken,
+          );
         }
 
         // Save to disk
@@ -2994,12 +3171,15 @@ class TUI {
 
         this.oauthMode = false;
         this.oauthStatus = "";
-        this.statusMessage = " ✓ OAuth authentication successful! Token stored. ";
+        this.statusMessage =
+          " ✓ OAuth authentication successful! Token stored. ";
         this.draw();
       } else {
         this.oauthMode = false;
         this.oauthStatus = "";
-        this.statusMessage = ` ✗ OAuth failed: ${result.error || "Unknown error"} `;
+        this.statusMessage = ` ✗ OAuth failed: ${
+          result.error || "Unknown error"
+        } `;
         this.draw();
       }
     } catch (error) {
@@ -3056,16 +3236,44 @@ class TUI {
     // Define fields in order
     const fields = [
       { key: "enabled", label: "Enabled", type: "boolean" },
-      { key: "authEndpoint", label: "Auth Endpoint (manual full URL)", type: "string" },
-      { key: "tokenUrl", label: "Token URL (required for code flow)", type: "string" },
-      { key: "responseType", label: "Response Type (code or token)", type: "string" },
+      {
+        key: "authEndpoint",
+        label: "Auth Endpoint (manual full URL)",
+        type: "string",
+      },
+      {
+        key: "tokenUrl",
+        label: "Token URL (required for code flow)",
+        type: "string",
+      },
+      {
+        key: "responseType",
+        label: "Response Type (code or token)",
+        type: "string",
+      },
       { key: "authUrl", label: "Auth URL (auto-build mode)", type: "string" },
       { key: "clientId", label: "Client ID (auto-build mode)", type: "string" },
-      { key: "redirectUri", label: "Redirect URI (default: localhost:8888)", type: "string" },
+      {
+        key: "redirectUri",
+        label: "Redirect URI (default: localhost:8888)",
+        type: "string",
+      },
       { key: "scope", label: "Scope (default: openid)", type: "string" },
-      { key: "clientSecret", label: "Client Secret (optional)", type: "string" },
-      { key: "webhookPort", label: "Webhook Port (default: 8888)", type: "number" },
-      { key: "tokenStorageKey", label: "Token Variable Name (default: token)", type: "string" },
+      {
+        key: "clientSecret",
+        label: "Client Secret (optional)",
+        type: "string",
+      },
+      {
+        key: "webhookPort",
+        label: "Webhook Port (default: 8888)",
+        type: "number",
+      },
+      {
+        key: "tokenStorageKey",
+        label: "Token Variable Name (default: token)",
+        type: "string",
+      },
     ];
 
     // If not editing a field, handle list navigation
@@ -3078,14 +3286,20 @@ class TUI {
           this.draw();
         } else if (input[2] === 66) {
           // Down
-          this.oauthConfigIndex = Math.min(fields.length - 1, this.oauthConfigIndex + 1);
+          this.oauthConfigIndex = Math.min(
+            fields.length - 1,
+            this.oauthConfigIndex + 1,
+          );
           this.draw();
         }
         return;
       }
 
       // Enter or 'e' - edit selected field
-      if (input.length === 1 && (input[0] === 13 || input[0] === 101 || input[0] === 69)) {
+      if (
+        input.length === 1 &&
+        (input[0] === 13 || input[0] === 101 || input[0] === 69)
+      ) {
         const field = fields[this.oauthConfigIndex];
         this.oauthConfigEditField = field.key;
 
@@ -3094,12 +3308,16 @@ class TUI {
           (oauthConfig as any)[field.key] = !(oauthConfig as any)[field.key];
           profile.oauth = oauthConfig;
           await this.sessionManager.saveProfiles();
-          this.statusMessage = ` ${field.label} ${(oauthConfig as any)[field.key] ? "enabled" : "disabled"} `;
+          this.statusMessage = ` ${field.label} ${
+            (oauthConfig as any)[field.key] ? "enabled" : "disabled"
+          } `;
           this.oauthConfigEditField = "";
           this.draw();
         } else {
           // Start editing string/number field
-          this.oauthConfigEditValue = String((oauthConfig as any)[field.key] || "");
+          this.oauthConfigEditValue = String(
+            (oauthConfig as any)[field.key] || "",
+          );
           this.draw();
         }
         return;
@@ -3117,7 +3335,7 @@ class TUI {
       }
     } else {
       // Currently editing a field
-      const field = fields.find(f => f.key === this.oauthConfigEditField);
+      const field = fields.find((f) => f.key === this.oauthConfigEditField);
       if (!field) return;
 
       // Ignore arrow keys in edit mode (they would print escape sequences)
@@ -3631,7 +3849,12 @@ if (import.meta.main) {
   // If args exist and first arg is not a flag, it's a file path → CLI mode
   if (args.length > 0 && !args[0].startsWith("-")) {
     await runCLI();
-  } else if (args.length > 0 && (args[0] === "--help" || args[0] === "-h" || args[0] === "--profile" || args[0] === "-p" || args[0] === "--full" || args[0] === "-f" || args[0] === "--yaml" || args[0] === "-y")) {
+  } else if (
+    args.length > 0 &&
+    (args[0] === "--help" || args[0] === "-h" || args[0] === "--profile" ||
+      args[0] === "-p" || args[0] === "--full" || args[0] === "-f" ||
+      args[0] === "--yaml" || args[0] === "-y")
+  ) {
     // Flags with file (or help flag) → CLI mode
     await runCLI();
   } else {

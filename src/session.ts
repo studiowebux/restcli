@@ -1,6 +1,6 @@
 import { exists } from "@std/fs";
 import * as path from "@std/path";
-import type { OAuthConfig } from "./oauth-config.ts";
+import type { OAuthConfig } from "./oauth/oauth-config.ts";
 
 export interface Session {
   variables: Record<string, string>;
@@ -48,7 +48,7 @@ export class SessionManager {
   async save(): Promise<void> {
     await Deno.writeTextFile(
       this.sessionFile,
-      JSON.stringify(this.session, null, 2)
+      JSON.stringify(this.session, null, 2),
     );
   }
 
@@ -144,7 +144,7 @@ export class SessionManager {
 
   getActiveProfile(): HeaderProfile | undefined {
     if (!this.session.activeProfile) return undefined;
-    return this.profiles.find(p => p.name === this.session.activeProfile);
+    return this.profiles.find((p) => p.name === this.session.activeProfile);
   }
 
   setActiveProfile(name: string): void {
@@ -161,7 +161,7 @@ export class SessionManager {
   async saveProfiles(): Promise<void> {
     await Deno.writeTextFile(
       this.profilesFile,
-      JSON.stringify(this.profiles, null, 2)
+      JSON.stringify(this.profiles, null, 2),
     );
   }
 

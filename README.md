@@ -11,6 +11,9 @@ A simple, keyboard-driven TUI for testing HTTP endpoints without the bloat of GU
 - Quick file duplication
 - Auto-save session state
 - Request/response history with timestamps
+- OAuth 2.0 authentication flow (PKCE support)
+- OpenAPI/Swagger import - auto-generate .http files
+- Interactive documentation viewer with collapsible fields
 - Global config directory (`~/.restcli/`) - use from anywhere
 - Compiled binaries - no runtime dependencies
 - YAML format support with JSON schema for autocomplete
@@ -18,6 +21,7 @@ A simple, keyboard-driven TUI for testing HTTP endpoints without the bloat of GU
 - Response scrolling with vim-style j/k keys
 - CLI mode - pipe-friendly output for automation and scripting
 - YAML conversion - transform JSON responses to YAML
+- Fullscreen mode for focused response viewing
 
 ## Quick Start
 
@@ -241,8 +245,16 @@ The TUI auto-extracts `token` or `accessToken` from JSON responses and temporari
 - `m` - View request documentation
 - `j` - Scroll response down (useful for long JSON responses)
 - `k` - Scroll response up
+- `b` - Toggle response body visibility
+- `f` - Toggle fullscreen mode (hide sidebar)
+- `H` - View request history
+
+### OAuth 2.0
+- `o` - Start OAuth authentication flow (uses profile's OAuth config)
+- `O` - Configure OAuth settings for current profile
 
 ### Utilities
+- `?` - Show help
 - `ESC` - Clear status message / Cancel search or goto
 - `q` - Quit
 
@@ -310,6 +322,57 @@ The header editor works identically to the variable editor:
 - Headers are saved to the **active profile** in `.profiles.json`
 - Profile headers are merged with request headers (request headers take precedence)
 - Common headers: `Authorization`, `Content-Type`, `X-API-Key`, etc.
+
+## OAuth 2.0 Authentication
+
+Press `O` to configure OAuth 2.0 settings for the active profile. The OAuth configuration supports two modes:
+
+### Manual Mode
+Provide a complete authorization endpoint URL directly:
+- `authEndpoint`: Full authorization URL with all parameters
+- `tokenUrl`: Token endpoint for code exchange (required for authorization code flow)
+- `responseType`: `code` (default) or `token`
+
+### Auto-Build Mode
+Build the authorization URL from components:
+- `authUrl`: Base authorization URL
+- `tokenUrl`: Token endpoint URL
+- `clientId`: OAuth client ID
+- `clientSecret`: OAuth client secret (optional)
+- `redirectUri`: Callback URL (default: `http://localhost:8888/callback`)
+- `scope`: OAuth scopes (default: `openid`)
+- `responseType`: `code` (default) or `token`
+- `webhookPort`: Local server port (default: 8888)
+- `tokenStorageKey`: Variable name to store token (default: `token`)
+
+### OAuth Flow
+
+Press `o` to start the OAuth authentication flow:
+1. Local webhook server starts on configured port
+2. Browser opens to OAuth provider
+3. User completes authentication
+4. OAuth provider redirects back to local server
+5. Authorization code is exchanged for access token
+6. Token is automatically stored in profile variables
+
+The flow supports PKCE (Proof Key for Code Exchange) for enhanced security.
+
+## History Viewer
+
+Press `H` to view request history:
+- See all previously executed requests with timestamps
+- Navigate with `↑`/`↓` arrow keys
+- Press `Enter` to view full request/response details
+- History is stored in `~/.restcli/.history.json`
+- Each entry includes: timestamp, file path, method, URL, status, and response time
+
+## Documentation Viewer
+
+Press `m` to view interactive documentation for the current request:
+- Shows request parameters, examples, and response schemas
+- Navigate with arrow keys
+- Press `Space` to expand/collapse nested fields
+- Useful for understanding API endpoints with complex request/response structures
 
 ## File Organization
 
