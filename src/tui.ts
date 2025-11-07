@@ -918,7 +918,15 @@ class TUI {
       line++;
 
       const maxVisibleLines = height - line - 5;
-      for (let i = 0; i < Math.min(varEntries.length, maxVisibleLines); i++) {
+
+      // Calculate scrolling window
+      const startIndex = Math.max(0, Math.min(
+        this.variableIndex - Math.floor(maxVisibleLines / 2),
+        varEntries.length - maxVisibleLines
+      ));
+      const endIndex = Math.min(startIndex + maxVisibleLines, varEntries.length);
+
+      for (let i = startIndex; i < endIndex; i++) {
         this.moveCursor(line++, startCol);
         const [key, value] = varEntries[i];
         const isSelected = i === this.variableIndex;
@@ -1216,11 +1224,14 @@ class TUI {
       line++;
 
       const maxVisibleLines = height - line - 5;
-      for (
-        let i = 0;
-        i < Math.min(headerEntries.length, maxVisibleLines);
-        i++
-      ) {
+      // Calculate scrolling window
+      const startIndex = Math.max(0, Math.min(
+        this.headerIndex - Math.floor(maxVisibleLines / 2),
+        headerEntries.length - maxVisibleLines
+      ));
+      const endIndex = Math.min(startIndex + maxVisibleLines, headerEntries.length);
+
+      for (let i = startIndex; i < endIndex; i++) {
         this.moveCursor(line++, startCol);
         const [key, value] = headerEntries[i];
         const isSelected = i === this.headerIndex;
@@ -1427,7 +1438,14 @@ class TUI {
       line++;
 
       const maxVisibleLines = height - line - 5;
-      for (let i = 0; i < Math.min(fields.length, maxVisibleLines); i++) {
+      // Calculate scrolling window
+      const startIndex = Math.max(0, Math.min(
+        this.oauthConfigIndex - Math.floor(maxVisibleLines / 2),
+        fields.length - maxVisibleLines
+      ));
+      const endIndex = Math.min(startIndex + maxVisibleLines, fields.length);
+
+      for (let i = startIndex; i < endIndex; i++) {
         this.moveCursor(line++, startCol);
         const field = fields[i];
         const isSelected = i === this.oauthConfigIndex;
@@ -2956,14 +2974,19 @@ class TUI {
       if (input.length === 3 && input[0] === 27 && input[1] === 91) {
         if (input[2] === 65) {
           // Up
-          this.variableIndex = Math.max(0, this.variableIndex - 1);
+          if (this.variableIndex === 0) {
+            this.variableIndex = varEntries.length - 1; // Wrap to bottom
+          } else {
+            this.variableIndex--;
+          }
           this.draw();
         } else if (input[2] === 66) {
           // Down
-          this.variableIndex = Math.min(
-            varEntries.length,
-            this.variableIndex + 1,
-          );
+          if (this.variableIndex === varEntries.length - 1) {
+            this.variableIndex = 0; // Wrap to top
+          } else {
+            this.variableIndex++;
+          }
           this.draw();
         }
         return;
@@ -3286,8 +3309,9 @@ class TUI {
         return;
       }
 
-      // Number keys to set active option (add mode, multi-value only)
-      if (input.length === 1 && this.variableEditMode === "add" && this.variableType === "multi-value") {
+      // Number keys to set active option (add mode, multi-value only, when NOT typing)
+      // Only intercept if value field is empty - otherwise numbers should be typed normally
+      if (input.length === 1 && this.variableEditMode === "add" && this.variableType === "multi-value" && this.variableEditValue === "") {
         const char = String.fromCharCode(input[0]);
         if (char >= "1" && char <= "9") {
           const index = parseInt(char) - 1;
@@ -3353,11 +3377,19 @@ class TUI {
       if (input.length === 3 && input[0] === 27 && input[1] === 91) {
         if (input[2] === 65) {
           // Up
-          this.variableOptionIndex = Math.max(0, this.variableOptionIndex - 1);
+          if (this.variableOptionIndex === 0) {
+            this.variableOptionIndex = options.length - 1; // Wrap to bottom
+          } else {
+            this.variableOptionIndex--;
+          }
           this.draw();
         } else if (input[2] === 66) {
           // Down
-          this.variableOptionIndex = Math.min(options.length - 1, this.variableOptionIndex + 1);
+          if (this.variableOptionIndex === options.length - 1) {
+            this.variableOptionIndex = 0; // Wrap to top
+          } else {
+            this.variableOptionIndex++;
+          }
           this.draw();
         }
         return;
@@ -3396,11 +3428,19 @@ class TUI {
         if (input.length === 3 && input[0] === 27 && input[1] === 91) {
           if (input[2] === 65) {
             // Up
-            this.variableOptionIndex = Math.max(0, this.variableOptionIndex - 1);
+            if (this.variableOptionIndex === 0) {
+              this.variableOptionIndex = options.length - 1; // Wrap to bottom
+            } else {
+              this.variableOptionIndex--;
+            }
             this.draw();
           } else if (input[2] === 66) {
             // Down
-            this.variableOptionIndex = Math.min(options.length - 1, this.variableOptionIndex + 1);
+            if (this.variableOptionIndex === options.length - 1) {
+              this.variableOptionIndex = 0; // Wrap to top
+            } else {
+              this.variableOptionIndex++;
+            }
             this.draw();
           }
           return;
@@ -3636,14 +3676,19 @@ class TUI {
       if (input.length === 3 && input[0] === 27 && input[1] === 91) {
         if (input[2] === 65) {
           // Up
-          this.headerIndex = Math.max(0, this.headerIndex - 1);
+          if (this.headerIndex === 0) {
+            this.headerIndex = headerEntries.length - 1; // Wrap to bottom
+          } else {
+            this.headerIndex--;
+          }
           this.draw();
         } else if (input[2] === 66) {
           // Down
-          this.headerIndex = Math.min(
-            headerEntries.length,
-            this.headerIndex + 1,
-          );
+          if (this.headerIndex === headerEntries.length - 1) {
+            this.headerIndex = 0; // Wrap to top
+          } else {
+            this.headerIndex++;
+          }
           this.draw();
         }
         return;
@@ -4336,14 +4381,19 @@ class TUI {
       if (input.length === 3 && input[0] === 27 && input[1] === 91) {
         if (input[2] === 65) {
           // Up
-          this.oauthConfigIndex = Math.max(0, this.oauthConfigIndex - 1);
+          if (this.oauthConfigIndex === 0) {
+            this.oauthConfigIndex = fields.length - 1; // Wrap to bottom
+          } else {
+            this.oauthConfigIndex--;
+          }
           this.draw();
         } else if (input[2] === 66) {
           // Down
-          this.oauthConfigIndex = Math.min(
-            fields.length - 1,
-            this.oauthConfigIndex + 1,
-          );
+          if (this.oauthConfigIndex === fields.length - 1) {
+            this.oauthConfigIndex = 0; // Wrap to top
+          } else {
+            this.oauthConfigIndex++;
+          }
           this.draw();
         }
         return;
