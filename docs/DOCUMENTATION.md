@@ -10,7 +10,7 @@ Documentation is supported in both `.http` and `.yaml` file formats.
 
 Use `# @` comments before your request to add documentation:
 
-```http
+```text
 ### Create User
 # @description Creates a new user in the system with the provided information
 # @tag users
@@ -120,24 +120,3 @@ Common parameter types:
 ## Viewing Documentation
 
 In the TUI, documentation for the current request is displayed in the documentation panel (press `m` to toggle).
-
-## Best Practices
-
-1. **Be descriptive** - Write clear descriptions that explain what the endpoint does
-2. **Document all parameters** - Include all parameters, even optional ones
-3. **Provide examples** - Real examples help users understand the API
-4. **List all responses** - Document success and error responses
-5. **Use tags** - Organize endpoints by category (users, auth, products, etc.)
-
-## Examples
-
-See the `examples/` directory for complete examples:
-- `examples/documented-request.http` - .http format example
-- `examples/documented-request.yaml` - YAML format example
-
-## Future Features
-
-- **OpenAPI Import**: Import documentation from OpenAPI/Swagger specs
-- **Export to OpenAPI**: Generate OpenAPI specs from documented requests
-- **Validation**: Validate request bodies against parameter schemas
-- **Auto-completion**: Suggest parameter names and values based on documentation
