@@ -3,7 +3,7 @@ import * as path from "@std/path";
 import { stringify as yamlStringify } from "@std/yaml";
 import { applyVariables, type Documentation, parseHttpFile } from "./parser.ts";
 import { RequestExecutor, type RequestResult } from "./executor.ts";
-import { SessionManager } from "./session.ts";
+import { SessionManager, isMultiValueVariable, type VariableValue } from "./session.ts";
 import { ConfigManager } from "./config.ts";
 import { type HistoryEntry, HistoryManager } from "./history.ts";
 import { getOAuthDefaults, validateOAuthConfig } from "./oauth/oauth-config.ts";
@@ -39,12 +39,20 @@ class TUI {
   private fullscreenMode = false;
   private variableMode = false;
   private variableIndex = 0;
-  private variableEditMode: "list" | "add" | "edit" | "delete" = "list";
+  private variableEditMode: "list" | "add" | "edit" | "delete" | "options" | "manage-options" = "list";
   private variableEditKey = "";
   private variableEditValue = "";
   private variableEditField: "key" | "value" = "key";
   private variableEditKeyCursor = 0; // Cursor position in key field
   private variableEditValueCursor = 0; // Cursor position in value field
+  private variableType: "simple" | "multi-value" = "simple"; // For add mode
+  private variableOptions: string[] = []; // Options for multi-value variables
+  private variableOptionIndex = 0; // Selected option in options list
+  private variableActiveOption = 0; // Active option for multi-value
+  private variableTypeToggleConfirm = false; // Confirming type toggle with data loss
+  private optionEditMode: "list" | "add" | "edit" = "list"; // For manage-options mode
+  private optionEditValue = ""; // Value being edited in manage-options
+  private optionEditCursor = 0; // Cursor position in option edit
   private headerMode = false;
   private headerIndex = 0;
   private headerEditMode: "list" | "add" | "edit" | "delete" = "list";
@@ -574,7 +582,13 @@ class TUI {
 
     // Check if in variable mode
     if (this.variableMode) {
-      this.drawVariableEditor(startCol, width, height);
+      if (this.variableEditMode === "options") {
+        this.drawOptionsSelector(startCol, width, height);
+      } else if (this.variableEditMode === "manage-options") {
+        this.drawManageOptions(startCol, width, height);
+      } else {
+        this.drawVariableEditor(startCol, width, height);
+      }
       return;
     }
 
@@ -909,10 +923,24 @@ class TUI {
         const [key, value] = varEntries[i];
         const isSelected = i === this.variableIndex;
 
-        const truncatedValue = value.length > width - key.length - 8
-          ? value.slice(0, width - key.length - 11) + "..."
-          : value;
-        const display = `${key}: ${truncatedValue}`;
+        let displayValue: string;
+        let indicator = "";
+
+        if (isMultiValueVariable(value)) {
+          // Multi-value variable - show active option and indicator
+          const activeValue = value.options[value.active] || "";
+          indicator = ` [${value.options.length} options] ◀`;
+          displayValue = activeValue;
+        } else {
+          // Simple string variable
+          displayValue = value;
+        }
+
+        const availableWidth = width - key.length - indicator.length - 8;
+        const truncatedValue = displayValue.length > availableWidth
+          ? displayValue.slice(0, availableWidth - 3) + "..."
+          : displayValue;
+        const display = `${key}: ${truncatedValue}${indicator}`;
         const displayTruncated = display.slice(0, width - 4);
 
         if (isSelected) {
@@ -927,38 +955,76 @@ class TUI {
       this.write(`\x1b[1mAdd New Variable\x1b[0m\x1b[K`);
       line++;
 
+      // Key field
       this.moveCursor(line++, startCol);
       const keyLabel = "Key: ";
       const maxKeyWidth = width - keyLabel.length - 2;
       let keyDisplay = this.variableEditKey;
       if (this.variableEditField === "key") {
-        // Insert cursor at position
         keyDisplay = keyDisplay.slice(0, this.variableEditKeyCursor) + "_" +
                      keyDisplay.slice(this.variableEditKeyCursor);
       }
       keyDisplay = keyDisplay.slice(0, maxKeyWidth);
-      const keyLine = keyLabel + keyDisplay;
       if (this.variableEditField === "key") {
         this.write(`${keyLabel}\x1b[7m${keyDisplay}\x1b[0m\x1b[K`);
       } else {
-        this.write(`${keyLine}\x1b[K`);
+        this.write(`${keyLabel}${keyDisplay}\x1b[K`);
       }
 
+      // Type selector
       this.moveCursor(line++, startCol);
-      const valueLabel = "Value: ";
-      const maxValueWidth = width - valueLabel.length - 2;
-      let valueDisplay = this.variableEditValue;
-      if (this.variableEditField === "value") {
-        // Insert cursor at position
-        valueDisplay = valueDisplay.slice(0, this.variableEditValueCursor) + "_" +
-                       valueDisplay.slice(this.variableEditValueCursor);
-      }
-      valueDisplay = valueDisplay.slice(0, maxValueWidth);
-      const valueLine = valueLabel + valueDisplay;
-      if (this.variableEditField === "value") {
-        this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+      const typeLabel = "Type: ";
+      const simpleType = this.variableType === "simple" ? "\x1b[7m[Simple]\x1b[0m" : "[Simple]";
+      const multiType = this.variableType === "multi-value" ? "\x1b[7m[Multi-value]\x1b[0m" : "[Multi-value]";
+      this.write(`${typeLabel}${simpleType} ${multiType} \x1b[2m(Tab to switch)\x1b[0m\x1b[K`);
+      line++;
+
+      if (this.variableType === "simple") {
+        // Simple value field
+        this.moveCursor(line++, startCol);
+        const valueLabel = "Value: ";
+        const maxValueWidth = width - valueLabel.length - 2;
+        let valueDisplay = this.variableEditValue;
+        if (this.variableEditField === "value") {
+          valueDisplay = valueDisplay.slice(0, this.variableEditValueCursor) + "_" +
+                         valueDisplay.slice(this.variableEditValueCursor);
+        }
+        valueDisplay = valueDisplay.slice(0, maxValueWidth);
+        if (this.variableEditField === "value") {
+          this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+        } else {
+          this.write(`${valueLabel}${valueDisplay}\x1b[K`);
+        }
       } else {
-        this.write(`${valueLine}\x1b[K`);
+        // Multi-value options
+        this.moveCursor(line++, startCol);
+        this.write(`\x1b[1mOptions:\x1b[0m \x1b[2m(Enter option, press Enter to add more, empty to finish)\x1b[0m\x1b[K`);
+        line++;
+
+        // Show existing options
+        for (let i = 0; i < this.variableOptions.length; i++) {
+          this.moveCursor(line++, startCol);
+          const isActive = i === this.variableActiveOption;
+          const activeMark = isActive ? " ✓ (active)" : "";
+          this.write(`  ${i + 1}. ${this.variableOptions[i]}${activeMark}\x1b[K`);
+        }
+
+        // Current input field
+        if (this.variableEditField === "value") {
+          this.moveCursor(line++, startCol);
+          const valueLabel = "  > ";
+          const maxValueWidth = width - valueLabel.length - 2;
+          const valueDisplay = (this.variableEditValue.slice(0, this.variableEditValueCursor) + "_" +
+                               this.variableEditValue.slice(this.variableEditValueCursor)).slice(0, maxValueWidth);
+          this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+        }
+
+        if (this.variableOptions.length > 0) {
+          this.moveCursor(line++, startCol);
+          this.write(`\x1b[K`);
+          this.moveCursor(line++, startCol);
+          this.write(`\x1b[2mPress number key (1-${this.variableOptions.length}) to set active, or Enter to finish\x1b[0m\x1b[K`);
+        }
       }
     } // Edit mode
     else if (this.variableEditMode === "edit") {
@@ -1003,6 +1069,122 @@ class TUI {
 
       this.moveCursor(line++, startCol);
       this.write(`\x1b[2mPress [Y] to confirm, [N] to cancel\x1b[0m\x1b[K`);
+    }
+
+    // Clear remaining lines
+    while (line <= height) {
+      this.moveCursor(line++, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
+  private drawOptionsSelector(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
+    this.moveCursor(2, startCol);
+    const title = ` Select Option: ${this.variableEditKey} `;
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    let line = 3;
+    this.moveCursor(line++, startCol);
+    this.write("\x1b[K");
+
+    const options = this.sessionManager.getVariableOptions(this.variableEditKey) || [];
+    const activeOption = this.sessionManager.getVariableActiveOption(this.variableEditKey) || 0;
+
+    const maxVisibleLines = height - line - 5;
+    const startIndex = Math.max(0, this.variableOptionIndex - Math.floor(maxVisibleLines / 2));
+    const endIndex = Math.min(options.length, startIndex + maxVisibleLines);
+
+    for (let i = startIndex; i < endIndex; i++) {
+      this.moveCursor(line++, startCol);
+      const option = options[i];
+      const isSelected = i === this.variableOptionIndex;
+      const isCurrent = i === activeOption;
+
+      const optionNum = (i + 1).toString().padStart(2, " ");
+      const currentMark = isCurrent ? " ✓ (current)" : "";
+      const display = `${optionNum}. ${option}${currentMark}`;
+      const displayTruncated = display.slice(0, width - 4);
+
+      if (isSelected) {
+        this.write(`\x1b[7m> ${displayTruncated}\x1b[0m\x1b[K`);
+      } else {
+        this.write(`  ${displayTruncated}\x1b[K`);
+      }
+    }
+
+    // Clear remaining lines
+    while (line <= height) {
+      this.moveCursor(line++, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
+  private drawManageOptions(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
+    this.moveCursor(2, startCol);
+    const title = ` Manage Options: ${this.variableEditKey} `;
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    let line = 3;
+
+    const options = this.sessionManager.getVariableOptions(this.variableEditKey) || [];
+    const activeOption = this.sessionManager.getVariableActiveOption(this.variableEditKey) || 0;
+
+    if (this.optionEditMode === "list") {
+      this.moveCursor(line++, startCol);
+      this.write(`\x1b[2mTotal: ${options.length} options\x1b[0m\x1b[K`);
+      line++;
+
+      const maxVisibleLines = height - line - 5;
+      for (let i = 0; i < Math.min(options.length, maxVisibleLines); i++) {
+        this.moveCursor(line++, startCol);
+        const option = options[i];
+        const isSelected = i === this.variableOptionIndex;
+        const isCurrent = i === activeOption;
+
+        const optionNum = (i + 1).toString().padStart(2, " ");
+        const currentMark = isCurrent ? " ✓ (active)" : "";
+        const display = `${optionNum}. ${option}${currentMark}`;
+        const displayTruncated = display.slice(0, width - 4);
+
+        if (isSelected) {
+          this.write(`\x1b[7m> ${displayTruncated}\x1b[0m\x1b[K`);
+        } else {
+          this.write(`  ${displayTruncated}\x1b[K`);
+        }
+      }
+    } else if (this.optionEditMode === "add") {
+      this.moveCursor(line++, startCol);
+      this.write(`\x1b[1mAdd New Option\x1b[0m\x1b[K`);
+      line++;
+
+      this.moveCursor(line++, startCol);
+      const valueLabel = "Value: ";
+      const maxValueWidth = width - valueLabel.length - 2;
+      const valueWithCursor = this.optionEditValue.slice(0, this.optionEditCursor) + "_" +
+                             this.optionEditValue.slice(this.optionEditCursor);
+      const valueDisplay = valueWithCursor.slice(0, maxValueWidth);
+      this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+    } else if (this.optionEditMode === "edit") {
+      this.moveCursor(line++, startCol);
+      const editTitle = `Edit Option #${this.variableOptionIndex + 1}`;
+      this.write(`\x1b[1m${editTitle}\x1b[0m\x1b[K`);
+      line++;
+
+      this.moveCursor(line++, startCol);
+      const valueLabel = "Value: ";
+      const maxValueWidth = width - valueLabel.length - 2;
+      const valueWithCursor = this.optionEditValue.slice(0, this.optionEditCursor) + "_" +
+                             this.optionEditValue.slice(this.optionEditCursor);
+      const valueDisplay = valueWithCursor.slice(0, maxValueWidth);
+      this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
     }
 
     // Clear remaining lines
@@ -1519,6 +1701,29 @@ class TUI {
           { key: "Shift+P", desc: "Open .profiles.json in editor" },
           { key: "Shift+S", desc: "Open .session.json in editor" },
           { key: "Ctrl+H", desc: "View request history" },
+        ],
+      },
+      {
+        category: "Variable Editor (Press v)",
+        items: [
+          { key: "↑/↓", desc: "Navigate variables" },
+          { key: "A", desc: "Add new variable" },
+          { key: "E/Enter", desc: "Edit variable value (simple vars only)" },
+          { key: "D", desc: "Delete variable" },
+          { key: "O", desc: "Quick select option (multi-value vars)" },
+          { key: "M", desc: "Manage options - add/edit/delete (multi-value)" },
+          { key: "ESC", desc: "Exit variable editor" },
+        ],
+      },
+      {
+        category: "Add Variable Mode",
+        items: [
+          { key: "Tab", desc: "Move to value field / toggle type" },
+          { key: "Shift+Tab", desc: "Go back to key field" },
+          { key: "Enter", desc: "Save (simple) or add option (multi-value)" },
+          { key: "1-9", desc: "Set active option (multi-value only)" },
+          { key: "Ctrl+K", desc: "Clear current field" },
+          { key: "ESC", desc: "Cancel" },
         ],
       },
       {
@@ -2179,15 +2384,30 @@ class TUI {
     if (this.variableMode) {
       if (this.variableEditMode === "list") {
         statusText =
-          " [↑↓] Navigate | [A] Add | [E/Enter] Edit | [D] Delete | [ESC] Exit ";
+          " [↑↓] Navigate | [A] Add | [E/Enter] Edit | [D] Delete | [O] Options | [M] Manage | [ESC] Exit ";
       } else if (this.variableEditMode === "add") {
-        statusText =
-          " [Tab] Switch field | [Ctrl+K] Clear | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
+        if (this.variableType === "multi-value" && this.variableEditField === "value") {
+          statusText = " [Enter] Add option (empty to finish) | [1-9] Set active | [Shift+Tab] Back to key | [ESC] Cancel ";
+        } else if (this.variableEditField === "value") {
+          statusText = " [Tab] Toggle type | [Shift+Tab] Back to key | [Enter] Save | [Ctrl+K] Clear | [ESC] Cancel ";
+        } else {
+          statusText = " [Tab] To value field | [Ctrl+K] Clear | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
+        }
       } else if (this.variableEditMode === "edit") {
         statusText =
           " [Ctrl+K] Clear all | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
       } else if (this.variableEditMode === "delete") {
         statusText = " [Y] Confirm Delete | [N] Cancel ";
+      } else if (this.variableEditMode === "options") {
+        statusText = " [↑↓] Navigate | [1-9] Quick select | [Enter] Select | [ESC] Cancel ";
+      } else if (this.variableEditMode === "manage-options") {
+        if (this.optionEditMode === "list") {
+          statusText = " [↑↓] Navigate | [A] Add | [E] Edit | [D] Delete | [Space] Set Active | [ESC] Back ";
+        } else if (this.optionEditMode === "add" || this.optionEditMode === "edit") {
+          statusText = " [Ctrl+K] Clear all | [Opt+Del] Del word | [Enter] Save | [ESC] Cancel ";
+        } else {
+          statusText = " Manage Options ";
+        }
       } else {
         statusText = " Variable Editor ";
       }
@@ -2708,10 +2928,23 @@ class TUI {
   }
 
   async handleVariableInput(input: Uint8Array): Promise<void> {
-    // ESC - exit variable mode
+    // ESC - exit variable mode or go back to previous mode
     if (input.length === 1 && input[0] === 27) {
-      this.exitVariableMode();
-      return;
+      if (this.variableEditMode === "manage-options" && (this.optionEditMode === "add" || this.optionEditMode === "edit")) {
+        // Go back to manage-options list mode
+        this.optionEditMode = "list";
+        this.draw();
+        return;
+      } else if (this.variableEditMode === "options" || this.variableEditMode === "manage-options") {
+        // Go back to variable list mode
+        this.variableEditMode = "list";
+        this.optionEditMode = "list";
+        this.draw();
+        return;
+      } else {
+        this.exitVariableMode();
+        return;
+      }
     }
 
     // In list mode
@@ -2747,17 +2980,26 @@ class TUI {
           this.variableEditField = "key";
           this.variableEditKeyCursor = 0;
           this.variableEditValueCursor = 0;
+          this.variableType = "simple";
+          this.variableOptions = [];
+          this.variableActiveOption = 0;
+          this.variableTypeToggleConfirm = false;
           this.draw();
         } else if (char === "e" || char === "E" || char === "\r") {
           // Edit selected variable
           if (this.variableIndex < varEntries.length) {
-            this.variableEditMode = "edit";
             const [key, value] = varEntries[this.variableIndex];
-            this.variableEditKey = key;
-            this.variableEditValue = value;
-            this.variableEditField = "value";
-            this.variableEditValueCursor = value.length; // Cursor at end
-            this.draw();
+            if (isMultiValueVariable(value)) {
+              this.statusMessage = " Multi-value variable. Use [O] for options or [M] to manage. ";
+              this.draw();
+            } else {
+              this.variableEditMode = "edit";
+              this.variableEditKey = key;
+              this.variableEditValue = value;
+              this.variableEditField = "value";
+              this.variableEditValueCursor = value.length; // Cursor at end
+              this.draw();
+            }
           }
         } else if (char === "d" || char === "D") {
           // Delete selected variable
@@ -2766,6 +3008,35 @@ class TUI {
             const [key] = varEntries[this.variableIndex];
             this.variableEditKey = key;
             this.draw();
+          }
+        } else if (char === "o" || char === "O") {
+          // Open options selector for multi-value variables
+          if (this.variableIndex < varEntries.length) {
+            const [key, value] = varEntries[this.variableIndex];
+            if (isMultiValueVariable(value)) {
+              this.variableEditMode = "options";
+              this.variableEditKey = key;
+              this.variableOptionIndex = value.active; // Start at current active
+              this.draw();
+            } else {
+              this.statusMessage = " Variable is not multi-value. Use [M] to manage options. ";
+              this.draw();
+            }
+          }
+        } else if (char === "m" || char === "M") {
+          // Manage options for multi-value variables
+          if (this.variableIndex < varEntries.length) {
+            const [key, value] = varEntries[this.variableIndex];
+            if (isMultiValueVariable(value)) {
+              this.variableEditMode = "manage-options";
+              this.variableEditKey = key;
+              this.variableOptionIndex = 0;
+              this.optionEditMode = "list";
+              this.draw();
+            } else {
+              this.statusMessage = " Variable is not multi-value. Convert in edit mode. ";
+              this.draw();
+            }
           }
         }
       }
@@ -2865,31 +3136,133 @@ class TUI {
         return;
       }
 
-      // Tab - switch between key and value fields (only in add mode)
-      if (input.length === 1 && input[0] === 9) {
-        if (this.variableEditMode === "add") {
-          this.variableEditField = this.variableEditField === "key"
-            ? "value"
-            : "key";
+      // Shift+Tab - go back to key field (only in add mode)
+      if (input.length === 2 && input[0] === 27 && input[1] === 91 && input.length === 2) {
+        // This is actually Shift+Tab on some terminals, but we'll use a different approach
+      }
+
+      // Check for Shift+Tab (CSI Z)
+      if (input.length === 3 && input[0] === 27 && input[1] === 91 && input[2] === 90) {
+        if (this.variableEditMode === "add" && this.variableEditField === "value") {
+          // Go back to key field
+          this.variableEditField = "key";
           this.draw();
         }
         return;
       }
 
-      // Enter - save
-      if (input.length === 1 && input[0] === 13) {
-        if (this.variableEditKey.trim()) {
-          this.sessionManager.setProfileVariable(
-            this.variableEditKey.trim(),
-            this.variableEditValue,
-          );
-          await this.sessionManager.saveProfiles();
-          this.statusMessage =
-            ` Variable '${this.variableEditKey}' saved to profile `;
-          this.variableEditMode = "list";
-          this.draw();
+      // Tab - switch between fields or toggle type (only in add mode)
+      if (input.length === 1 && input[0] === 9) {
+        if (this.variableEditMode === "add") {
+          if (this.variableEditField === "key") {
+            // Switch from key to value field
+            this.variableEditField = "value";
+            this.draw();
+          } else if (this.variableType === "simple") {
+            // In simple mode, Tab on value field toggles to multi-value
+            this.variableType = "multi-value";
+            this.draw();
+          } else if (this.variableType === "multi-value" && this.variableOptions.length === 0) {
+            // In multi-value mode with no options yet, Tab toggles back to simple
+            this.variableType = "simple";
+            this.draw();
+          } else if (this.variableType === "multi-value" && this.variableOptions.length > 0) {
+            // Has options - warn and ask for confirmation
+            if (!this.variableTypeToggleConfirm) {
+              this.variableTypeToggleConfirm = true;
+              this.statusMessage = ` Warning: ${this.variableOptions.length} options will be lost! Press Tab again to confirm, any other key to cancel. `;
+              this.draw();
+            } else {
+              // Confirmed - toggle and clear options
+              this.variableType = "simple";
+              this.variableOptions = [];
+              this.variableActiveOption = 0;
+              this.variableTypeToggleConfirm = false;
+              this.statusMessage = " Toggled to simple mode. Options cleared. ";
+              this.draw();
+            }
+          }
         }
         return;
+      }
+
+      // Enter - save or add option
+      if (input.length === 1 && input[0] === 13) {
+        if (this.variableEditMode === "add") {
+          if (!this.variableEditKey.trim()) {
+            this.statusMessage = " Variable key cannot be empty ";
+            this.draw();
+            return;
+          }
+
+          if (this.variableType === "simple") {
+            // Save simple variable
+            this.sessionManager.setProfileVariable(
+              this.variableEditKey.trim(),
+              this.variableEditValue,
+            );
+            await this.sessionManager.saveProfiles();
+            this.statusMessage = ` Variable '${this.variableEditKey}' saved to profile `;
+            this.variableEditMode = "list";
+            this.draw();
+          } else {
+            // Multi-value variable
+            if (this.variableEditValue.trim()) {
+              // Add current value to options
+              if (!this.variableOptions.includes(this.variableEditValue.trim())) {
+                this.variableOptions.push(this.variableEditValue.trim());
+                this.variableEditValue = "";
+                this.variableEditValueCursor = 0;
+                this.statusMessage = " Option added. Add more or press Enter with empty value to finish ";
+              } else {
+                this.statusMessage = " Option already exists ";
+              }
+              this.draw();
+            } else {
+              // Empty value - finish and save if we have options
+              if (this.variableOptions.length === 0) {
+                this.statusMessage = " Multi-value variable must have at least one option ";
+                this.draw();
+              } else {
+                // Save multi-value variable
+                const multiValueVar: VariableValue = {
+                  options: this.variableOptions,
+                  active: this.variableActiveOption,
+                };
+                this.sessionManager.setProfileVariable(
+                  this.variableEditKey.trim(),
+                  multiValueVar,
+                );
+                await this.sessionManager.saveProfiles();
+                this.statusMessage = ` Multi-value variable '${this.variableEditKey}' saved with ${this.variableOptions.length} options `;
+                this.variableEditMode = "list";
+                // Reset state
+                this.variableOptions = [];
+                this.variableActiveOption = 0;
+                this.variableType = "simple";
+                this.draw();
+              }
+            }
+          }
+        } else if (this.variableEditMode === "edit") {
+          // Edit mode - save simple variable
+          if (this.variableEditKey.trim()) {
+            this.sessionManager.setProfileVariable(
+              this.variableEditKey.trim(),
+              this.variableEditValue,
+            );
+            await this.sessionManager.saveProfiles();
+            this.statusMessage = ` Variable '${this.variableEditKey}' saved to profile `;
+            this.variableEditMode = "list";
+            this.draw();
+          }
+        }
+        return;
+      }
+
+      // Reset toggle confirmation flag if any non-Tab key pressed
+      if (this.variableTypeToggleConfirm && input[0] !== 9) {
+        this.variableTypeToggleConfirm = false;
       }
 
       // Backspace
@@ -2911,6 +3284,20 @@ class TUI {
           this.draw();
         }
         return;
+      }
+
+      // Number keys to set active option (add mode, multi-value only)
+      if (input.length === 1 && this.variableEditMode === "add" && this.variableType === "multi-value") {
+        const char = String.fromCharCode(input[0]);
+        if (char >= "1" && char <= "9") {
+          const index = parseInt(char) - 1;
+          if (index < this.variableOptions.length) {
+            this.variableActiveOption = index;
+            this.statusMessage = ` Set '${this.variableOptions[index]}' as active option `;
+            this.draw();
+            return;
+          }
+        }
       }
 
       // Printable characters (handles paste - multiple chars at once)
@@ -2956,6 +3343,192 @@ class TUI {
           // Cancel delete
           this.variableEditMode = "list";
           this.draw();
+        }
+      }
+    } // In options selection mode
+    else if (this.variableEditMode === "options") {
+      const options = this.sessionManager.getVariableOptions(this.variableEditKey) || [];
+
+      // Arrow keys
+      if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 65) {
+          // Up
+          this.variableOptionIndex = Math.max(0, this.variableOptionIndex - 1);
+          this.draw();
+        } else if (input[2] === 66) {
+          // Down
+          this.variableOptionIndex = Math.min(options.length - 1, this.variableOptionIndex + 1);
+          this.draw();
+        }
+        return;
+      }
+
+      if (input.length === 1) {
+        const char = String.fromCharCode(input[0]);
+
+        // Number keys for quick selection (1-9)
+        if (char >= "1" && char <= "9") {
+          const index = parseInt(char) - 1;
+          if (index < options.length) {
+            this.sessionManager.setVariableActiveOption(this.variableEditKey, index);
+            await this.sessionManager.saveProfiles();
+            this.statusMessage = ` Active option set to: ${options[index]} `;
+            this.variableEditMode = "list";
+            this.draw();
+          }
+        } else if (char === "\r") {
+          // Enter - select current option
+          if (this.variableOptionIndex < options.length) {
+            this.sessionManager.setVariableActiveOption(this.variableEditKey, this.variableOptionIndex);
+            await this.sessionManager.saveProfiles();
+            this.statusMessage = ` Active option set to: ${options[this.variableOptionIndex]} `;
+            this.variableEditMode = "list";
+            this.draw();
+          }
+        }
+      }
+    } // In manage-options mode
+    else if (this.variableEditMode === "manage-options") {
+      if (this.optionEditMode === "list") {
+        const options = this.sessionManager.getVariableOptions(this.variableEditKey) || [];
+
+        // Arrow keys
+        if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+          if (input[2] === 65) {
+            // Up
+            this.variableOptionIndex = Math.max(0, this.variableOptionIndex - 1);
+            this.draw();
+          } else if (input[2] === 66) {
+            // Down
+            this.variableOptionIndex = Math.min(options.length - 1, this.variableOptionIndex + 1);
+            this.draw();
+          }
+          return;
+        }
+
+        if (input.length === 1) {
+          const char = String.fromCharCode(input[0]);
+
+          if (char === "a" || char === "A") {
+            // Add new option
+            this.optionEditMode = "add";
+            this.optionEditValue = "";
+            this.optionEditCursor = 0;
+            this.draw();
+          } else if (char === "e" || char === "E") {
+            // Edit selected option
+            if (this.variableOptionIndex < options.length) {
+              this.optionEditMode = "edit";
+              this.optionEditValue = options[this.variableOptionIndex];
+              this.optionEditCursor = this.optionEditValue.length;
+              this.draw();
+            }
+          } else if (char === "d" || char === "D") {
+            // Delete selected option
+            if (this.variableOptionIndex < options.length) {
+              const success = this.sessionManager.removeVariableOption(this.variableEditKey, this.variableOptionIndex);
+              if (success) {
+                await this.sessionManager.saveProfiles();
+                this.statusMessage = ` Option deleted `;
+                this.variableOptionIndex = Math.max(0, this.variableOptionIndex - 1);
+              } else {
+                this.statusMessage = " Cannot delete active option. Set another option as active first. ";
+              }
+              this.draw();
+            }
+          } else if (char === " ") {
+            // Space - set as active
+            if (this.variableOptionIndex < options.length) {
+              this.sessionManager.setVariableActiveOption(this.variableEditKey, this.variableOptionIndex);
+              await this.sessionManager.saveProfiles();
+              this.statusMessage = ` Active option set to: ${options[this.variableOptionIndex]} `;
+              this.draw();
+            }
+          }
+        }
+      } else if (this.optionEditMode === "add" || this.optionEditMode === "edit") {
+        // Handle text input for add/edit option
+        // Arrow keys for cursor navigation
+        if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+          if (input[2] === 68) {
+            // Left arrow
+            this.optionEditCursor = Math.max(0, this.optionEditCursor - 1);
+            this.draw();
+          } else if (input[2] === 67) {
+            // Right arrow
+            this.optionEditCursor = Math.min(this.optionEditValue.length, this.optionEditCursor + 1);
+            this.draw();
+          }
+          return;
+        }
+
+        // Ctrl+K - clear all
+        if (input.length === 1 && input[0] === 11) {
+          this.optionEditValue = "";
+          this.optionEditCursor = 0;
+          this.draw();
+          return;
+        }
+
+        // Option+Delete or Alt+Backspace - delete word
+        if (input.length === 2 && input[0] === 27 && input[1] === 127) {
+          const before = this.optionEditValue.slice(0, this.optionEditCursor);
+          const after = this.optionEditValue.slice(this.optionEditCursor);
+          const wordStart = before.trimEnd().lastIndexOf(" ") + 1;
+          this.optionEditValue = this.optionEditValue.slice(0, wordStart) + after;
+          this.optionEditCursor = wordStart;
+          this.draw();
+          return;
+        }
+
+        if (input.length === 1) {
+          const byte = input[0];
+
+          if (byte === 13) {
+            // Enter - save
+            if (this.optionEditValue.trim()) {
+              if (this.optionEditMode === "add") {
+                const success = this.sessionManager.addVariableOption(this.variableEditKey, this.optionEditValue.trim());
+                if (success) {
+                  await this.sessionManager.saveProfiles();
+                  this.statusMessage = ` Option '${this.optionEditValue.trim()}' added `;
+                  this.optionEditMode = "list";
+                } else {
+                  this.statusMessage = " Option already exists ";
+                }
+              } else if (this.optionEditMode === "edit") {
+                const success = this.sessionManager.updateVariableOption(
+                  this.variableEditKey,
+                  this.variableOptionIndex,
+                  this.optionEditValue.trim()
+                );
+                if (success) {
+                  await this.sessionManager.saveProfiles();
+                  this.statusMessage = ` Option updated `;
+                  this.optionEditMode = "list";
+                } else {
+                  this.statusMessage = " Option already exists ";
+                }
+              }
+              this.draw();
+            }
+          } else if (byte === 127) {
+            // Backspace
+            if (this.optionEditCursor > 0) {
+              this.optionEditValue = this.optionEditValue.slice(0, this.optionEditCursor - 1) +
+                                     this.optionEditValue.slice(this.optionEditCursor);
+              this.optionEditCursor--;
+              this.draw();
+            }
+          } else if (byte >= 32 && byte < 127) {
+            // Regular character
+            const char = String.fromCharCode(byte);
+            this.optionEditValue = this.optionEditValue.slice(0, this.optionEditCursor) +
+                                   char +
+                                   this.optionEditValue.slice(this.optionEditCursor);
+            this.optionEditCursor++;
+            this.draw();
+          }
         }
       }
     }

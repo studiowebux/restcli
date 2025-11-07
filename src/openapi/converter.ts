@@ -45,6 +45,9 @@ export class OpenAPIConverter {
     // Create .session.json with baseUrl if it doesn't exist
     await this.ensureSessionFile();
 
+    // Extract enum parameters and create/update profile
+    await this.ensureProfileWithEnums();
+
     // Process each path
     for (const [urlPath, pathItem] of Object.entries(this.spec.paths)) {
       const methods = ["get", "post", "put", "delete", "patch", "options", "head"] as const;
@@ -119,6 +122,92 @@ export class OpenAPIConverter {
   }
 
   /**
+   * Extract enum parameters and create/update profile with multi-value variables
+   */
+  private async ensureProfileWithEnums(): Promise<void> {
+    const { ConfigManager } = await import("../config.ts");
+    const configManager = new ConfigManager();
+    const configDir = configManager.getConfigDir();
+    const profilesPath = path.join(configDir, ".profiles.json");
+
+    // Collect all enum parameters
+    const enumParams: Map<string, string[]> = new Map();
+
+    for (const [, pathItem] of Object.entries(this.spec.paths)) {
+      const methods = ["get", "post", "put", "delete", "patch", "options", "head"] as const;
+
+      for (const method of methods) {
+        const operation = pathItem[method];
+        if (!operation) continue;
+
+        const allParams = this.getAllParameters(operation, "");
+
+        for (const param of allParams) {
+          if (param.schema?.enum && param.schema.enum.length > 0) {
+            // Convert enum values to strings
+            const enumValues = param.schema.enum.map(v => String(v));
+
+            // Merge with existing values if param name already seen
+            if (enumParams.has(param.name)) {
+              const existing = enumParams.get(param.name)!;
+              const merged = Array.from(new Set([...existing, ...enumValues]));
+              enumParams.set(param.name, merged);
+            } else {
+              enumParams.set(param.name, enumValues);
+            }
+          }
+        }
+      }
+    }
+
+    // If no enum parameters found, skip profile creation
+    if (enumParams.size === 0) {
+      return;
+    }
+
+    // Read or create profiles file
+    let profiles: any[] = [];
+    try {
+      const content = await Deno.readTextFile(profilesPath);
+      profiles = JSON.parse(content);
+    } catch {
+      // File doesn't exist, will create new
+    }
+
+    // Find or create "OpenAPI" profile
+    let openApiProfile = profiles.find(p => p.name === "OpenAPI");
+
+    if (!openApiProfile) {
+      openApiProfile = {
+        name: "OpenAPI",
+        headers: {},
+        variables: {},
+      };
+      profiles.push(openApiProfile);
+    }
+
+    // Ensure variables object exists
+    if (!openApiProfile.variables) {
+      openApiProfile.variables = {};
+    }
+
+    // Add enum parameters as multi-value variables
+    for (const [paramName, enumValues] of enumParams.entries()) {
+      // Only add if variable doesn't already exist (don't overwrite user changes)
+      if (!(paramName in openApiProfile.variables)) {
+        openApiProfile.variables[paramName] = {
+          options: enumValues,
+          active: 0,
+          description: `Enum parameter from OpenAPI spec`,
+        };
+      }
+    }
+
+    // Write profiles file
+    await Deno.writeTextFile(profilesPath, JSON.stringify(profiles, null, 2) + "\n");
+  }
+
+  /**
    * Generate .http file content for an operation
    */
   private generateHttpFile(
@@ -175,6 +264,13 @@ export class OpenAPIConverter {
         if (param.description) {
           content += ` - ${param.description}`;
         }
+
+        // Add enum options if available
+        if (param.schema?.enum && param.schema.enum.length > 0) {
+          const enumValues = param.schema.enum.map(v => `"${v}"`).join(", ");
+          content += ` - Options: ${enumValues}`;
+        }
+
         content += "\n";
 
         if (param.example !== undefined || param.schema?.example !== undefined) {

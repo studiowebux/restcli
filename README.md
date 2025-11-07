@@ -271,13 +271,24 @@ Press `v` to open the interactive variable editor. This allows you to manage **p
 - `A` - Add new variable
 - `E` or `Enter` - Edit selected variable's value
 - `D` - Delete selected variable
+- `O` - Open options selector (for multi-value variables)
+- `M` - Manage options (add/edit/delete options for multi-value variables)
 - `ESC` - Exit variable editor
 
 ### Add Mode
-- Type to enter key and value
-- `Tab` - Switch between key and value fields
-- `Enter` - Save variable to active profile
-- `ESC` - Cancel
+- Type to enter key name
+- `Tab` - Move to value field
+- `Shift+Tab` - Go back to key field (to fix typos)
+- For **Simple variables**:
+  - Type value and press `Enter` to save
+- For **Multi-value variables**:
+  - Press `Tab` again to toggle to Multi-value type
+  - Enter each option and press `Enter` (field clears, ready for next)
+  - Press `1-9` to set which option is active (marked with ✓)
+  - Press `Enter` on empty field to finish and save
+  - Press `Tab` to toggle back to Simple (confirms if options exist)
+- `Ctrl+K` - Clear current field
+- `ESC` - Cancel and return to list
 
 ### Edit Mode
 - Type to change the value (key cannot be changed)
@@ -288,11 +299,70 @@ Press `v` to open the interactive variable editor. This allows you to manage **p
 - `Y` - Confirm deletion from profile
 - `N` or `ESC` - Cancel
 
+### Multi-Value Variables
+
+Variables can have multiple predefined options with one active value. This is useful for switching between environments, API versions, or any value with a fixed set of choices.
+
+**Creating Multi-Value Variables:**
+
+Edit `.profiles.json` manually to create multi-value variables:
+
+```json
+{
+  "name": "My Profile",
+  "variables": {
+    "baseUrl": "https://api.example.com",  // Simple variable
+    "environment": {                        // Multi-value variable
+      "options": ["dev", "staging", "prod"],
+      "active": 2,
+      "description": "API environment"
+    },
+    "apiVersion": {
+      "options": ["v1", "v2", "v3"],
+      "active": 0
+    }
+  }
+}
+```
+
+**Using Multi-Value Variables in TUI:**
+
+Multi-value variables are displayed with a `[N options] ◀` indicator showing the currently active value:
+
+```
+> environment: prod [3 options] ◀
+  apiVersion: v1 [3 options] ◀
+  baseUrl: https://api.example.com
+```
+
+**Quick Option Selection (Press `O`):**
+- Navigate with `↑` / `↓` arrow keys
+- Press `1-9` for instant selection (first 9 options)
+- Press `Enter` to select highlighted option
+- Current active option marked with `✓`
+- Press `ESC` to cancel
+
+**Manage Options (Press `M`):**
+- `A` - Add new option to the list
+- `E` - Edit/rename selected option
+- `D` - Delete option (cannot delete active option)
+- `Space` - Set selected option as active
+- `↑` / `↓` - Navigate options
+- `ESC` - Return to variable list
+
+**Example Use Cases:**
+- **Environment switching**: `{"options": ["dev", "staging", "prod"], "active": 0}`
+- **API versions**: `{"options": ["v1", "v2", "v3"], "active": 2}`
+- **Authentication modes**: `{"options": ["basic", "bearer", "oauth"], "active": 1}`
+- **Content types**: `{"options": ["application/json", "application/xml"], "active": 0}`
+
 **Important Notes:**
 - Variables are saved to the **active profile** in `.profiles.json`
 - Session variables (`.session.json`) are temporary state that gets cleared when switching profiles
 - Profile variables are permanent configuration
 - Long values are automatically truncated to prevent overlap
+- Multi-value variables automatically resolve to their active option when used in requests
+- Use `{{environment}}` in requests - it will be replaced with the active option (e.g., "prod")
 
 ## External Editor Integration
 
