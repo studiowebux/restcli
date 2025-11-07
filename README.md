@@ -244,6 +244,8 @@ The TUI auto-extracts `token` or `accessToken` from JSON responses and temporari
 - `p` - Switch profile (cycles through profiles)
 - `v` - Open variable editor (add, edit, delete variables)
 - `h` - Open header editor (add, edit, delete headers)
+- `P` (Shift+P) - Open .profiles.json in external editor
+- `S` (Shift+S) - Open .session.json in external editor
 - `m` - View request documentation
 - `j` - Scroll response down (useful for long JSON responses)
 - `k` - Scroll response up

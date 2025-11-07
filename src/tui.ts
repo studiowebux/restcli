@@ -678,10 +678,9 @@ class TUI {
 
       if (this.showResponseHeaders) {
         for (
-          const [key, value] of Object.entries(this.response.headers).slice(
-            0,
-            5,
-          )
+          const [key, value] of Object.entries(this.response.headers)
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .slice(0, 5)
         ) {
           this.moveCursor(line++, startCol);
           const display = `${key}: ${value}`.slice(0, width - 2);
@@ -793,7 +792,7 @@ class TUI {
       );
 
       if (this.showResponseHeaders) {
-        for (const [key, value] of Object.entries(this.response.headers)) {
+        for (const [key, value] of Object.entries(this.response.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
           this.moveCursor(line++, startCol);
           const display = `  ${key}: ${value}`.slice(0, width - 2);
           this.write(`${display}\x1b[K`);
@@ -896,7 +895,7 @@ class TUI {
 
     let line = 3;
     const variables = this.sessionManager.getProfileVariables();
-    const varEntries = Object.entries(variables);
+    const varEntries = Object.entries(variables).sort((a, b) => a[0].localeCompare(b[0]));
 
     // List mode
     if (this.variableEditMode === "list") {
@@ -1026,7 +1025,7 @@ class TUI {
 
     let line = 3;
     const headers = this.sessionManager.getProfileHeaders();
-    const headerEntries = Object.entries(headers);
+    const headerEntries = Object.entries(headers).sort((a, b) => a[0].localeCompare(b[0]));
 
     // List mode
     if (this.headerEditMode === "list") {
@@ -1517,6 +1516,8 @@ class TUI {
           { key: "p", desc: "Switch profile (cycles through profiles)" },
           { key: "v", desc: "Open variable editor" },
           { key: "h", desc: "Open header editor" },
+          { key: "Shift+P", desc: "Open .profiles.json in editor" },
+          { key: "Shift+S", desc: "Open .session.json in editor" },
           { key: "Ctrl+H", desc: "View request history" },
         ],
       },
@@ -2539,6 +2540,12 @@ class TUI {
         } else if (char === "O") {
           // Configure OAuth for active profile
           this.enterOAuthConfigMode();
+        } else if (char === "P") {
+          // Open .profiles.json in editor
+          await this.openProfilesInEditor();
+        } else if (char === "S") {
+          // Open .session.json in editor
+          await this.openSessionInEditor();
         }
       }
     }
@@ -2710,7 +2717,7 @@ class TUI {
     // In list mode
     if (this.variableEditMode === "list") {
       const variables = this.sessionManager.getProfileVariables();
-      const varEntries = Object.entries(variables);
+      const varEntries = Object.entries(variables).sort((a, b) => a[0].localeCompare(b[0]));
 
       // Arrow keys
       if (input.length === 3 && input[0] === 27 && input[1] === 91) {
@@ -3050,7 +3057,7 @@ class TUI {
     // In list mode
     if (this.headerEditMode === "list") {
       const headers = this.sessionManager.getProfileHeaders();
-      const headerEntries = Object.entries(headers);
+      const headerEntries = Object.entries(headers).sort((a, b) => a[0].localeCompare(b[0]));
 
       // Arrow keys
       if (input.length === 3 && input[0] === 27 && input[1] === 91) {
@@ -3436,6 +3443,80 @@ class TUI {
       });
 
       this.statusMessage = ` Opened ${file.name} in ${editor} `;
+      this.draw();
+    } catch (error) {
+      this.statusMessage = ` Error opening editor: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
+      this.draw();
+    }
+  }
+
+  async openProfilesInEditor(): Promise<void> {
+    const editor = this.sessionManager.getEditor();
+
+    if (!editor) {
+      this.statusMessage =
+        " No editor configured. Add 'editor' field to profile in .profiles.json ";
+      this.draw();
+      return;
+    }
+
+    const profilesPath = path.join(this.baseDir, ".profiles.json");
+
+    try {
+      // Launch editor as a background process
+      const command = new Deno.Command(editor, {
+        args: [profilesPath],
+        stdout: "null",
+        stderr: "null",
+      });
+
+      const child = command.spawn();
+
+      // Don't wait for the editor to close
+      child.status.catch(() => {
+        // Ignore errors from the background process
+      });
+
+      this.statusMessage = ` Opened .profiles.json in ${editor} `;
+      this.draw();
+    } catch (error) {
+      this.statusMessage = ` Error opening editor: ${
+        error instanceof Error ? error.message : String(error)
+      } `;
+      this.draw();
+    }
+  }
+
+  async openSessionInEditor(): Promise<void> {
+    const editor = this.sessionManager.getEditor();
+
+    if (!editor) {
+      this.statusMessage =
+        " No editor configured. Add 'editor' field to profile in .profiles.json ";
+      this.draw();
+      return;
+    }
+
+    const sessionPath = path.join(this.baseDir, ".session.json");
+
+    try {
+      // Launch editor as a background process
+      const command = new Deno.Command(editor, {
+        args: [sessionPath],
+        stdout: "null",
+        stderr: "null",
+      });
+
+      const child = command.spawn();
+
+      // Don't wait for the editor to close
+      child.status.catch(() => {
+        // Ignore errors from the background process
+      });
+
+      this.statusMessage = ` Opened .session.json in ${editor} `;
       this.draw();
     } catch (error) {
       this.statusMessage = ` Error opening editor: ${
@@ -3958,7 +4039,7 @@ class TUI {
 
         if (Object.keys(this.response.headers).length > 0) {
           content += "Headers (merged with profile):\n";
-          for (const [key, value] of Object.entries(this.response.headers)) {
+          for (const [key, value] of Object.entries(this.response.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
             content += `  ${key}: ${value}\n`;
           }
           content += "\n";
@@ -3979,7 +4060,7 @@ class TUI {
         } else {
           if (Object.keys(this.response.headers).length > 0) {
             content += "Headers:\n";
-            for (const [key, value] of Object.entries(this.response.headers)) {
+            for (const [key, value] of Object.entries(this.response.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
               content += `  ${key}: ${value}\n`;
             }
             content += "\n";
@@ -4340,7 +4421,7 @@ For more information, see: https://github.com/your-repo/http-tui
     );
 
     clog("Headers:");
-    for (const [key, value] of Object.entries(result.headers)) {
+    for (const [key, value] of Object.entries(result.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
       clog(`  ${key}: ${value}`);
     }
 
