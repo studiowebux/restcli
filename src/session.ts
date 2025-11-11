@@ -41,6 +41,7 @@ export interface HeaderProfile {
   workdir?: string; // Custom working directory for this profile
   oauth?: OAuthConfig; // OAuth configuration
   editor?: string; // External editor command (e.g., "code", "zed", "vim")
+  output?: "json" | "yaml" | "text"; // Default output format for CLI and TUI saves
 }
 
 export class SessionManager {
@@ -79,7 +80,7 @@ export class SessionManager {
     );
   }
 
-  getVariables(): Record<string, string> {
+  async getVariables(): Promise<Record<string, string>> {
     // Start with global variables
     const vars = { ...this.session.variables };
 
@@ -102,7 +103,74 @@ export class SessionManager {
       }
     }
 
+    // Execute shell commands in variable values ($(command) syntax)
+    for (const [key, value] of Object.entries(vars)) {
+      vars[key] = await this.resolveShellCommand(value);
+    }
+
     return vars;
+  }
+
+  /**
+   * Resolve shell commands in variable value
+   * Detects $(command) syntax and executes the command
+   */
+  private async resolveShellCommand(value: string): Promise<string> {
+    // Pattern to match $(command)
+    const shellPattern = /\$\(([^)]+)\)/g;
+    let result = value;
+    const matches = [...value.matchAll(shellPattern)];
+
+    if (matches.length === 0) {
+      return value;
+    }
+
+    // Execute each shell command found
+    for (const match of matches) {
+      const fullMatch = match[0]; // e.g., $(date)
+      const command = match[1].trim(); // e.g., date
+
+      try {
+        // Determine shell to use
+        const shell = Deno.build.os === "windows" ? "cmd" : "sh";
+        const shellArgs = Deno.build.os === "windows" ? ["/c", command] : ["-c", command];
+
+        // Execute command with timeout
+        const cmd = new Deno.Command(shell, {
+          args: shellArgs,
+          stdout: "piped",
+          stderr: "piped",
+        });
+
+        const process = cmd.spawn();
+
+        // Set timeout (5 seconds)
+        const timeoutId = setTimeout(() => {
+          try {
+            process.kill("SIGTERM");
+          } catch {
+            // Ignore errors if process already finished
+          }
+        }, 5000);
+
+        const { code, stdout, stderr } = await process.output();
+        clearTimeout(timeoutId);
+
+        if (code === 0) {
+          const output = new TextDecoder().decode(stdout).trim();
+          result = result.replace(fullMatch, output);
+        } else {
+          const errorOutput = new TextDecoder().decode(stderr).trim();
+          console.error(`Shell command '${command}' failed with code ${code}: ${errorOutput}`);
+          result = result.replace(fullMatch, "");
+        }
+      } catch (error) {
+        console.error(`Error executing shell command '${command}':`, error);
+        result = result.replace(fullMatch, "");
+      }
+    }
+
+    return result;
   }
 
   setVariable(key: string, value: string): void {
@@ -382,14 +450,23 @@ export class SessionManager {
   }
 
   /**
+   * Get output format from active profile
+   * Returns undefined if no output format is configured (defaults to "text")
+   */
+  getOutputFormat(): "json" | "yaml" | "text" | undefined {
+    const profile = this.getActiveProfile();
+    return profile?.output;
+  }
+
+  /**
    * Get headers from active profile with variable substitution
    */
-  getActiveHeaders(): Record<string, string> {
+  async getActiveHeaders(): Promise<Record<string, string>> {
     const profile = this.getActiveProfile();
     if (!profile) return {};
 
     // Get merged variables (global + profile-specific)
-    const vars = this.getVariables();
+    const vars = await this.getVariables();
 
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(profile.headers)) {

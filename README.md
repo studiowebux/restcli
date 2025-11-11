@@ -8,7 +8,9 @@ A simple, keyboard-driven TUI for testing HTTP endpoints.
 - Keyboard-driven navigation
 - Header profiles for quick account switching
 - Variable substitution and support of simple and multi-values fields
-- Quick file duplication
+- **Shell command variables** - Execute shell commands in variables with `$(command)` syntax
+- Quick file duplication and **in-app file renaming**
+- **Profile creation in TUI** - Create new profiles without editing JSON
 - Auto-save session state
 - Request/response history with timestamps
 - OAuth 2.0 authentication flow (PKCE support)
@@ -19,8 +21,9 @@ A simple, keyboard-driven TUI for testing HTTP endpoints.
 - YAML format support with JSON schema for autocomplete
 - JSON response beautification
 - Response scrolling
-- CLI mode
-- YAML conversion
+- **CLI mode with structured output** - JSON/YAML formats for scripting
+- **Stdin body override** - Pipe request bodies from other commands
+- **Smart TTY detection** - Auto-formats output for terminals vs pipes
 - Fullscreen mode for focused response viewing
 
 ## Quick Start
@@ -88,12 +91,29 @@ restcli requests/users/list.http | jq '.users[] | .name'
 restcli --full requests/example.http
 restcli -f requests/example.http
 
-# YAML output - converts JSON response to YAML
-restcli --yaml requests/example.http
-restcli -y requests/example.http
+# Structured JSON output (includes status, headers, body, duration, sizes)
+restcli --output json requests/example.http | jq '.status'
+restcli -o json requests/example.http
 
-# Combine flags
-restcli --full --yaml requests/example.http
+# YAML structured output
+restcli --output yaml requests/example.http
+restcli -o yaml requests/example.http
+
+# Save response to file (auto-detects format from extension)
+restcli --save response.json requests/example.http  # JSON format
+restcli --save response.yaml requests/example.http  # YAML format
+restcli --save response.txt requests/example.http   # Text format
+
+# Or explicitly specify format (overrides extension)
+restcli -s output.txt -o json requests/example.http
+
+# Override request body from command line
+restcli --body '{"key":"value"}' requests/example.http
+restcli -b '{"user":"admin"}' requests/example.http
+
+# Pipe body from another command
+echo '{"dynamic":"data"}' | restcli requests/example.http
+cat payload.json | restcli requests/create.http
 
 # Use with profile
 restcli --profile Admin requests/example.http
@@ -107,21 +127,57 @@ restcli -h
 **CLI Flags:**
 
 - `--help`, `-h`: Show help message
-- `--full`, `-f`: Show full output (status line, headers, and body). Default: body only.
-- `--yaml`, `-y`: Convert JSON response to YAML format
+- `--full`, `-f`: Show full output (status line, headers, and body)
+- `--body-only`: Show only response body (explicit override)
+- `--output <format>`, `-o <format>`: Output format: `json`, `yaml`, or `text` (default: `text`)
+  - `json`: Structured output with status, headers, body, duration, and sizes
+  - `yaml`: Same structured data in YAML format
+  - `text`: Body only (current behavior)
+- `--save <file>`, `-s <file>`: Save response to file instead of stdout
+- `--body <json>`, `-b <json>`: Override request body with inline JSON
+- `--yaml`, `-y`: Convert JSON response to YAML format (deprecated, use `-o yaml`)
 - `--profile <name>`, `-p <name>`: Use a specific profile for the request
 
-**Default behavior** (without `--full`):
+**Smart Output Detection:**
 
-- Only the response body is printed to stdout
-- Perfect for piping to tools like `jq`, `grep`, or scripts
+The CLI automatically detects whether output is to a terminal (TTY) or being piped:
 
-**With `--full`:**
+- **When piped** (e.g., `restcli file.http | jq`): Body-only output (perfect for JSON processing)
+- **In terminal**: Full output with status and headers by default
+- Override with `--full` or `--body-only` flags
 
-- Status line with response time and sizes
-- All response headers
-- Response body
-- Traditional full output format
+**Output Format Priority:**
+
+When multiple output format sources are present:
+1. `--output` flag (highest priority)
+2. File extension in `--save` flag (`.json`, `.yaml`, `.txt`)
+3. Profile's `output` setting
+4. Default (`text`)
+
+**Body Override Priority:**
+
+When multiple body sources are present:
+1. `--body` flag (highest priority)
+2. Stdin (if piped)
+3. Request file body (default)
+
+**Profile Output Configuration:**
+
+Set a default output format in your profile's `.profiles.json`:
+
+```json
+{
+  "name": "My Profile",
+  "output": "json",
+  "headers": {},
+  "variables": {}
+}
+```
+
+This affects:
+- **CLI mode**: Default format when no `--output` flag is used
+- **TUI `s` shortcut**: Format used when saving responses with `s` key
+- Supported values: `"json"`, `"yaml"`, `"text"` (default)
 
 ## HTTP File Format
 
@@ -159,6 +215,31 @@ Authorization: Bearer {{token}}
 
 Variables use `{{varName}}` syntax in your requests. Headers and variables are configured in **profiles** (`.profiles.json`).
 
+### Shell Command Variables
+
+Variables can execute shell commands using `$(command)` syntax:
+
+```json
+{
+  "name": "Dynamic Profile",
+  "variables": {
+    "timestamp": "$(date +%s)",
+    "gitBranch": "$(git branch --show-current)",
+    "randomId": "$(uuidgen)",
+    "apiKey": "$(cat ~/.secrets/api-key)"
+  }
+}
+```
+
+**Features:**
+- Commands execute when variables are resolved (before each request)
+- 5-second timeout per command
+- Works on Linux, macOS (uses `sh`)
+- Supports any shell command that outputs to stdout
+- Errors are logged and result in empty string
+
+**Security Note:** Shell commands run with your user permissions. Only use trusted commands in your profiles.
+
 ### Profiles
 
 Profiles store your headers and variables permanently. Create profiles in `.profiles.json`:
@@ -177,6 +258,7 @@ Profiles store your headers and variables permanently. Create profiles in `.prof
     },
     "workdir": "",
     "editor": "zed",
+    "output": "json",
     "oauth": { }
   },
   {
@@ -191,6 +273,7 @@ Profiles store your headers and variables permanently. Create profiles in `.prof
     },
     "workdir": "",
     "editor": "zed",
+    "output": "text",
     "oauth": { }
   }
 ]
@@ -226,9 +309,11 @@ The TUI auto-extracts `token` or `accessToken` from JSON responses and temporari
 - `x` - Open file in external editor (configured in profile)
 - `X` (Shift+X) - Configure external editor for active profile
 - `d` - Duplicate current file
+- `R` (Shift+R) - **Rename current file**
 - `s` - Save response/inspection to file (timestamp-based filename)
 - `c` - Copy response body/error to clipboard
-- `r` - Refresh file list
+- `r` - **Refresh file list and reload profiles/session**
+- `n` - **Create new profile interactively**
 - `p` - Switch profile (cycles through profiles)
 - `v` - Open variable editor (add, edit, delete variables)
 - `h` - Open header editor (add, edit, delete headers)

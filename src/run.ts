@@ -85,8 +85,8 @@ async function main() {
     console.log(`${request.method} ${request.url}\n`);
 
     const executor = new RequestExecutor();
-    const variables = sessionManager.getVariables();
-    const profileHeaders = sessionManager.getActiveHeaders();
+    const variables = await sessionManager.getVariables();
+    const profileHeaders = await sessionManager.getActiveHeaders();
 
     const result = await executor.execute(request, variables, profileHeaders);
 

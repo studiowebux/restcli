@@ -84,6 +84,20 @@ class TUI {
   private editorConfigMode = false; // Editor configuration modal
   private editorConfigValue = ""; // Editor command being edited
   private editorConfigCursor = 0; // Cursor position in editor config field
+  private renameMode = false; // File rename mode
+  private renameValue = ""; // New filename being edited
+  private renameCursor = 0; // Cursor position in rename field
+  private renameOriginalPath = ""; // Original file path being renamed
+  private profileCreateMode = false; // Profile creation mode
+  private profileCreateIndex = 0; // Current field index in profile creation
+  private profileCreateEditField = ""; // Current field being edited
+  private profileCreateEditValue = ""; // Current value being edited
+  private profileCreateEditCursor = 0; // Cursor position in profile create value field
+  private profileCreateData: { name: string; workdir: string; editor: string } = {
+    name: "",
+    workdir: "requests",
+    editor: "",
+  }; // Profile creation data
 
   constructor() {
     this.sessionManager = new SessionManager();
@@ -607,6 +621,18 @@ class TUI {
     // Check if in editor config mode
     if (this.editorConfigMode) {
       this.drawEditorConfigModal(startCol, width, height);
+      return;
+    }
+
+    // Check if in rename mode
+    if (this.renameMode) {
+      this.drawRenameModal(startCol, width, height);
+      return;
+    }
+
+    // Check if in profile create mode
+    if (this.profileCreateMode) {
+      this.drawProfileCreateModal(startCol, width, height);
       return;
     }
 
@@ -1564,6 +1590,157 @@ class TUI {
     }
   }
 
+  private drawRenameModal(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
+    this.moveCursor(2, startCol);
+    const title = " Rename File ";
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    let line = 3;
+    this.moveCursor(line++, startCol);
+    this.write("\x1b[K");
+    line++;
+
+    // Show original file path (relative to requests dir)
+    const relativePath = path.relative(this.requestsDir, this.renameOriginalPath);
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[1mFile:\x1b[0m\x1b[K`);
+    this.moveCursor(line++, startCol);
+    this.write(`  \x1b[2m${relativePath}\x1b[0m\x1b[K`);
+    line++;
+
+    // Show input field for new name
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[1mNew Name:\x1b[0m\x1b[K`);
+    this.moveCursor(line++, startCol);
+    const valueLabel = "  ";
+    const maxValueWidth = width - valueLabel.length - 2;
+    // Insert cursor at position
+    const valueWithCursor = this.renameValue.slice(0, this.renameCursor) + "_" +
+                            this.renameValue.slice(this.renameCursor);
+    // Show portion around cursor
+    let valueDisplay;
+    if (valueWithCursor.length > maxValueWidth) {
+      if (this.renameCursor > this.renameValue.length - maxValueWidth / 2) {
+        valueDisplay = valueWithCursor.slice(-maxValueWidth);
+      } else {
+        const start = Math.max(0, this.renameCursor - maxValueWidth / 2);
+        valueDisplay = valueWithCursor.slice(start, start + maxValueWidth);
+      }
+    } else {
+      valueDisplay = valueWithCursor;
+    }
+    this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+    line++;
+
+    // Show help text
+    line++;
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[2mEnter: Save | ESC: Cancel\x1b[0m\x1b[K`);
+    this.moveCursor(line++, startCol);
+    const ext = path.extname(this.renameOriginalPath);
+    this.write(`\x1b[2mNote: Only filename can be changed, extension must remain ${ext}\x1b[0m\x1b[K`);
+
+    // Clear remaining lines
+    for (let i = line; i < height - 2; i++) {
+      this.moveCursor(i, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
+  private drawProfileCreateModal(
+    startCol: number,
+    width: number,
+    height: number,
+  ): void {
+    this.moveCursor(2, startCol);
+    const title = " Create New Profile ";
+    this.write(`\x1b[1m${title}\x1b[0m\x1b[K`);
+
+    let line = 3;
+    this.moveCursor(line++, startCol);
+    this.write("\x1b[K");
+    line++;
+
+    // Define fields
+    const fields = [
+      { key: "name", label: "Profile Name", required: true },
+      { key: "workdir", label: "Working Directory", required: false },
+      { key: "editor", label: "Editor Command", required: false },
+    ];
+
+    // Display fields
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      const isSelected = i === this.profileCreateIndex;
+      const isEditing = this.profileCreateEditField === field.key;
+      const value = this.profileCreateData[field.key as keyof typeof this.profileCreateData];
+
+      this.moveCursor(line++, startCol);
+
+      // Field label
+      const requiredMark = field.required ? "\x1b[31m*\x1b[0m" : " ";
+      const fieldLabel = `${requiredMark} ${field.label}:`;
+
+      if (isSelected && !isEditing) {
+        this.write(`\x1b[1m\x1b[33m> ${fieldLabel}\x1b[0m\x1b[K`);
+      } else {
+        this.write(`  ${fieldLabel}\x1b[K`);
+      }
+
+      this.moveCursor(line++, startCol);
+
+      // Field value
+      if (isEditing) {
+        // Show editable value with cursor
+        const valueLabel = "    ";
+        const maxValueWidth = width - valueLabel.length - 2;
+        const valueWithCursor = this.profileCreateEditValue.slice(0, this.profileCreateEditCursor) + "_" +
+                                this.profileCreateEditValue.slice(this.profileCreateEditCursor);
+
+        let valueDisplay;
+        if (valueWithCursor.length > maxValueWidth) {
+          if (this.profileCreateEditCursor > this.profileCreateEditValue.length - maxValueWidth / 2) {
+            valueDisplay = valueWithCursor.slice(-maxValueWidth);
+          } else {
+            const start = Math.max(0, this.profileCreateEditCursor - maxValueWidth / 2);
+            valueDisplay = valueWithCursor.slice(start, start + maxValueWidth);
+          }
+        } else {
+          valueDisplay = valueWithCursor;
+        }
+        this.write(`${valueLabel}\x1b[7m${valueDisplay}\x1b[0m\x1b[K`);
+      } else {
+        // Show current value
+        if (value) {
+          this.write(`    \x1b[32m${value}\x1b[0m\x1b[K`);
+        } else {
+          this.write(`    \x1b[2m(not set)\x1b[0m\x1b[K`);
+        }
+      }
+
+      line++;
+    }
+
+    // Instructions
+    line++;
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[2mArrow keys: Navigate | Enter: Edit field | Ctrl+S: Save profile | ESC: Cancel\x1b[0m\x1b[K`);
+
+    // Default values hint
+    this.moveCursor(line++, startCol);
+    this.write(`\x1b[2mDefaults: workdir='requests', editor=(current: ${this.sessionManager.getEditor() || 'not set'})\x1b[0m\x1b[K`);
+
+    // Clear remaining lines
+    for (let i = line; i < height - 2; i++) {
+      this.moveCursor(i, startCol);
+      this.write("\x1b[K");
+    }
+  }
+
   private drawHistoryViewer(
     startCol: number,
     width: number,
@@ -1696,9 +1873,10 @@ class TUI {
           { key: "x", desc: "Open file in external editor (from profile)" },
           { key: "X", desc: "Configure external editor for active profile" },
           { key: "d", desc: "Duplicate current file" },
-          { key: "s", desc: "Save response to file (timestamp)" },
+          { key: "Shift+R", desc: "Rename current file" },
+          { key: "s", desc: "Save response (uses profile's output format)" },
           { key: "c", desc: "Copy response body to clipboard" },
-          { key: "r", desc: "Refresh file list" },
+          { key: "r", desc: "Refresh file list and reload profiles/session" },
         ],
       },
       {
@@ -1713,6 +1891,7 @@ class TUI {
       {
         category: "Profiles & Variables",
         items: [
+          { key: "n", desc: "Create new profile interactively" },
           { key: "p", desc: "Switch profile (cycles through profiles)" },
           { key: "v", desc: "Open variable editor" },
           { key: "h", desc: "Open header editor" },
@@ -2618,6 +2797,18 @@ class TUI {
         continue;
       }
 
+      // Handle rename mode
+      if (this.renameMode) {
+        await this.handleRenameInput(input);
+        continue;
+      }
+
+      // Handle profile create mode
+      if (this.profileCreateMode) {
+        await this.handleProfileCreateInput(input);
+        continue;
+      }
+
       // Handle history mode
       if (this.historyMode) {
         await this.handleHistoryInput(input);
@@ -2707,6 +2898,8 @@ class TUI {
           await this.executeSelected();
         } else if (char === "d") {
           await this.duplicateSelected();
+        } else if (char === "n") {
+          this.enterProfileCreateMode();
         } else if (char === "p") {
           await this.selectProfile();
         } else if (char === "s") {
@@ -2715,6 +2908,9 @@ class TUI {
           await this.copyResponse();
         } else if (char === "r") {
           await this.refreshFiles();
+          await this.sessionManager.load();
+          this.statusMessage = " Refreshed files and profiles ";
+          this.draw();
         } else if (char === "i") {
           await this.inspectRequest();
         } else if (char === "v") {
@@ -2784,6 +2980,9 @@ class TUI {
         } else if (char === "S") {
           // Open .session.json in editor
           await this.openSessionInEditor();
+        } else if (char === "R") {
+          // Rename selected file
+          this.enterRenameMode();
         }
       }
     }
@@ -3934,8 +4133,8 @@ class TUI {
 
       // Execute first request
       const request = parsed.requests[0];
-      const variables = this.sessionManager.getVariables();
-      const profileHeaders = this.sessionManager.getActiveHeaders();
+      const variables = await this.sessionManager.getVariables();
+      const profileHeaders = await this.sessionManager.getActiveHeaders();
 
       this.response = await this.executor.execute(
         request,
@@ -4637,6 +4836,366 @@ class TUI {
     }
   }
 
+  enterRenameMode(): void {
+    if (this.files.length === 0) {
+      this.statusMessage = " No files to rename ";
+      this.draw();
+      return;
+    }
+
+    const selectedFile = this.files[this.selectedIndex];
+    this.renameMode = true;
+    this.renameOriginalPath = selectedFile.path;
+    // Use only the basename (filename), not the relative path
+    this.renameValue = path.basename(selectedFile.path);
+    this.renameCursor = this.renameValue.length;
+    this.statusMessage = " Rename file (Enter to save, ESC to cancel) ";
+    this.draw();
+  }
+
+  exitRenameMode(): void {
+    this.renameMode = false;
+    this.renameValue = "";
+    this.renameCursor = 0;
+    this.renameOriginalPath = "";
+    this.draw();
+  }
+
+  async handleRenameInput(input: Uint8Array): Promise<void> {
+    // ESC - cancel rename
+    if (input.length === 1 && input[0] === 27) {
+      this.statusMessage = " Rename cancelled ";
+      this.exitRenameMode();
+      return;
+    }
+
+    // Arrow keys for cursor navigation
+    if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+      if (input[2] === 68) {
+        // Left arrow
+        this.renameCursor = Math.max(0, this.renameCursor - 1);
+        this.draw();
+      } else if (input[2] === 67) {
+        // Right arrow
+        this.renameCursor = Math.min(this.renameValue.length, this.renameCursor + 1);
+        this.draw();
+      }
+      return;
+    }
+
+    // Home/End keys
+    if (input.length === 4 && input[0] === 27 && input[1] === 91) {
+      if (input[2] === 72 || (input[2] === 49 && input[3] === 126)) {
+        // Home key
+        this.renameCursor = 0;
+        this.draw();
+        return;
+      } else if (input[2] === 70 || (input[2] === 52 && input[3] === 126)) {
+        // End key
+        this.renameCursor = this.renameValue.length;
+        this.draw();
+        return;
+      }
+    }
+
+    // Enter - save rename
+    if (input.length === 1 && input[0] === 13) {
+      const newName = this.renameValue.trim();
+
+      if (!newName) {
+        this.statusMessage = " Error: Filename cannot be empty ";
+        this.exitRenameMode();
+        return;
+      }
+
+      // Validate extension
+      const originalExt = path.extname(this.renameOriginalPath);
+      const newExt = path.extname(newName);
+
+      if (newExt !== originalExt) {
+        this.statusMessage = ` Error: Extension must be ${originalExt} `;
+        this.exitRenameMode();
+        return;
+      }
+
+      // Build new path
+      const directory = path.dirname(this.renameOriginalPath);
+      const newPath = path.join(directory, newName);
+
+      // Check if new path already exists
+      if (newPath !== this.renameOriginalPath) {
+        const exists = await Deno.stat(newPath).then(() => true).catch(() => false);
+        if (exists) {
+          this.statusMessage = ` Error: File '${newName}' already exists `;
+          this.exitRenameMode();
+          return;
+        }
+      }
+
+      // Perform rename
+      try {
+        await Deno.rename(this.renameOriginalPath, newPath);
+        this.statusMessage = ` Renamed to '${newName}' `;
+
+        // Reload files and select the renamed file
+        await this.loadFiles();
+        this.selectedIndex = this.files.findIndex((f) => f.path === newPath);
+        if (this.selectedIndex === -1) this.selectedIndex = 0;
+
+        this.exitRenameMode();
+      } catch (error) {
+        this.statusMessage = ` Error renaming: ${error instanceof Error ? error.message : String(error)} `;
+        this.exitRenameMode();
+      }
+      return;
+    }
+
+    // Backspace
+    if (input.length === 1 && input[0] === 127) {
+      const result = this.deleteAtCursor(this.renameValue, this.renameCursor);
+      this.renameValue = result.text;
+      this.renameCursor = result.cursor;
+      this.draw();
+      return;
+    }
+
+    // Ctrl+K - clear entire value
+    if (input.length === 1 && input[0] === 11) {
+      this.renameValue = "";
+      this.renameCursor = 0;
+      this.draw();
+      return;
+    }
+
+    // Option+Delete (macOS) or Alt+Backspace - delete previous word
+    if (input.length === 2 && input[0] === 27 && input[1] === 127) {
+      const result = this.deleteWordAtCursor(this.renameValue, this.renameCursor);
+      this.renameValue = result.text;
+      this.renameCursor = result.cursor;
+      this.draw();
+      return;
+    }
+
+    // Printable characters (handles paste)
+    let hasValidChars = false;
+    let chars = "";
+    for (let i = 0; i < input.length; i++) {
+      if (input[i] >= 32 && input[i] <= 126) {
+        chars += String.fromCharCode(input[i]);
+        hasValidChars = true;
+      }
+    }
+    if (hasValidChars) {
+      const result = this.insertAtCursor(this.renameValue, chars, this.renameCursor);
+      this.renameValue = result.text;
+      this.renameCursor = result.cursor;
+      this.draw();
+    }
+  }
+
+  enterProfileCreateMode(): void {
+    this.profileCreateMode = true;
+    this.profileCreateIndex = 0;
+    this.profileCreateEditField = "";
+    this.profileCreateData = {
+      name: "",
+      workdir: "requests",
+      editor: this.sessionManager.getEditor() || "",
+    };
+    this.statusMessage = " Create new profile (ESC to cancel) ";
+    this.draw();
+  }
+
+  exitProfileCreateMode(): void {
+    this.profileCreateMode = false;
+    this.profileCreateIndex = 0;
+    this.profileCreateEditField = "";
+    this.profileCreateEditValue = "";
+    this.profileCreateEditCursor = 0;
+    this.draw();
+  }
+
+  async handleProfileCreateInput(input: Uint8Array): Promise<void> {
+    // ESC - exit profile create mode
+    if (input.length === 1 && input[0] === 27) {
+      this.statusMessage = " Profile creation cancelled ";
+      this.exitProfileCreateMode();
+      return;
+    }
+
+    // Define fields in order
+    const fields = [
+      { key: "name", label: "Profile Name", required: true },
+      { key: "workdir", label: "Working Directory", required: false },
+      { key: "editor", label: "Editor Command", required: false },
+    ];
+
+    // If not editing a field, handle list navigation
+    if (!this.profileCreateEditField) {
+      // Arrow keys
+      if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+        if (input[2] === 65) {
+          // Up
+          if (this.profileCreateIndex === 0) {
+            this.profileCreateIndex = fields.length - 1; // Wrap to bottom
+          } else {
+            this.profileCreateIndex--;
+          }
+          this.draw();
+        } else if (input[2] === 66) {
+          // Down
+          if (this.profileCreateIndex === fields.length - 1) {
+            this.profileCreateIndex = 0; // Wrap to top
+          } else {
+            this.profileCreateIndex++;
+          }
+          this.draw();
+        }
+      }
+
+      // Enter - start editing field
+      if (input.length === 1 && input[0] === 13) {
+        const field = fields[this.profileCreateIndex];
+        this.profileCreateEditField = field.key;
+        this.profileCreateEditValue = this.profileCreateData[field.key as keyof typeof this.profileCreateData];
+        this.profileCreateEditCursor = this.profileCreateEditValue.length;
+        this.draw();
+      }
+
+      // Ctrl+S - save profile
+      if (input.length === 1 && input[0] === 19) {
+        const name = this.profileCreateData.name.trim();
+        if (!name) {
+          this.statusMessage = " Error: Profile name is required ";
+          this.draw();
+          return;
+        }
+
+        // Check if profile name already exists
+        const existing = this.sessionManager.getProfiles().find(p => p.name === name);
+        if (existing) {
+          this.statusMessage = ` Error: Profile '${name}' already exists `;
+          this.draw();
+          return;
+        }
+
+        // Create new profile
+        try {
+          const newProfile = {
+            name,
+            workdir: this.profileCreateData.workdir || "requests",
+            editor: this.profileCreateData.editor || undefined,
+            headers: {},
+            variables: {},
+          };
+
+          // Add profile via session manager
+          const profiles = this.sessionManager.getProfiles();
+          profiles.push(newProfile);
+          await this.sessionManager.saveProfiles();
+
+          // Switch to new profile
+          this.sessionManager.setActiveProfile(name);
+
+          // Reload workdir and files
+          this.requestsDir = this.sessionManager.getWorkdir();
+          await this.loadFiles();
+          this.selectedIndex = 0;
+
+          this.statusMessage = ` Profile '${name}' created and activated `;
+          this.exitProfileCreateMode();
+        } catch (error) {
+          this.statusMessage = ` Error creating profile: ${error instanceof Error ? error.message : String(error)} `;
+          this.exitProfileCreateMode();
+        }
+      }
+
+      return;
+    }
+
+    // Editing a field - handle text input
+    // Arrow keys for cursor navigation
+    if (input.length === 3 && input[0] === 27 && input[1] === 91) {
+      if (input[2] === 68) {
+        // Left arrow
+        this.profileCreateEditCursor = Math.max(0, this.profileCreateEditCursor - 1);
+        this.draw();
+      } else if (input[2] === 67) {
+        // Right arrow
+        this.profileCreateEditCursor = Math.min(this.profileCreateEditValue.length, this.profileCreateEditCursor + 1);
+        this.draw();
+      }
+      return;
+    }
+
+    // Home/End keys
+    if (input.length === 4 && input[0] === 27 && input[1] === 91) {
+      if (input[2] === 72 || (input[2] === 49 && input[3] === 126)) {
+        // Home key
+        this.profileCreateEditCursor = 0;
+        this.draw();
+        return;
+      } else if (input[2] === 70 || (input[2] === 52 && input[3] === 126)) {
+        // End key
+        this.profileCreateEditCursor = this.profileCreateEditValue.length;
+        this.draw();
+        return;
+      }
+    }
+
+    // Enter - save field
+    if (input.length === 1 && input[0] === 13) {
+      this.profileCreateData[this.profileCreateEditField as keyof typeof this.profileCreateData] = this.profileCreateEditValue;
+      this.profileCreateEditField = "";
+      this.profileCreateEditValue = "";
+      this.profileCreateEditCursor = 0;
+      this.draw();
+      return;
+    }
+
+    // Backspace
+    if (input.length === 1 && input[0] === 127) {
+      const result = this.deleteAtCursor(this.profileCreateEditValue, this.profileCreateEditCursor);
+      this.profileCreateEditValue = result.text;
+      this.profileCreateEditCursor = result.cursor;
+      this.draw();
+      return;
+    }
+
+    // Ctrl+K - clear entire value
+    if (input.length === 1 && input[0] === 11) {
+      this.profileCreateEditValue = "";
+      this.profileCreateEditCursor = 0;
+      this.draw();
+      return;
+    }
+
+    // Option+Delete (macOS) or Alt+Backspace - delete previous word
+    if (input.length === 2 && input[0] === 27 && input[1] === 127) {
+      const result = this.deleteWordAtCursor(this.profileCreateEditValue, this.profileCreateEditCursor);
+      this.profileCreateEditValue = result.text;
+      this.profileCreateEditCursor = result.cursor;
+      this.draw();
+      return;
+    }
+
+    // Printable characters (handles paste)
+    let hasValidChars = false;
+    let chars = "";
+    for (let i = 0; i < input.length; i++) {
+      if (input[i] >= 32 && input[i] <= 126) {
+        chars += String.fromCharCode(input[i]);
+        hasValidChars = true;
+      }
+    }
+    if (hasValidChars) {
+      const result = this.insertAtCursor(this.profileCreateEditValue, chars, this.profileCreateEditCursor);
+      this.profileCreateEditValue = result.text;
+      this.profileCreateEditCursor = result.cursor;
+      this.draw();
+    }
+  }
+
   async saveResponse(): Promise<void> {
     if (!this.response) {
       this.statusMessage = " No response to save ";
@@ -4648,54 +5207,114 @@ class TUI {
       const timestamp =
         new Date().toISOString().replace(/:/g, "-").split(".")[0];
       const inspectionMode = (this.response as any).inspectionMode;
+
+      // Get output format from profile (defaults to "text")
+      const outputFormat = this.sessionManager.getOutputFormat() || "text";
+
+      // Determine file extension based on format
+      const ext = outputFormat === "json" ? "json" : outputFormat === "yaml" ? "yaml" : "txt";
       const filename = inspectionMode
-        ? `inspection-${timestamp}.txt`
-        : `response-${timestamp}.txt`;
+        ? `inspection-${timestamp}.${ext}`
+        : `response-${timestamp}.${ext}`;
 
       let content = "";
 
       if (inspectionMode) {
         const inspectionData = (this.response as any).inspectionData;
-        content += "REQUEST INSPECTION\n";
-        content += "==================\n\n";
-        content += `${inspectionData.method} ${inspectionData.url}\n\n`;
 
-        if (Object.keys(this.response.headers).length > 0) {
-          content += "Headers (merged with profile):\n";
-          for (const [key, value] of Object.entries(this.response.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
-            content += `  ${key}: ${value}\n`;
-          }
-          content += "\n";
-        }
-
-        if (this.response.body) {
-          content += "Body:\n";
-          content += this.response.body;
-        }
-      } else {
-        content +=
-          `Status: ${this.response.status} ${this.response.statusText}\n`;
-        content += `Duration: ${Math.round(this.response.duration)}ms\n\n`;
-
-        if (this.response.error) {
-          content += "Error:\n";
-          content += this.response.error + "\n";
+        if (outputFormat === "json") {
+          // Structured JSON for inspection
+          const structuredOutput = {
+            type: "inspection",
+            method: inspectionData.method,
+            url: inspectionData.url,
+            headers: this.response.headers,
+            body: this.response.body,
+          };
+          content = JSON.stringify(structuredOutput, null, 2);
+        } else if (outputFormat === "yaml") {
+          // Structured YAML for inspection
+          const structuredOutput = {
+            type: "inspection",
+            method: inspectionData.method,
+            url: inspectionData.url,
+            headers: this.response.headers,
+            body: this.response.body,
+          };
+          content = yamlStringify(structuredOutput);
         } else {
+          // Text format for inspection
+          content += "REQUEST INSPECTION\n";
+          content += "==================\n\n";
+          content += `${inspectionData.method} ${inspectionData.url}\n\n`;
+
           if (Object.keys(this.response.headers).length > 0) {
-            content += "Headers:\n";
+            content += "Headers (merged with profile):\n";
             for (const [key, value] of Object.entries(this.response.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
               content += `  ${key}: ${value}\n`;
             }
             content += "\n";
           }
 
-          content += "Body:\n";
-          content += this.response.body;
+          if (this.response.body) {
+            content += "Body:\n";
+            content += this.response.body;
+          }
+        }
+      } else {
+        // Generate content based on output format for responses
+        if (outputFormat === "json") {
+          // Structured JSON output
+          const structuredOutput = {
+            status: this.response.status,
+            statusText: this.response.statusText,
+            headers: this.response.headers,
+            body: this.response.body,
+            duration: this.response.duration,
+            requestSize: this.response.requestSize,
+            responseSize: this.response.responseSize,
+            error: this.response.error,
+          };
+          content = JSON.stringify(structuredOutput, null, 2);
+        } else if (outputFormat === "yaml") {
+          // Structured YAML output
+          const structuredOutput = {
+            status: this.response.status,
+            statusText: this.response.statusText,
+            headers: this.response.headers,
+            body: this.response.body,
+            duration: this.response.duration,
+            requestSize: this.response.requestSize,
+            responseSize: this.response.responseSize,
+            error: this.response.error,
+          };
+          content = yamlStringify(structuredOutput);
+        } else {
+          // Text format (default)
+          content +=
+            `Status: ${this.response.status} ${this.response.statusText}\n`;
+          content += `Duration: ${Math.round(this.response.duration)}ms\n\n`;
+
+          if (this.response.error) {
+            content += "Error:\n";
+            content += this.response.error + "\n";
+          } else {
+            if (Object.keys(this.response.headers).length > 0) {
+              content += "Headers:\n";
+              for (const [key, value] of Object.entries(this.response.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
+                content += `  ${key}: ${value}\n`;
+              }
+              content += "\n";
+            }
+
+            content += "Body:\n";
+            content += this.response.body;
+          }
         }
       }
 
       await Deno.writeTextFile(filename, content);
-      this.statusMessage = ` Saved to ${filename} `;
+      this.statusMessage = ` Saved to ${filename} (${outputFormat} format) `;
       this.draw();
     } catch (error) {
       this.statusMessage = ` Error saving: ${
@@ -4774,8 +5393,8 @@ class TUI {
 
       // Get first request
       const request = parsed.requests[0];
-      const variables = this.sessionManager.getVariables();
-      const profileHeaders = this.sessionManager.getActiveHeaders();
+      const variables = await this.sessionManager.getVariables();
+      const profileHeaders = await this.sessionManager.getActiveHeaders();
 
       // Apply variable substitution
       const substituted = applyVariables(request, variables);
@@ -4866,8 +5485,11 @@ async function runCLI() {
   // Parse command line arguments
   let filePath = "";
   let profileOverride: string | null = null;
-  let fullOutput = false;
+  let fullOutput: boolean | null = null; // null = auto-detect based on TTY
   let yamlOutput = false;
+  let outputFormat: "json" | "yaml" | "text" | null = null;
+  let saveToFile: string | null = null;
+  let bodyOverride: string | null = null;
 
   // Conditional logger - only logs when --full is set
   // Default: noop (suppressed for clean piping to jq)
@@ -4889,8 +5511,17 @@ USAGE:
 OPTIONS:
   -h, --help                Show this help message
   -f, --full                Show full output (status, headers, body)
-                            Default: body only (perfect for piping)
-  -y, --yaml                Convert JSON response to YAML format
+  --body-only               Show only body (default when piped)
+                            Auto-detects: TTY=full, Piped=body-only
+  -b, --body <json>         Override request body with inline JSON
+                            Also supports piping: echo '{}' | restcli file.http
+                            Priority: --body > stdin > file body
+  -o, --output <format>     Output format: json|yaml|text (default: text)
+                            json: Structured {status, headers, body, duration}
+                            yaml: YAML format of JSON structure
+                            text: Body only (current behavior)
+  -s, --save <file>         Save response to file instead of stdout
+  -y, --yaml                Convert JSON response to YAML format (deprecated, use -o yaml)
   -p, --profile <name>      Use a specific profile for the request
 
 EXAMPLES:
@@ -4925,10 +5556,69 @@ For more information, see: https://github.com/your-repo/http-tui
       }
     } else if (arg === "--full" || arg === "-f") {
       fullOutput = true;
+    } else if (arg === "--body-only") {
+      fullOutput = false;
+    } else if (arg === "--output" || arg === "-o") {
+      if (i + 1 < args.length) {
+        const format = args[i + 1];
+        if (format === "json" || format === "yaml" || format === "text") {
+          outputFormat = format;
+          i++; // Skip next arg
+        } else {
+          console.error("Error: --output must be json, yaml, or text");
+          Deno.exit(1);
+        }
+      } else {
+        console.error("Error: --output requires a format (json|yaml|text)");
+        Deno.exit(1);
+      }
+    } else if (arg === "--save" || arg === "-s") {
+      if (i + 1 < args.length) {
+        saveToFile = args[i + 1];
+        i++; // Skip next arg
+      } else {
+        console.error("Error: --save requires a file path");
+        Deno.exit(1);
+      }
+    } else if (arg === "--body" || arg === "-b") {
+      if (i + 1 < args.length) {
+        bodyOverride = args[i + 1];
+        i++; // Skip next arg
+      } else {
+        console.error("Error: --body requires a JSON string");
+        Deno.exit(1);
+      }
     } else if (arg === "--yaml" || arg === "-y") {
       yamlOutput = true;
     } else if (!filePath) {
       filePath = arg;
+    }
+  }
+
+  // Auto-detect fullOutput based on TTY if not explicitly set
+  if (fullOutput === null) {
+    const isTTY = Deno.stdout.isTerminal();
+    fullOutput = isTTY; // TTY = full output, Piped = body-only
+  }
+
+  // Auto-detect stdin and read body if not explicitly set via --body
+  if (!bodyOverride) {
+    const isStdinPiped = !Deno.stdin.isTerminal();
+
+    if (isStdinPiped) {
+      // Read from stdin
+      const decoder = new TextDecoder();
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of Deno.stdin.readable) {
+        chunks.push(chunk);
+      }
+      const stdinContent = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+      let offset = 0;
+      for (const chunk of chunks) {
+        stdinContent.set(chunk, offset);
+        offset += chunk.length;
+      }
+      bodyOverride = decoder.decode(stdinContent).trim();
     }
   }
 
@@ -4965,6 +5655,21 @@ For more information, see: https://github.com/your-repo/http-tui
       clog(`Using profile: ${profileOverride}\n`);
     }
 
+    // Auto-detect output format from file extension in --save flag
+    if (!outputFormat && saveToFile) {
+      const ext = path.extname(saveToFile).toLowerCase();
+      if (ext === ".json") {
+        outputFormat = "json";
+      } else if (ext === ".yaml" || ext === ".yml") {
+        outputFormat = "yaml";
+      }
+    }
+
+    // Use profile's output format if no --output flag was specified
+    if (!outputFormat) {
+      outputFormat = sessionManager.getOutputFormat() || null;
+    }
+
     // Read and parse file
     const content = await Deno.readTextFile(filePath);
     const parsed = parseHttpFile(content);
@@ -4978,12 +5683,19 @@ For more information, see: https://github.com/your-repo/http-tui
 
     // Execute first request
     const request = parsed.requests[0];
+
+    // Override body if specified via --body or stdin
+    if (bodyOverride) {
+      request.body = bodyOverride;
+      clog(`Body overridden from ${bodyOverride.length > 50 ? 'stdin/flag' : '--body flag'}\n`);
+    }
+
     clog(`Executing: ${request.name || "Unnamed Request"}`);
     clog(`${request.method} ${request.url}\n`);
 
     const executor = new RequestExecutor();
-    const variables = sessionManager.getVariables();
-    const profileHeaders = sessionManager.getActiveHeaders();
+    const variables = await sessionManager.getVariables();
+    const profileHeaders = await sessionManager.getActiveHeaders();
 
     const result = await executor.execute(request, variables, profileHeaders);
 
@@ -5019,47 +5731,84 @@ For more information, see: https://github.com/your-repo/http-tui
       Deno.exit(1);
     }
 
-    const statusColor = result.status >= 200 && result.status < 300
-      ? "\x1b[32m"
-      : result.status >= 400
-      ? "\x1b[31m"
-      : "\x1b[33m";
-
     // Helper function to format bytes
-    function formatBytes(bytes: number): string {
+    const formatBytes = (bytes: number): string => {
       if (bytes === 0) return "0 B";
       const k = 1024;
       const sizes = ["B", "KB", "MB"];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + " " + sizes[i];
-    }
+    };
 
-    // Status and headers (only with --full)
-    clog(
-      `${statusColor}${result.status} ${result.statusText}\x1b[0m | ${
-        Math.round(result.duration)
-      }ms | Req: ${formatBytes(result.requestSize)} | Res: ${
-        formatBytes(result.responseSize)
-      }\n`,
-    );
+    // Generate output based on format
+    let output = "";
 
-    clog("Headers:");
-    for (const [key, value] of Object.entries(result.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
-      clog(`  ${key}: ${value}`);
-    }
+    if (outputFormat === "json") {
+      // Structured JSON output
+      const structuredOutput = {
+        status: result.status,
+        statusText: result.statusText,
+        headers: result.headers,
+        body: result.body,
+        duration: result.duration,
+        requestSize: result.requestSize,
+        responseSize: result.responseSize,
+      };
+      output = JSON.stringify(structuredOutput, null, 2);
+    } else if (outputFormat === "yaml") {
+      // YAML format of structured output
+      const structuredOutput = {
+        status: result.status,
+        statusText: result.statusText,
+        headers: result.headers,
+        body: result.body,
+        duration: result.duration,
+        requestSize: result.requestSize,
+        responseSize: result.responseSize,
+      };
+      output = yamlStringify(structuredOutput);
+    } else {
+      // Text format (default/backward compatible)
+      const statusColor = result.status >= 200 && result.status < 300
+        ? "\x1b[32m"
+        : result.status >= 400
+        ? "\x1b[31m"
+        : "\x1b[33m";
 
-    clog("\nBody:");
+      // Status and headers (only with --full)
+      if (fullOutput) {
+        output += `${statusColor}${result.status} ${result.statusText}\x1b[0m | ${
+          Math.round(result.duration)
+        }ms | Req: ${formatBytes(result.requestSize)} | Res: ${
+          formatBytes(result.responseSize)
+        }\n\n`;
 
-    // Body (always shown on stdout)
-    try {
-      const json = JSON.parse(result.body);
-      if (yamlOutput) {
-        console.log(yamlStringify(json));
-      } else {
-        console.log(JSON.stringify(json, null, 2));
+        output += "Headers:\n";
+        for (const [key, value] of Object.entries(result.headers).sort((a, b) => a[0].localeCompare(b[0]))) {
+          output += `  ${key}: ${value}\n`;
+        }
+        output += "\nBody:\n";
       }
-    } catch {
-      console.log(result.body);
+
+      // Body (always shown)
+      try {
+        const json = JSON.parse(result.body);
+        if (yamlOutput) {
+          output += yamlStringify(json);
+        } else {
+          output += JSON.stringify(json, null, 2);
+        }
+      } catch {
+        output += result.body;
+      }
+    }
+
+    // Write to file or stdout
+    if (saveToFile) {
+      await Deno.writeTextFile(saveToFile, output);
+      console.error(`✅ Response saved to: ${saveToFile}`);
+    } else {
+      console.log(output);
     }
 
     // Try to extract token
