@@ -8,45 +8,6 @@ permissions:
   contents: write
 
 jobs:
-  build-and-compile:
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [macos-latest]
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Compile TUI
-        run: |
-          deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-deno-${{ matrix.platform }} src/tui.ts
-          chmod +x bin/restcli-${{ matrix.platform }}
-        working-directory: restcli-deno
-
-      - name: Compile curl2http
-        run: |
-          deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-curl2http-deno-${{ matrix.platform }} scripts/curl2http.ts
-          chmod +x bin/restcli-curl2http-${{ matrix.platform }}
-        working-directory: restcli-deno
-
-      - name: Compile openapi2http
-        run: |
-          deno compile --allow-read --allow-write --allow-net --allow-env --allow-run --output bin/restcli-openapi2http-deno-${{ matrix.platform }} scripts/openapi2http.ts
-          chmod +x bin/restcli-openapi2http-${{ matrix.platform }}
-        working-directory: restcli-deno
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            restcli-deno/bin/restcli-deno-${{ matrix.platform }}
-            restcli-deno/bin/restcli-curl2http-deno-${{ matrix.platform }}
-            restcli-deno/bin/restcli-openapi2http-deno-${{ matrix.platform }}
-
   build-go:
     strategy:
       fail-fast: false
