@@ -100,18 +100,21 @@ var (
 	flagBody       string
 	flagFull       bool
 	flagExtraVars  []string
+	flagEnvFile    string
 )
 
 // Flags for curl2http
 var (
 	curlOutputFile    string
 	curlImportHeaders bool
+	curlFormat        string
 )
 
 // Flags for openapi2http
 var (
-	openapiOutputDir string
+	openapiOutputDir  string
 	openapiOrganizeBy string
+	openapiFormat     string
 )
 
 func init() {
@@ -122,6 +125,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&flagBody, "body", "b", "", "Override request body")
 	rootCmd.Flags().BoolVarP(&flagFull, "full", "f", false, "Show full output (status, headers, body)")
 	rootCmd.Flags().StringArrayVarP(&flagExtraVars, "extra-vars", "e", []string{}, "Set variable (key=value), can be repeated")
+	rootCmd.Flags().StringVar(&flagEnvFile, "env-file", "", "Load environment variables from file")
 
 	// Run command flags (same as root)
 	runCmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output format (json/yaml/text)")
@@ -129,14 +133,17 @@ func init() {
 	runCmd.Flags().StringVarP(&flagBody, "body", "b", "", "Override request body")
 	runCmd.Flags().BoolVarP(&flagFull, "full", "f", false, "Show full output (status, headers, body)")
 	runCmd.Flags().StringArrayVarP(&flagExtraVars, "extra-vars", "e", []string{}, "Set variable (key=value), can be repeated")
+	runCmd.Flags().StringVar(&flagEnvFile, "env-file", "", "Load environment variables from file")
 
 	// curl2http flags
-	curl2httpCmd.Flags().StringVarP(&curlOutputFile, "output", "o", "", "Output .http file path")
+	curl2httpCmd.Flags().StringVarP(&curlOutputFile, "output", "o", "", "Output file path")
 	curl2httpCmd.Flags().BoolVar(&curlImportHeaders, "import-headers", false, "Include sensitive headers")
+	curl2httpCmd.Flags().StringVarP(&curlFormat, "format", "f", "http", "Output format (http/json/yaml)")
 
 	// openapi2http flags
 	openapi2httpCmd.Flags().StringVarP(&openapiOutputDir, "output", "o", "requests", "Output directory")
 	openapi2httpCmd.Flags().StringVar(&openapiOrganizeBy, "organize-by", "tags", "Organization strategy (tags/paths/flat)")
+	openapi2httpCmd.Flags().StringVarP(&openapiFormat, "format", "f", "http", "Output format (http/json/yaml)")
 
 	// Add subcommands
 	rootCmd.AddCommand(runCmd)
@@ -154,6 +161,7 @@ func runCLI(cmd *cobra.Command, filePath string) error {
 		BodyOverride: flagBody,
 		ShowFull:     flagFull,
 		ExtraVars:    flagExtraVars,
+		EnvFile:      flagEnvFile,
 	}
 	return cli.Run(opts)
 }
@@ -192,6 +200,7 @@ func runCurl2Http(cmd *cobra.Command, args []string) error {
 		CurlCommand:   curlCommand,
 		OutputFile:    curlOutputFile,
 		ImportHeaders: curlImportHeaders,
+		Format:        curlFormat,
 	}
 
 	return converter.Curl2Http(opts)
@@ -203,6 +212,7 @@ func runOpenapi2Http(cmd *cobra.Command, specPath string) error {
 		SpecPath:   specPath,
 		OutputDir:  openapiOutputDir,
 		OrganizeBy: openapiOrganizeBy,
+		Format:     openapiFormat,
 	}
 
 	return converter.Openapi2Http(opts)

@@ -68,12 +68,16 @@ func (m *Model) executeRequest() tea.Cmd {
 			requestCopy.Headers[k] = v
 		}
 
-		// Resolve variables
-		resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil)
+		// Resolve variables (load system env vars for {{env.VAR_NAME}} support)
+		resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil, parser.LoadSystemEnv())
 		resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to resolve variables: %v", err))
 		}
+
+		// Get warnings for unresolved variables (short, for status bar)
+		warnings := resolver.GetUnresolvedVariables()
+		shellErrs := resolver.GetShellErrors()
 
 		// Execute request
 		result, err := executor.Execute(resolvedRequest)
@@ -97,7 +101,7 @@ func (m *Model) executeRequest() tea.Cmd {
 			}
 		}
 
-		return requestExecutedMsg{result: result}
+		return requestExecutedMsg{result: result, warnings: warnings, shellErrors: shellErrs}
 	}
 }
 
@@ -260,7 +264,7 @@ func (m *Model) saveResponse() tea.Cmd {
 			}
 
 			// Resolve variables
-			resolver := parser.NewVariableResolver(profile.Variables, session.Variables, nil)
+			resolver := parser.NewVariableResolver(profile.Variables, session.Variables, nil, parser.LoadSystemEnv())
 			resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 			if err == nil && resolvedRequest != nil {
 				// Use resolved values

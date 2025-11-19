@@ -1,9 +1,11 @@
 package parser
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -22,15 +24,18 @@ var (
 
 // VariableResolver handles variable resolution for requests
 type VariableResolver struct {
-	// Variables are resolved in order: cliVars (highest) -> session vars -> profile vars (lowest)
+	// Variables are resolved in order: cliVars (highest) -> envVars -> session vars -> profile vars (lowest)
 	profileVars map[string]types.VariableValue
 	sessionVars map[string]string
 	cliVars     map[string]string // CLI vars from -e flag (highest priority)
+	envVars     map[string]string // Environment variables (accessed via {{env.VAR_NAME}})
+	unresolved  []string          // Track unresolved variable names
+	shellErrors []string          // Track shell command errors
 }
 
 // NewVariableResolver creates a new variable resolver
-// cliVars can be nil if not using CLI overrides
-func NewVariableResolver(profileVars map[string]types.VariableValue, sessionVars map[string]string, cliVars map[string]string) *VariableResolver {
+// cliVars and envVars can be nil if not using them
+func NewVariableResolver(profileVars map[string]types.VariableValue, sessionVars map[string]string, cliVars map[string]string, envVars map[string]string) *VariableResolver {
 	if profileVars == nil {
 		profileVars = make(map[string]types.VariableValue)
 	}
@@ -40,12 +45,97 @@ func NewVariableResolver(profileVars map[string]types.VariableValue, sessionVars
 	if cliVars == nil {
 		cliVars = make(map[string]string)
 	}
+	if envVars == nil {
+		envVars = make(map[string]string)
+	}
 
 	return &VariableResolver{
 		profileVars: profileVars,
 		sessionVars: sessionVars,
 		cliVars:     cliVars,
+		envVars:     envVars,
+		unresolved:  []string{},
+		shellErrors: []string{},
 	}
+}
+
+// GetUnresolvedVariables returns a list of variable names that couldn't be resolved
+func (vr *VariableResolver) GetUnresolvedVariables() []string {
+	// Return unique values
+	seen := make(map[string]bool)
+	unique := []string{}
+	for _, v := range vr.unresolved {
+		if !seen[v] {
+			seen[v] = true
+			unique = append(unique, v)
+		}
+	}
+	return unique
+}
+
+// GetShellErrors returns a list of shell command errors that occurred during resolution
+func (vr *VariableResolver) GetShellErrors() []string {
+	return vr.shellErrors
+}
+
+// LoadEnvFile loads environment variables from a .env file
+func LoadEnvFile(path string) (map[string]string, error) {
+	envVars := make(map[string]string)
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open env file: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse key=value
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue // Skip malformed lines
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Remove quotes if present
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+
+		envVars[key] = value
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading env file: %w", err)
+	}
+
+	return envVars, nil
+}
+
+// LoadSystemEnv loads all system environment variables
+func LoadSystemEnv() map[string]string {
+	envVars := make(map[string]string)
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) == 2 {
+			envVars[parts[0]] = parts[1]
+		}
+	}
+	return envVars
 }
 
 // ResolveRequest resolves all variables in a request (URL, headers, body)
@@ -111,6 +201,17 @@ func (vr *VariableResolver) resolveVariables(input string) string {
 		// Extract variable name (remove {{ and }})
 		varName := strings.TrimSpace(match[2 : len(match)-2])
 
+		// Check for env.VAR_NAME syntax
+		if strings.HasPrefix(varName, "env.") {
+			envKey := varName[4:] // Remove "env." prefix
+			if value, ok := vr.envVars[envKey]; ok {
+				return value
+			}
+			// Track unresolved env variable
+			vr.unresolved = append(vr.unresolved, varName)
+			return match
+		}
+
 		// Look up in CLI vars first (highest priority - from -e flag)
 		if value, ok := vr.cliVars[varName]; ok {
 			return value
@@ -126,7 +227,8 @@ func (vr *VariableResolver) resolveVariables(input string) string {
 			return value.GetValue()
 		}
 
-		// If not found, return original placeholder
+		// Track unresolved variable
+		vr.unresolved = append(vr.unresolved, varName)
 		return match
 	})
 }
@@ -152,7 +254,12 @@ func (vr *VariableResolver) resolveShellCommands(input string) (string, error) {
 
 		err := cmd.Run()
 		if err != nil {
-			// Store error but continue (return original placeholder)
+			// Track error for display
+			errMsg := fmt.Sprintf("$(%s): %v", command, err)
+			if stderr.Len() > 0 {
+				errMsg = fmt.Sprintf("$(%s): %s", command, strings.TrimSpace(stderr.String()))
+			}
+			vr.shellErrors = append(vr.shellErrors, errMsg)
 			lastErr = fmt.Errorf("shell command failed: %w\nstderr: %s", err, stderr.String())
 			return match
 		}

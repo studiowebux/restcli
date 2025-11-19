@@ -202,6 +202,10 @@ func (m *Manager) SetActiveProfile(name string) error {
 		return fmt.Errorf("profile not found: %s", name)
 	}
 
+	// Clear session variables when switching profiles
+	// This prevents stale tokens/data from previous profile
+	m.session.Variables = make(map[string]string)
+
 	m.session.ActiveProfile = name
 	return m.SaveSession()
 }

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -214,4 +216,32 @@ func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, wi
 	)
 
 	return centeredModal
+}
+
+// renderShellErrorsModal renders the shell errors modal
+func (m *Model) renderShellErrorsModal() string {
+	var content strings.Builder
+	for i, err := range m.shellErrors {
+		if i > 0 {
+			content.WriteString("\n\n")
+		}
+		content.WriteString(styleError.Render(err))
+	}
+
+	// Use existing modal helper with footer
+	width := m.width - 6
+	height := m.height - 4
+	if width < 40 {
+		width = 40
+	}
+	if height < 10 {
+		height = 10
+	}
+
+	return m.renderModalWithFooter("Shell Errors", content.String(), "j/k: scroll | g/G: top/bottom | ESC: close", width, height)
+}
+
+// updateShellErrorsView is a no-op since renderModalWithFooter handles content
+func (m *Model) updateShellErrorsView() {
+	// Content is built in renderShellErrorsModal, no need to update modalView separately
 }

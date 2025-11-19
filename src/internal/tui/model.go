@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,6 +41,7 @@ const (
 	ModeDelete
 	ModeProfileEdit
 	ModeVariableAlias
+	ModeShellErrors
 )
 
 // Model represents the TUI state
@@ -143,6 +145,10 @@ type Model struct {
 	// Help search state
 	helpSearchQuery  string
 	helpSearchActive bool
+
+	// Shell errors state
+	shellErrors      []string
+	shellErrorScroll int
 }
 
 // Init initializes the TUI
@@ -175,10 +181,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case requestExecutedMsg:
 		m.currentResponse = msg.result
-		m.statusMsg = "Request completed"
+		if len(msg.warnings) > 0 {
+			m.statusMsg = fmt.Sprintf("Request completed (unresolved: %s)", strings.Join(msg.warnings, ", "))
+		} else {
+			m.statusMsg = "Request completed"
+		}
 		m.updateResponseView()
 		// Auto-switch focus to response panel so user can immediately scroll
 		m.focusedPanel = "response"
+		// Show shell errors modal if any
+		if len(msg.shellErrors) > 0 {
+			m.shellErrors = msg.shellErrors
+			m.shellErrorScroll = 0
+			m.mode = ModeShellErrors
+			m.updateShellErrorsView()
+		}
 
 	case oauthSuccessMsg:
 		m.statusMsg = fmt.Sprintf("OAuth successful! Token stored (expires in %d seconds)", msg.expiresIn)
@@ -247,6 +264,8 @@ func (m Model) View() string {
 		return m.renderConfigView()
 	case ModeDelete:
 		return m.renderDeleteModal()
+	case ModeShellErrors:
+		return m.renderShellErrorsModal()
 	default:
 		return m.renderMain()
 	}
@@ -258,7 +277,9 @@ type fileListLoadedMsg struct {
 }
 
 type requestExecutedMsg struct {
-	result *types.RequestResult
+	result      *types.RequestResult
+	warnings    []string // Unresolved variables
+	shellErrors []string // Shell command errors
 }
 
 type oauthSuccessMsg struct {

@@ -9,14 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/studiowebux/restcli/internal/types"
 	"gopkg.in/yaml.v3"
 )
 
 // OpenAPI2HttpOptions contains options for openapi2http conversion
 type OpenAPI2HttpOptions struct {
-	SpecPath    string
-	OutputDir   string
-	OrganizeBy  string // tags, paths, or flat
+	SpecPath   string
+	OutputDir  string
+	OrganizeBy string // tags, paths, or flat
+	Format     string // http, json, yaml (default: http)
 }
 
 // OpenAPISpec represents a simplified OpenAPI 3.0 specification
@@ -98,13 +100,26 @@ func Openapi2Http(opts OpenAPI2HttpOptions) error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Generate .http files
-	count, err := generateHttpFiles(spec, opts.OutputDir, opts.OrganizeBy)
-	if err != nil {
-		return fmt.Errorf("failed to generate .http files: %w", err)
+	// Determine format (default to http)
+	format := opts.Format
+	if format == "" {
+		format = "http"
 	}
 
-	fmt.Fprintf(os.Stderr, "Generated %d .http files in %s\n", count, opts.OutputDir)
+	// Generate files
+	count, err := generateHttpFiles(spec, opts.OutputDir, opts.OrganizeBy, format)
+	if err != nil {
+		return fmt.Errorf("failed to generate files: %w", err)
+	}
+
+	ext := ".http"
+	if format == "json" {
+		ext = ".json"
+	} else if format == "yaml" {
+		ext = ".yaml"
+	}
+
+	fmt.Fprintf(os.Stderr, "Generated %d %s files in %s\n", count, ext, opts.OutputDir)
 	return nil
 }
 
@@ -148,13 +163,21 @@ func loadOpenAPISpec(path string) (*OpenAPISpec, error) {
 }
 
 // generateHttpFiles generates .http files from the spec
-func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy string) (int, error) {
+func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy, format string) (int, error) {
 	count := 0
 
 	// Get base URL
 	baseURL := "{{baseUrl}}"
 	if len(spec.Servers) > 0 {
 		baseURL = "{{baseUrl}}" // We'll suggest it in variables
+	}
+
+	// Determine file extension based on format
+	ext := ".http"
+	if format == "json" {
+		ext = ".json"
+	} else if format == "yaml" {
+		ext = ".yaml"
 	}
 
 	// Iterate through paths
@@ -175,6 +198,9 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy string) (int, er
 			// Determine filename and directory
 			dir, filename := getOutputPath(outputDir, path, method, operation, organizeBy)
 
+			// Replace extension based on format
+			filename = strings.TrimSuffix(filename, ".http") + ext
+
 			// Ensure directory exists
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return count, err
@@ -182,8 +208,26 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy string) (int, er
 
 			fullPath := filepath.Join(dir, filename)
 
-			// Generate .http content
-			content := generateOperationHttpFile(method, path, operation, baseURL, spec)
+			// Generate content based on format
+			var content string
+			if format == "json" || format == "yaml" {
+				httpReq := operationToHttpRequest(method, path, operation, baseURL, spec)
+				if format == "json" {
+					data, err := json.MarshalIndent(httpReq, "", "  ")
+					if err != nil {
+						return count, err
+					}
+					content = string(data)
+				} else {
+					data, err := yaml.Marshal(httpReq)
+					if err != nil {
+						return count, err
+					}
+					content = string(data)
+				}
+			} else {
+				content = generateOperationHttpFile(method, path, operation, baseURL, spec)
+			}
 
 			// Write file
 			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
@@ -195,6 +239,71 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy string) (int, er
 	}
 
 	return count, nil
+}
+
+// operationToHttpRequest converts an OpenAPI operation to types.HttpRequest
+func operationToHttpRequest(method, path string, operation *OpenAPIOperation, baseURL string, spec *OpenAPISpec) types.HttpRequest {
+	// Build URL with path parameters
+	url := baseURL + path
+	for _, param := range operation.Parameters {
+		if param.In == "path" {
+			url = strings.Replace(url, "{"+param.Name+"}", "{{"+param.Name+"}}", 1)
+		}
+	}
+
+	// Build headers
+	headers := make(map[string]string)
+	for _, param := range operation.Parameters {
+		if param.In == "header" {
+			headers[param.Name] = "{{" + param.Name + "}}"
+		}
+	}
+
+	// Add Content-Type if there's a body
+	var body string
+	if operation.RequestBody != nil {
+		for contentType, mediaType := range operation.RequestBody.Content {
+			headers["Content-Type"] = contentType
+			if mediaType.Example != nil {
+				if exampleJSON, err := json.MarshalIndent(mediaType.Example, "", "  "); err == nil {
+					body = string(exampleJSON)
+				}
+			} else if mediaType.Schema != nil {
+				example := generateExampleFromSchema(mediaType.Schema)
+				if exampleJSON, err := json.MarshalIndent(example, "", "  "); err == nil {
+					body = string(exampleJSON)
+				}
+			}
+			break
+		}
+	}
+
+	// Build documentation
+	var doc *types.Documentation
+	if operation.Summary != "" || operation.Description != "" || len(operation.Tags) > 0 {
+		doc = &types.Documentation{
+			Description: operation.Summary,
+			Tags:        operation.Tags,
+		}
+		if operation.Description != "" && operation.Description != operation.Summary {
+			doc.Description = operation.Description
+		}
+	}
+
+	// Determine name
+	name := operation.Summary
+	if name == "" {
+		name = method + " " + path
+	}
+
+	return types.HttpRequest{
+		Name:          name,
+		Method:        method,
+		URL:           url,
+		Headers:       headers,
+		Body:          body,
+		Documentation: doc,
+	}
 }
 
 // getOutputPath determines the output directory and filename

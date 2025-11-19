@@ -382,7 +382,7 @@ func (m *Model) updateResponseView() {
 		}
 
 		// Resolve variables for display
-		resolver := parser.NewVariableResolver(profile.Variables, session.Variables, nil)
+		resolver := parser.NewVariableResolver(profile.Variables, session.Variables, nil, parser.LoadSystemEnv())
 		resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 
 		content.WriteString(styleTitle.Render("Request") + "\n")
@@ -942,7 +942,7 @@ func (m *Model) updateInspectView() {
 	}
 
 	// Resolve variables for preview
-	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil)
+	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil, parser.LoadSystemEnv())
 	resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 
 	var content strings.Builder

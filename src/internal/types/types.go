@@ -59,6 +59,7 @@ type ResponseField struct {
 	Type        string `json:"type" yaml:"type"`
 	Required    bool   `json:"required" yaml:"required"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Example     string `json:"example,omitempty" yaml:"example,omitempty"`
 	Deprecated  bool   `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 

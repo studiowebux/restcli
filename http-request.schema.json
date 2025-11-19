@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/your-repo/http-request-schema",
+  "$id": "https://raw.githubusercontent.com/studiowebux/restcli/main/http-request.schema.json",
   "title": "HTTP Request File",
   "description": "Schema for HTTP request files in YAML or JSON format",
   "oneOf": [
@@ -116,6 +116,7 @@
           "description": "Parameter description"
         },
         "example": {
+          "type": "string",
           "description": "Example value for the parameter"
         }
       },
@@ -148,6 +149,7 @@
           "description": "Field description"
         },
         "example": {
+          "type": "string",
           "description": "Example value for the field"
         }
       },

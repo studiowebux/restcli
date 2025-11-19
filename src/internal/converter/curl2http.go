@@ -9,13 +9,17 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/studiowebux/restcli/internal/types"
+	"gopkg.in/yaml.v3"
 )
 
 // CurlToHttpOptions contains options for curl2http conversion
 type CurlToHttpOptions struct {
-	CurlCommand    string
-	OutputFile     string
-	ImportHeaders  bool // If true, include sensitive headers
+	CurlCommand   string
+	OutputFile    string
+	ImportHeaders bool   // If true, include sensitive headers
+	Format        string // http, json, yaml (default: http)
 }
 
 // CurlRequest represents a parsed cURL command
@@ -42,26 +46,79 @@ func Curl2Http(opts CurlToHttpOptions) error {
 	// Detect variables
 	variables := detectVariables(req)
 
-	// Generate .http content
-	httpContent := generateHttpFile(req, variables)
+	// Determine format (default to http)
+	format := opts.Format
+	if format == "" {
+		format = "http"
+	}
+
+	var content string
+	var ext string
+
+	switch format {
+	case "json":
+		httpReq := curlToHttpRequest(req, variables)
+		data, err := json.MarshalIndent(httpReq, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		content = string(data)
+		ext = ".json"
+	case "yaml":
+		httpReq := curlToHttpRequest(req, variables)
+		data, err := yaml.Marshal(httpReq)
+		if err != nil {
+			return fmt.Errorf("failed to marshal YAML: %w", err)
+		}
+		content = string(data)
+		ext = ".yaml"
+	default: // "http"
+		content = generateHttpFile(req, variables)
+		ext = ".http"
+	}
 
 	// Determine output filename
 	outputFile := opts.OutputFile
 	if outputFile == "" {
 		outputFile = suggestFilename(req.URL)
+		// Replace extension based on format
+		if format != "http" {
+			outputFile = strings.TrimSuffix(outputFile, ".http") + ext
+		}
 	}
 
 	// Write to file or stdout
 	if outputFile == "-" {
-		fmt.Print(httpContent)
+		fmt.Print(content)
 	} else {
-		if err := os.WriteFile(outputFile, []byte(httpContent), 0644); err != nil {
+		if err := os.WriteFile(outputFile, []byte(content), 0644); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "Created %s\n", outputFile)
 	}
 
 	return nil
+}
+
+// curlToHttpRequest converts a CurlRequest to types.HttpRequest
+func curlToHttpRequest(req *CurlRequest, variables map[string]string) types.HttpRequest {
+	// Replace detected variables in URL
+	requestURL := req.URL
+	for key, value := range variables {
+		if key == "baseUrl" {
+			requestURL = strings.Replace(requestURL, value, "{{"+key+"}}", 1)
+		} else {
+			requestURL = strings.Replace(requestURL, value, "{{"+key+"}}", -1)
+		}
+	}
+
+	return types.HttpRequest{
+		Name:    "Request",
+		Method:  req.Method,
+		URL:     requestURL,
+		Headers: req.Headers,
+		Body:    req.Body,
+	}
 }
 
 // parseCurl parses a cURL command string

@@ -26,6 +26,7 @@ type RunOptions struct {
 	BodyOverride string
 	ShowFull     bool
 	ExtraVars    []string // key=value pairs from -e flag
+	EnvFile      string   // path to .env file
 }
 
 // Run executes a request file in CLI mode
@@ -123,11 +124,38 @@ func Run(opts RunOptions) error {
 		}
 	}
 
+	// Load environment variables
+	envVars := parser.LoadSystemEnv()
+
+	// Load additional env vars from file if specified
+	if opts.EnvFile != "" {
+		fileEnvVars, err := parser.LoadEnvFile(opts.EnvFile)
+		if err != nil {
+			return fmt.Errorf("failed to load env file: %w", err)
+		}
+		// File vars override system vars
+		for k, v := range fileEnvVars {
+			envVars[k] = v
+		}
+	}
+
 	// Resolve variables (CLI vars have highest priority)
-	resolver := parser.NewVariableResolver(profile.Variables, mgr.GetSession().Variables, cliVars)
+	resolver := parser.NewVariableResolver(profile.Variables, mgr.GetSession().Variables, cliVars, envVars)
 	resolvedRequest, err := resolver.ResolveRequest(&request)
 	if err != nil {
 		return fmt.Errorf("failed to resolve variables: %w", err)
+	}
+
+	// Warn about unresolved variables
+	if unresolved := resolver.GetUnresolvedVariables(); len(unresolved) > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: unresolved variables: %s\n", strings.Join(unresolved, ", "))
+	}
+
+	// Warn about shell command errors
+	if shellErrs := resolver.GetShellErrors(); len(shellErrs) > 0 {
+		for _, err := range shellErrs {
+			fmt.Fprintf(os.Stderr, "Warning: %s\n", err)
+		}
 	}
 
 	// Execute request

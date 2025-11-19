@@ -50,8 +50,28 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleConfigViewKeys(msg)
 	case ModeDelete:
 		return m.handleDeleteKeys(msg)
+	case ModeShellErrors:
+		return m.handleShellErrorsKeys(msg)
 	}
 
+	return nil
+}
+
+// handleShellErrorsKeys handles keyboard input in shell errors modal
+func (m *Model) handleShellErrorsKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q", "enter":
+		m.mode = ModeNormal
+		m.shellErrors = nil
+	case "j", "down":
+		m.modalView.LineDown(1)
+	case "k", "up":
+		m.modalView.LineUp(1)
+	case "g":
+		m.modalView.GotoTop()
+	case "G":
+		m.modalView.GotoBottom()
+	}
 	return nil
 }
 
