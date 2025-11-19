@@ -1,3 +1,0 @@
-### Get Player Profile
-GET {{baseUrl}}/users/{{userId}}/profile
-Authorization: Bearer {{token}}

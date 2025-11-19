@@ -1,5 +1,0 @@
-### Get Post with Variable
-GET https://jsonplaceholder.typicode.com/posts/{{postId}}
-
-### Get User with Variable
-GET https://jsonplaceholder.typicode.com/users/{{userId}}

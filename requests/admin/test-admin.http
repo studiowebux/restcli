@@ -1,2 +1,0 @@
-### Admin Test Request
-GET http://localhost:3000/admin/users

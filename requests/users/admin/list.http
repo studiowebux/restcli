@@ -1,3 +1,0 @@
-### List All Users (Admin)
-GET {{baseUrl}}/admin/users
-Authorization: Bearer {{token}}
