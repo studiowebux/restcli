@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/studiowebux/restcli/internal/config"
@@ -18,12 +19,13 @@ import (
 
 // RunOptions contains options for running a request in CLI mode
 type RunOptions struct {
-	FilePath    string
-	Profile     string
-	OutputFormat string  // json, yaml, text
-	SavePath    string
+	FilePath     string
+	Profile      string
+	OutputFormat string   // json, yaml, text
+	SavePath     string
 	BodyOverride string
-	ShowFull    bool
+	ShowFull     bool
+	ExtraVars    []string // key=value pairs from -e flag
 }
 
 // Run executes a request file in CLI mode
@@ -50,14 +52,10 @@ func Run(opts RunOptions) error {
 		return err
 	}
 
-	// Resolve file path (relative to workdir or absolute)
-	filePath := opts.FilePath
-	if !strings.HasPrefix(filePath, "/") {
-		// Check if file exists in current directory first
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			// Try in workdir
-			filePath = fmt.Sprintf("%s/%s", workdir, filePath)
-		}
+	// Resolve file path (supports extension-less names like "get-user" -> "get-user.http")
+	filePath, err := resolveFilePath(opts.FilePath, workdir)
+	if err != nil {
+		return err
 	}
 
 	// Parse the request file
@@ -98,8 +96,35 @@ func Run(opts RunOptions) error {
 	}
 	request.Headers = mergedHeaders
 
-	// Resolve variables
-	resolver := parser.NewVariableResolver(profile.Variables, mgr.GetSession().Variables)
+	// Parse CLI extra vars (key=value format) and resolve aliases
+	cliVars := make(map[string]string)
+	for _, ev := range opts.ExtraVars {
+		parts := strings.SplitN(ev, "=", 2)
+		if len(parts) == 2 {
+			varName := parts[0]
+			varValue := parts[1]
+
+			// Check if the value is an alias for a multi-value variable
+			if profileVar, ok := profile.Variables[varName]; ok && profileVar.IsMultiValue() {
+				if profileVar.MultiValue.Aliases != nil {
+					if idx, aliasFound := profileVar.MultiValue.Aliases[varValue]; aliasFound {
+						// Resolve alias to actual value
+						if idx >= 0 && idx < len(profileVar.MultiValue.Options) {
+							varValue = profileVar.MultiValue.Options[idx]
+						}
+					}
+				}
+			}
+
+			cliVars[varName] = varValue
+		} else if len(parts) == 1 && parts[0] != "" {
+			// Allow -e key (sets to empty string)
+			cliVars[parts[0]] = ""
+		}
+	}
+
+	// Resolve variables (CLI vars have highest priority)
+	resolver := parser.NewVariableResolver(profile.Variables, mgr.GetSession().Variables, cliVars)
 	resolvedRequest, err := resolver.ResolveRequest(&request)
 	if err != nil {
 		return fmt.Errorf("failed to resolve variables: %w", err)
@@ -255,4 +280,40 @@ func getStatusColor(status int) string {
 		return colorRed
 	}
 	return colorYellow
+}
+
+// resolveFilePath attempts to find the actual file path, trying common extensions
+// if the exact path doesn't exist. Returns the resolved path and any error.
+func resolveFilePath(basePath, workdir string) (string, error) {
+	// Supported extensions in priority order (empty string = exact match first)
+	extensions := []string{"", ".http", ".yaml", ".yml", ".json"}
+
+	// If absolute path, only check with extensions
+	if filepath.IsAbs(basePath) {
+		for _, ext := range extensions {
+			candidate := basePath + ext
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
+		return "", fmt.Errorf("file not found: %s (tried .http, .yaml, .yml, .json extensions)", basePath)
+	}
+
+	// Check in current directory first
+	for _, ext := range extensions {
+		candidate := basePath + ext
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	// Check in workdir
+	for _, ext := range extensions {
+		candidate := filepath.Join(workdir, basePath+ext)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("file not found: %s (searched current directory and %s, tried .http, .yaml, .yml, .json extensions)", basePath, workdir)
 }

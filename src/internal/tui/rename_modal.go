@@ -105,3 +105,16 @@ func (m *Model) renderEditorConfigModal() string {
 
 	return m.renderModalWithFooter("Configure Editor", content, footer, 50, 10)
 }
+
+// renderDeleteModal renders the delete file confirmation modal
+func (m *Model) renderDeleteModal() string {
+	if len(m.files) == 0 {
+		return m.renderModal("Delete", "No file selected\n\nPress ESC to close", 50, 10)
+	}
+
+	fileName := m.files[m.fileIndex].Name
+	content := fmt.Sprintf("Are you sure you want to delete:\n\n  %s\n\nThis action cannot be undone.", fileName)
+	footer := "[y]es [n]o"
+
+	return m.renderModalWithFooter("Delete File", content, footer, 60, 12)
+}

@@ -6,28 +6,30 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
 	"github.com/studiowebux/restcli/internal/parser"
 )
 
-// Color definitions
+// Adaptive color definitions for light/dark terminal support
 var (
-	colorGreen  = lipgloss.Color("2")
-	colorRed    = lipgloss.Color("1")
-	colorYellow = lipgloss.Color("3")
-	colorBlue   = lipgloss.Color("4")
-	colorGray   = lipgloss.Color("8")
+	colorGreen = lipgloss.AdaptiveColor{Light: "#006400", Dark: "#00ff00"} // Dark green / Bright green
+	colorRed   = lipgloss.AdaptiveColor{Light: "#8b0000", Dark: "#ff0000"} // Dark red / Bright red
+	colorYellow = lipgloss.AdaptiveColor{Light: "#b8860b", Dark: "#ffff00"} // Dark goldenrod / Yellow
+	colorBlue  = lipgloss.AdaptiveColor{Light: "#00008b", Dark: "#0000ff"} // Dark blue / Blue
+	colorGray  = lipgloss.AdaptiveColor{Light: "#555555", Dark: "#888888"} // Dark gray / Light gray
+	colorCyan  = lipgloss.AdaptiveColor{Light: "#008b8b", Dark: "#00ffff"} // Dark cyan / Cyan
 )
 
 // Style definitions
 var (
 	styleTitle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("6"))
+			Foreground(colorCyan)
 
 	styleSelected = lipgloss.NewStyle().
-			Background(lipgloss.Color("237")).
-			Foreground(lipgloss.Color("15"))
+			Background(lipgloss.AdaptiveColor{Light: "#d3d3d3", Dark: "#3a3a3a"}).
+			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
 
 	styleSuccess = lipgloss.NewStyle().
 			Foreground(colorGreen)
@@ -380,7 +382,7 @@ func (m *Model) updateResponseView() {
 		}
 
 		// Resolve variables for display
-		resolver := parser.NewVariableResolver(profile.Variables, session.Variables)
+		resolver := parser.NewVariableResolver(profile.Variables, session.Variables, nil)
 		resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 
 		content.WriteString(styleTitle.Render("Request") + "\n")
@@ -520,7 +522,8 @@ NAVIGATION (Keyboard Only)
   ↑/↓, j/k       Navigate files OR scroll response
   gg             Go to first item (vim-style)
   G              Go to last item (vim-style)
-  PageUp/Down    Fast scroll (focused panel)
+  Ctrl+U/D       Half-page up/down (vim-style)
+  PageUp/Down    Full page scroll (focused panel)
   Home/End       Jump to first/last
   :              Goto hex line
 
@@ -541,6 +544,7 @@ FILE OPERATIONS
   x            Open in editor
   X            Configure editor
   d            Duplicate file
+  D            Delete file (with confirmation)
   R            Rename file
   r            Refresh file list
 
@@ -555,10 +559,20 @@ RESPONSE
 CONFIGURATION
   v            Variable editor
   h            Header editor
-  p            Switch profile
+  p            Switch profile (press [e] to edit profile)
   n            Create new profile (when no search active)
+  C            View current configuration
   P            Edit .profiles.json
   S            Edit .session.json
+
+VARIABLE EDITOR (multi-value)
+  m            Manage options for multi-value variable
+  s            Set active option
+  a            Add option
+  e            Edit option
+  d            Delete option
+  l            Set alias for option (e.g., 'u1', 'dev')
+  L            Delete aliases from option
 
 DOCUMENTATION & HISTORY
   m            View documentation
@@ -568,7 +582,8 @@ MODAL NAVIGATION
   ↑/↓, j/k     Navigate items
   gg           Go to first item
   G            Go to last item
-  PageUp/Down  Move cursor by page
+  Ctrl+U/D     Half-page up/down
+  PageUp/Down  Full page up/down
   Home/End     Jump to first/last
 
 OAUTH
@@ -587,9 +602,148 @@ OTHER
   ?            Show this help
   q            Quit
 
-Use ↑/↓ or j/k to scroll, ESC or ? to close`
+Use ↑/↓ or j/k to scroll, / to search, ESC or ? to close`
 
-	m.helpView.SetContent(helpText)
+	// Apply search filter if active
+	if m.helpSearchQuery != "" {
+		lines := strings.Split(helpText, "\n")
+		var filteredLines []string
+		query := strings.ToLower(m.helpSearchQuery)
+
+		for _, line := range lines {
+			if strings.Contains(strings.ToLower(line), query) {
+				// Highlight matching text
+				filteredLines = append(filteredLines, line)
+			}
+		}
+
+		if len(filteredLines) == 0 {
+			m.helpView.SetContent(fmt.Sprintf("No matches found for: %s\n\nPress ESC to clear search", m.helpSearchQuery))
+		} else {
+			m.helpView.SetContent(strings.Join(filteredLines, "\n"))
+		}
+	} else {
+		m.helpView.SetContent(helpText)
+	}
+}
+
+// renderConfigView renders the current configuration view modal
+func (m Model) renderConfigView() string {
+	var content strings.Builder
+
+	profile := m.sessionMgr.GetActiveProfile()
+
+	// Helper to wrap long values with indentation for continuation lines
+	wrapValue := func(label, value string, maxWidth int) string {
+		labelLen := len(label)
+		valueWidth := maxWidth - labelLen - 2 // 2 for initial indent
+		if valueWidth < 20 {
+			valueWidth = 20
+		}
+
+		if len(value) <= valueWidth {
+			return fmt.Sprintf("  %s%s\n", label, value)
+		}
+
+		// Wrap long values
+		var result strings.Builder
+		result.WriteString(fmt.Sprintf("  %s", label))
+		indent := strings.Repeat(" ", labelLen+2)
+
+		remaining := value
+		first := true
+		for len(remaining) > 0 {
+			chunkLen := valueWidth
+			if len(remaining) < chunkLen {
+				chunkLen = len(remaining)
+			}
+
+			if first {
+				result.WriteString(remaining[:chunkLen])
+				first = false
+			} else {
+				result.WriteString("\n")
+				result.WriteString(indent)
+				result.WriteString(remaining[:chunkLen])
+			}
+			remaining = remaining[chunkLen:]
+		}
+		result.WriteString("\n")
+		return result.String()
+	}
+
+	modalWidth := 70
+
+	// Profile info
+	content.WriteString(styleTitle.Render("ACTIVE PROFILE"))
+	content.WriteString("\n\n")
+	content.WriteString(wrapValue("Name:     ", profile.Name, modalWidth-4))
+
+	// Working directory
+	workdir, err := config.GetWorkingDirectory(profile.Workdir)
+	if err != nil {
+		workdir = profile.Workdir + " (error)"
+	}
+	content.WriteString(wrapValue("Workdir:  ", workdir, modalWidth-4))
+
+	// Editor
+	editor := profile.Editor
+	if editor == "" {
+		editor = "(default)"
+	}
+	content.WriteString(wrapValue("Editor:   ", editor, modalWidth-4))
+
+	// Output format
+	output := profile.Output
+	if output == "" {
+		output = "json"
+	}
+	content.WriteString(wrapValue("Output:   ", output, modalWidth-4))
+
+	// Session info
+	content.WriteString("\n")
+	content.WriteString(styleTitle.Render("SESSION"))
+	content.WriteString("\n\n")
+
+	// History status
+	historyStatus := "enabled"
+	if m.sessionMgr.IsHistoryEnabled() == false {
+		historyStatus = "disabled"
+	}
+	content.WriteString(wrapValue("History:  ", historyStatus, modalWidth-4))
+
+	// Variable count
+	session := m.sessionMgr.GetSession()
+	content.WriteString(wrapValue("Variables:", fmt.Sprintf(" %d", len(session.Variables)), modalWidth-4))
+
+	// Header count
+	headers := profile.Headers
+	content.WriteString(wrapValue("Headers:  ", fmt.Sprintf("%d", len(headers)), modalWidth-4))
+
+	// OAuth status
+	oauthStatus := "not configured"
+	if profile.OAuth != nil && profile.OAuth.Enabled {
+		if profile.OAuth.AuthURL != "" {
+			oauthStatus = "configured (auto)"
+		} else if profile.OAuth.AuthEndpoint != "" {
+			oauthStatus = "configured (manual)"
+		} else {
+			oauthStatus = "enabled"
+		}
+	}
+	content.WriteString(wrapValue("OAuth:    ", oauthStatus, modalWidth-4))
+
+	// Config paths
+	content.WriteString("\n")
+	content.WriteString(styleTitle.Render("CONFIG PATHS"))
+	content.WriteString("\n\n")
+	content.WriteString(wrapValue("Config:   ", config.ConfigDir, modalWidth-4))
+	content.WriteString(wrapValue("Session:  ", config.GetSessionFilePath(), modalWidth-4))
+	content.WriteString(wrapValue("Profiles: ", config.GetProfilesFilePath(), modalWidth-4))
+
+	footer := "[ESC/C/q] close"
+
+	return m.renderModalWithFooter("Current Configuration", content.String(), footer, 70, 25)
 }
 
 // updateDocumentationView updates the documentation viewport content
@@ -788,7 +942,7 @@ func (m *Model) updateInspectView() {
 	}
 
 	// Resolve variables for preview
-	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables)
+	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil)
 	resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 
 	var content strings.Builder

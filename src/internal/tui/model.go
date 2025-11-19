@@ -36,6 +36,10 @@ const (
 	ModeEditorConfig
 	ModeOAuthConfig
 	ModeOAuthEdit
+	ModeConfigView
+	ModeDelete
+	ModeProfileEdit
+	ModeVariableAlias
 )
 
 // Model represents the TUI state
@@ -77,6 +81,10 @@ type Model struct {
 	varEditValuePos  int // Cursor position in value field
 	varOptionIndex   int
 
+	// Alias editor state
+	varAliasInput      string // Alias name being typed
+	varAliasTargetIdx  int    // Option index being aliased
+
 	// Header editor state
 	headerEditIndex    int
 	headerEditName     string
@@ -90,6 +98,17 @@ type Model struct {
 	profileName   string
 	profileCursor int
 	profileNamePos int // Cursor position in profile name
+
+	// Profile edit state
+	profileEditField     int    // 0=name, 1=workdir, 2=editor, 3=output
+	profileEditName      string
+	profileEditWorkdir   string
+	profileEditEditor    string
+	profileEditOutput    string
+	profileEditNamePos   int
+	profileEditWorkdirPos int
+	profileEditEditorPos  int
+	profileEditOutputPos  int
 
 	// Documentation viewer state
 	docCollapsed      map[int]bool
@@ -120,6 +139,10 @@ type Model struct {
 	fullscreen  bool
 	loading     bool
 	gPressed    bool // Track if 'g' was pressed for 'gg' vim motion
+
+	// Help search state
+	helpSearchQuery  string
+	helpSearchActive bool
 }
 
 // Init initializes the TUI
@@ -200,11 +223,11 @@ func (m Model) View() string {
 	switch m.mode {
 	case ModeHelp:
 		return m.renderHelp()
-	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage:
+	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage, ModeVariableAlias:
 		return m.renderVariableEditor()
 	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
 		return m.renderHeaderEditor()
-	case ModeProfileSwitch, ModeProfileCreate:
+	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit:
 		return m.renderProfileModal()
 	case ModeDocumentation:
 		return m.renderDocumentation()
@@ -220,6 +243,10 @@ func (m Model) View() string {
 		return m.renderRenameModal()
 	case ModeEditorConfig:
 		return m.renderEditorConfigModal()
+	case ModeConfigView:
+		return m.renderConfigView()
+	case ModeDelete:
+		return m.renderDeleteModal()
 	default:
 		return m.renderMain()
 	}

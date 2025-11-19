@@ -114,6 +114,18 @@ func (m *Model) renderVariableEditor() string {
 				if i == varValue.MultiValue.Active {
 					line += " [ACTIVE]"
 				}
+				// Show aliases for this option
+				if varValue.MultiValue.Aliases != nil {
+					var aliases []string
+					for alias, idx := range varValue.MultiValue.Aliases {
+						if idx == i {
+							aliases = append(aliases, alias)
+						}
+					}
+					if len(aliases) > 0 {
+						line += fmt.Sprintf(" (%s)", strings.Join(aliases, ", "))
+					}
+				}
 				if i == m.varOptionIndex {
 					line = styleSelected.Render(line)
 				}
@@ -125,9 +137,20 @@ func (m *Model) renderVariableEditor() string {
 				content.WriteString(fmt.Sprintf("\nValue: %s", editField))
 				footer = "[Enter] save [ESC] cancel"
 			} else {
-				footer = "↑/↓ [s]et active [e]dit [a]dd [d]elete [ESC]"
+				footer = "↑/↓ [s]et [e]dit [a]dd [d]el [l]alias [L]del alias [ESC]"
 			}
 		}
+
+	case ModeVariableAlias:
+		content.WriteString("Set Alias\n\n")
+		varValue, exists := profile.Variables[m.varEditName]
+		if exists && varValue.IsMultiValue() && m.varAliasTargetIdx < len(varValue.MultiValue.Options) {
+			content.WriteString(fmt.Sprintf("Option: %s\n\n", truncate(varValue.MultiValue.Options[m.varAliasTargetIdx], 50)))
+		}
+		aliasField := m.varAliasInput + "█"
+		content.WriteString("Alias: " + aliasField + "\n")
+		content.WriteString("\nEnter a short name for this option (e.g., 'u1', 'dev')")
+		footer = "[Enter] save [ESC] cancel"
 
 	case ModeVariableOptions:
 		content.WriteString("Create Multi-Value Variable\n\n")
@@ -335,6 +358,9 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case ModeVariableManage:
 		return m.handleVariableManageKeys(msg)
+
+	case ModeVariableAlias:
+		return m.handleVariableAliasKeys(msg)
 
 	case ModeVariableOptions:
 		return m.handleVariableOptionsKeys(msg)
@@ -555,6 +581,40 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 		m.varEditValue = ""
 		m.varEditValuePos = 0
 		m.varEditCursor = 1 // Focus on value field
+
+	case "l":
+		// Set alias for current option
+		if len(varValue.MultiValue.Options) == 0 {
+			m.statusMsg = "No options to alias"
+		} else if m.varOptionIndex < len(varValue.MultiValue.Options) {
+			m.mode = ModeVariableAlias
+			m.varAliasTargetIdx = m.varOptionIndex
+			m.varAliasInput = ""
+		} else {
+			m.statusMsg = "Invalid option index"
+		}
+
+	case "L":
+		// Delete all aliases from current option
+		if varValue.MultiValue.Aliases != nil {
+			// Find and delete aliases pointing to this option
+			deleted := false
+			for alias, idx := range varValue.MultiValue.Aliases {
+				if idx == m.varOptionIndex {
+					delete(varValue.MultiValue.Aliases, alias)
+					deleted = true
+				}
+			}
+			if deleted {
+				profile.Variables[m.varEditName] = varValue
+				m.sessionMgr.SaveProfiles()
+				m.statusMsg = "Aliases deleted"
+			} else {
+				m.statusMsg = "No aliases to delete"
+			}
+		} else {
+			m.statusMsg = "No aliases to delete"
+		}
 	}
 
 	return nil
@@ -638,6 +698,58 @@ func (m *Model) handleVariableOptionsKeys(msg tea.KeyMsg) tea.Cmd {
 			if len(msg.String()) == 1 {
 				m.varEditValue = m.varEditValue[:m.varEditValuePos] + msg.String() + m.varEditValue[m.varEditValuePos:]
 				m.varEditValuePos++
+			}
+		}
+	}
+
+	return nil
+}
+
+// handleVariableAliasKeys handles alias input for multi-value options
+func (m *Model) handleVariableAliasKeys(msg tea.KeyMsg) tea.Cmd {
+	profile := m.sessionMgr.GetActiveProfile()
+	varValue, exists := profile.Variables[m.varEditName]
+	if !exists || !varValue.IsMultiValue() {
+		m.mode = ModeVariableManage
+		return nil
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.mode = ModeVariableManage
+		m.varAliasInput = ""
+
+	case "enter":
+		if m.varAliasInput == "" {
+			m.errorMsg = "Alias cannot be empty"
+			return nil
+		}
+
+		// Initialize aliases map if needed
+		if varValue.MultiValue.Aliases == nil {
+			varValue.MultiValue.Aliases = make(map[string]int)
+		}
+
+		// Set the alias
+		varValue.MultiValue.Aliases[m.varAliasInput] = m.varAliasTargetIdx
+		profile.Variables[m.varEditName] = varValue
+		m.sessionMgr.SaveProfiles()
+
+		m.statusMsg = fmt.Sprintf("Alias '%s' set", m.varAliasInput)
+		m.mode = ModeVariableManage
+		m.varAliasInput = ""
+
+	case "backspace":
+		if len(m.varAliasInput) > 0 {
+			m.varAliasInput = m.varAliasInput[:len(m.varAliasInput)-1]
+		}
+
+	default:
+		// Only accept alphanumeric characters and common separators for aliases
+		if len(msg.String()) == 1 {
+			ch := msg.String()[0]
+			if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+				m.varAliasInput += msg.String()
 			}
 		}
 	}

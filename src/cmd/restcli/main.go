@@ -29,12 +29,16 @@ var rootCmd = &cobra.Command{
 	Long: `REST CLI is a powerful HTTP request testing tool with an interactive TUI.
 
 Run without arguments to start the TUI, or provide a .http file to execute it directly.
+File extension is optional - 'get-user' resolves to 'get-user.http' automatically.
 
 Examples:
-  restcli                    # Start interactive TUI
-  restcli request.http       # Execute request in CLI mode
-  restcli run request.http   # Same as above
-  restcli --help             # Show help`,
+  restcli                              # Start interactive TUI
+  restcli get-user                     # Execute (auto-resolves .http/.yaml/.json)
+  restcli run request.http             # Execute request in CLI mode
+  restcli run api -e userId=123        # Override variable
+  restcli run api -e env=dev -e v=2    # Multiple variables
+  restcli run api -e userId=u1         # Use alias for multi-value variable
+  restcli --help                       # Show help`,
 	Version: version,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -95,6 +99,7 @@ var (
 	flagSave       string
 	flagBody       string
 	flagFull       bool
+	flagExtraVars  []string
 )
 
 // Flags for curl2http
@@ -116,12 +121,14 @@ func init() {
 	rootCmd.Flags().StringVarP(&flagSave, "save", "s", "", "Save response to file")
 	rootCmd.Flags().StringVarP(&flagBody, "body", "b", "", "Override request body")
 	rootCmd.Flags().BoolVarP(&flagFull, "full", "f", false, "Show full output (status, headers, body)")
+	rootCmd.Flags().StringArrayVarP(&flagExtraVars, "extra-vars", "e", []string{}, "Set variable (key=value), can be repeated")
 
 	// Run command flags (same as root)
 	runCmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output format (json/yaml/text)")
 	runCmd.Flags().StringVarP(&flagSave, "save", "s", "", "Save response to file")
 	runCmd.Flags().StringVarP(&flagBody, "body", "b", "", "Override request body")
 	runCmd.Flags().BoolVarP(&flagFull, "full", "f", false, "Show full output (status, headers, body)")
+	runCmd.Flags().StringArrayVarP(&flagExtraVars, "extra-vars", "e", []string{}, "Set variable (key=value), can be repeated")
 
 	// curl2http flags
 	curl2httpCmd.Flags().StringVarP(&curlOutputFile, "output", "o", "", "Output .http file path")
@@ -146,6 +153,7 @@ func runCLI(cmd *cobra.Command, filePath string) error {
 		SavePath:     flagSave,
 		BodyOverride: flagBody,
 		ShowFull:     flagFull,
+		ExtraVars:    flagExtraVars,
 	}
 	return cli.Run(opts)
 }

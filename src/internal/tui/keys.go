@@ -12,7 +12,7 @@ import (
 func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	// Global keys (work in all modes)
 	switch msg.String() {
-	case "ctrl+c", "ctrl+d":
+	case "ctrl+c":
 		return tea.Quit
 	}
 
@@ -24,11 +24,11 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleSearchKeys(msg)
 	case ModeGoto:
 		return m.handleGotoKeys(msg)
-	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage:
+	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage, ModeVariableAlias:
 		return m.handleVariableEditorKeys(msg)
 	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
 		return m.handleHeaderEditorKeys(msg)
-	case ModeProfileSwitch, ModeProfileCreate:
+	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit:
 		return m.handleProfileKeys(msg)
 	case ModeDocumentation:
 		return m.handleDocumentationKeys(msg)
@@ -46,6 +46,10 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleOAuthEditKeys(msg)
 	case ModeEditorConfig:
 		return m.handleEditorConfigKeys(msg)
+	case ModeConfigView:
+		return m.handleConfigViewKeys(msg)
+	case ModeDelete:
+		return m.handleDeleteKeys(msg)
 	}
 
 	return nil
@@ -142,6 +146,32 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			// Only navigate files if focused on sidebar
 			m.navigateFiles(10)
 		}
+	case "ctrl+u":
+		// Vim-style half-page up
+		halfPage := m.getFileListHeight() / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.ScrollUp(halfPage)
+			}
+		} else {
+			m.navigateFiles(-halfPage)
+		}
+	case "ctrl+d":
+		// Vim-style half-page down
+		halfPage := m.getFileListHeight() / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.ScrollDown(halfPage)
+			}
+		} else {
+			m.navigateFiles(halfPage)
+		}
 	case "home":
 		if m.focusedPanel == "response" {
 			// Scroll to top of response
@@ -225,6 +255,11 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.inputCursor = len(m.inputValue)
 	case "d":
 		return m.duplicateFile()
+	case "D":
+		// Delete file with confirmation
+		if len(m.files) > 0 {
+			m.mode = ModeDelete
+		}
 	case "R":
 		m.mode = ModeRename
 		m.renameInput = ""
@@ -321,6 +356,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.statusMsg = "No active search - press / to search"
 		}
+
+	// View configuration
+	case "C":
+		m.mode = ModeConfigView
 
 	// External config editors
 	case "P":
@@ -539,9 +578,55 @@ func (m *Model) handleGotoKeys(msg tea.KeyMsg) tea.Cmd {
 
 // handleHelpKeys handles keys in help mode
 func (m *Model) handleHelpKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle search mode
+	if m.helpSearchActive {
+		switch msg.String() {
+		case "esc":
+			m.helpSearchActive = false
+			m.helpSearchQuery = ""
+			m.updateHelpView() // Reset to full content
+		case "enter":
+			m.helpSearchActive = false
+			// Keep search query and filtered results
+		case "backspace":
+			if len(m.helpSearchQuery) > 0 {
+				m.helpSearchQuery = m.helpSearchQuery[:len(m.helpSearchQuery)-1]
+				m.updateHelpView()
+			}
+		default:
+			// Handle common text input operations
+			if _, shouldContinue := handleTextInput(&m.helpSearchQuery, msg); shouldContinue {
+				m.updateHelpView()
+				return nil
+			}
+			// Append character
+			if len(msg.String()) == 1 {
+				m.helpSearchQuery += msg.String()
+				m.updateHelpView()
+			}
+		}
+		return nil
+	}
+
+	// Normal help mode keys
 	switch msg.String() {
-	case "esc", "?", "q":
+	case "esc":
+		// If there's an active search filter, clear it first
+		if m.helpSearchQuery != "" {
+			m.helpSearchQuery = ""
+			m.updateHelpView() // Reset to full content
+		} else {
+			m.mode = ModeNormal
+		}
+
+	case "?", "q":
 		m.mode = ModeNormal
+		m.helpSearchQuery = ""
+		m.helpSearchActive = false
+
+	case "/":
+		m.helpSearchActive = true
+		m.helpSearchQuery = ""
 
 	case "up", "k":
 		m.helpView.ScrollUp(1)
@@ -554,6 +639,22 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "pgdown":
 		m.helpView.PageDown()
+
+	case "ctrl+u":
+		// Vim-style half-page up
+		halfPage := m.helpView.Height / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		m.helpView.ScrollUp(halfPage)
+
+	case "ctrl+d":
+		// Vim-style half-page down
+		halfPage := m.helpView.Height / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		m.helpView.ScrollDown(halfPage)
 
 	case "home":
 		m.helpView.GotoTop()
@@ -630,6 +731,33 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 			pageSize = 10
 		}
 		m.docSelectedIdx += pageSize
+		if m.docSelectedIdx >= m.docItemCount {
+			m.docSelectedIdx = m.docItemCount - 1
+		}
+		if m.docSelectedIdx < 0 {
+			m.docSelectedIdx = 0
+		}
+		m.updateDocumentationView()
+
+	case "ctrl+u":
+		// Vim-style half-page up
+		halfPage := m.modalView.Height / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		m.docSelectedIdx -= halfPage
+		if m.docSelectedIdx < 0 {
+			m.docSelectedIdx = 0
+		}
+		m.updateDocumentationView()
+
+	case "ctrl+d":
+		// Vim-style half-page down
+		halfPage := m.modalView.Height / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		m.docSelectedIdx += halfPage
 		if m.docSelectedIdx >= m.docItemCount {
 			m.docSelectedIdx = m.docItemCount - 1
 		}
@@ -869,6 +997,33 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateHistoryView()
 
+	case "ctrl+u":
+		// Vim-style half-page up
+		halfPage := m.modalView.Height / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		m.historyIndex -= halfPage
+		if m.historyIndex < 0 {
+			m.historyIndex = 0
+		}
+		m.updateHistoryView()
+
+	case "ctrl+d":
+		// Vim-style half-page down
+		halfPage := m.modalView.Height / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		m.historyIndex += halfPage
+		if m.historyIndex >= len(m.historyEntries) {
+			m.historyIndex = len(m.historyEntries) - 1
+		}
+		if m.historyIndex < 0 {
+			m.historyIndex = 0
+		}
+		m.updateHistoryView()
+
 	case "home":
 		if len(m.historyEntries) > 0 {
 			m.historyIndex = 0
@@ -904,5 +1059,28 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 
 	// Reset 'g' state on any key except 'g' itself
 	m.gPressed = false
+	return nil
+}
+
+// handleConfigViewKeys handles keys in config view mode
+func (m *Model) handleConfigViewKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "C", "q":
+		m.mode = ModeNormal
+	}
+	return nil
+}
+
+// handleDeleteKeys handles keys in delete confirmation mode
+func (m *Model) handleDeleteKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "n", "N":
+		m.mode = ModeNormal
+		m.statusMsg = "Delete cancelled"
+
+	case "y", "Y":
+		// Perform delete
+		return m.deleteFile()
+	}
 	return nil
 }

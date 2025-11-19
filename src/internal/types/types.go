@@ -91,9 +91,10 @@ type VariableValue struct {
 
 // MultiValueVariable represents a variable with multiple options
 type MultiValueVariable struct {
-	Options     []string `json:"options"`
-	Active      int      `json:"active"`
-	Description string   `json:"description,omitempty"`
+	Options     []string       `json:"options"`
+	Active      int            `json:"active"`
+	Description string         `json:"description,omitempty"`
+	Aliases     map[string]int `json:"aliases,omitempty"` // maps alias name -> option index
 }
 
 // OAuthConfig contains OAuth 2.0 configuration

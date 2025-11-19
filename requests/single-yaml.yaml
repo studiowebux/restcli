@@ -1,6 +1,6 @@
 ---
 name: Get User (Single YAML)
 method: GET
-url: "https://jsonplaceholder.typicode.com/todos/{{userId}}"
+url: "https://jsonplaceholder.typicode.com/todos/{{todoId}}"
 headers:
   Accept: "application/json"

@@ -6,6 +6,20 @@ import (
 
 // renderHelp renders the help screen
 func (m Model) renderHelp() string {
+	// Build content with viewport and optional search bar
+	content := m.helpView.View()
+
+	// Add search bar if active or query exists
+	if m.helpSearchActive || m.helpSearchQuery != "" {
+		searchBar := "\n\n"
+		if m.helpSearchActive {
+			searchBar += styleWarning.Render("Search: " + m.helpSearchQuery + "█")
+		} else {
+			searchBar += styleSubtle.Render("Search: " + m.helpSearchQuery + " (press / to search, ESC to clear)")
+		}
+		content += searchBar
+	}
+
 	// Render viewport with scrolling support
 	helpView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -13,7 +27,7 @@ func (m Model) renderHelp() string {
 		Width(m.width - 10).
 		Height(m.height - 4).
 		Padding(1, 2).
-		Render(m.helpView.View())
+		Render(content)
 
 	// Center the help box
 	return lipgloss.Place(

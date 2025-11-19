@@ -22,23 +22,29 @@ var (
 
 // VariableResolver handles variable resolution for requests
 type VariableResolver struct {
-	// Variables are resolved in order: profile vars -> session vars
+	// Variables are resolved in order: cliVars (highest) -> session vars -> profile vars (lowest)
 	profileVars map[string]types.VariableValue
 	sessionVars map[string]string
+	cliVars     map[string]string // CLI vars from -e flag (highest priority)
 }
 
 // NewVariableResolver creates a new variable resolver
-func NewVariableResolver(profileVars map[string]types.VariableValue, sessionVars map[string]string) *VariableResolver {
+// cliVars can be nil if not using CLI overrides
+func NewVariableResolver(profileVars map[string]types.VariableValue, sessionVars map[string]string, cliVars map[string]string) *VariableResolver {
 	if profileVars == nil {
 		profileVars = make(map[string]types.VariableValue)
 	}
 	if sessionVars == nil {
 		sessionVars = make(map[string]string)
 	}
+	if cliVars == nil {
+		cliVars = make(map[string]string)
+	}
 
 	return &VariableResolver{
 		profileVars: profileVars,
 		sessionVars: sessionVars,
+		cliVars:     cliVars,
 	}
 }
 
@@ -105,12 +111,17 @@ func (vr *VariableResolver) resolveVariables(input string) string {
 		// Extract variable name (remove {{ and }})
 		varName := strings.TrimSpace(match[2 : len(match)-2])
 
-		// Look up in session vars first (higher priority)
+		// Look up in CLI vars first (highest priority - from -e flag)
+		if value, ok := vr.cliVars[varName]; ok {
+			return value
+		}
+
+		// Then look up in session vars
 		if value, ok := vr.sessionVars[varName]; ok {
 			return value
 		}
 
-		// Then look up in profile vars
+		// Then look up in profile vars (lowest priority)
 		if value, ok := vr.profileVars[varName]; ok {
 			return value.GetValue()
 		}

@@ -69,7 +69,7 @@ func (m *Model) executeRequest() tea.Cmd {
 		}
 
 		// Resolve variables
-		resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables)
+		resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil)
 		resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to resolve variables: %v", err))
@@ -189,6 +189,35 @@ func (m *Model) duplicateFile() tea.Cmd {
 	}
 }
 
+// deleteFile deletes the current file
+func (m *Model) deleteFile() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.files) == 0 {
+			return errorMsg("No file selected")
+		}
+
+		filePath := m.files[m.fileIndex].Path
+		fileName := m.files[m.fileIndex].Name
+
+		// Delete the file
+		if err := os.Remove(filePath); err != nil {
+			return errorMsg(fmt.Sprintf("Failed to delete file: %v", err))
+		}
+
+		// Adjust file index if we deleted the last file
+		if m.fileIndex >= len(m.files)-1 && m.fileIndex > 0 {
+			m.fileIndex--
+		}
+
+		m.statusMsg = fmt.Sprintf("Deleted: %s", fileName)
+		m.mode = ModeNormal
+
+		// Refresh file list
+		files, _ := loadFiles(m.sessionMgr)
+		return fileListLoadedMsg{files: files}
+	}
+}
+
 // saveResponse saves the current response to a file with full metadata
 func (m *Model) saveResponse() tea.Cmd {
 	return func() tea.Msg {
@@ -231,7 +260,7 @@ func (m *Model) saveResponse() tea.Cmd {
 			}
 
 			// Resolve variables
-			resolver := parser.NewVariableResolver(profile.Variables, session.Variables)
+			resolver := parser.NewVariableResolver(profile.Variables, session.Variables, nil)
 			resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 			if err == nil && resolvedRequest != nil {
 				// Use resolved values
