@@ -1,9 +1,0 @@
-{
-  "variables": {
-    "apiVersion": "v1",
-    "defaultTimeout": "5000",
-    "postId": "1",
-    "userId": "1"
-  },
-  "activeProfile": "Dev - Player 1"
-}

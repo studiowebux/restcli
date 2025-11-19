@@ -23,11 +23,11 @@ jobs:
       - name: Compile RestCLI
         run: |
           go build -o ./bin/restcli-${{ matrix.platform }} ./cmd/restcli
-        working-directory: restcli-go
+        working-directory: src
 
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            restcli-go/bin/restcli-${{ matrix.platform }}
+            src/bin/restcli-${{ matrix.platform }}
