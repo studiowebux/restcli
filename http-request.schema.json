@@ -40,6 +40,14 @@
           "type": "string",
           "description": "Request body (for POST, PUT, PATCH)"
         },
+        "filter": {
+          "type": "string",
+          "description": "Optional JMESPath filter expression to narrow response results"
+        },
+        "query": {
+          "type": "string",
+          "description": "Optional JMESPath query or $(bash command) to transform response"
+        },
         "documentation": {
           "$ref": "#/definitions/Documentation",
           "description": "Optional documentation for the request"

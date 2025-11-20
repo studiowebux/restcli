@@ -159,6 +159,8 @@ var (
 	flagFull       bool
 	flagExtraVars  []string
 	flagEnvFile    string
+	flagFilter     string
+	flagQuery      string
 )
 
 // Flags for curl2http
@@ -184,6 +186,8 @@ func init() {
 	rootCmd.Flags().BoolVarP(&flagFull, "full", "f", false, "Show full output (status, headers, body)")
 	rootCmd.Flags().StringArrayVarP(&flagExtraVars, "extra-vars", "e", []string{}, "Set variable (key=value), can be repeated")
 	rootCmd.Flags().StringVar(&flagEnvFile, "env-file", "", "Load environment variables from file")
+	rootCmd.Flags().StringVar(&flagFilter, "filter", "", "JMESPath filter expression to apply to response")
+	rootCmd.Flags().StringVarP(&flagQuery, "query", "q", "", "JMESPath query or $(bash command) to transform response")
 
 	// Run command flags (same as root)
 	runCmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output format (json/yaml/text)")
@@ -192,6 +196,8 @@ func init() {
 	runCmd.Flags().BoolVarP(&flagFull, "full", "f", false, "Show full output (status, headers, body)")
 	runCmd.Flags().StringArrayVarP(&flagExtraVars, "extra-vars", "e", []string{}, "Set variable (key=value), can be repeated")
 	runCmd.Flags().StringVar(&flagEnvFile, "env-file", "", "Load environment variables from file")
+	runCmd.Flags().StringVar(&flagFilter, "filter", "", "JMESPath filter expression to apply to response")
+	runCmd.Flags().StringVarP(&flagQuery, "query", "q", "", "JMESPath query or $(bash command) to transform response")
 
 	// curl2http flags
 	curl2httpCmd.Flags().StringVarP(&curlOutputFile, "output", "o", "", "Output file path")
@@ -221,6 +227,8 @@ func runCLI(cmd *cobra.Command, filePath string) error {
 		ShowFull:     flagFull,
 		ExtraVars:    flagExtraVars,
 		EnvFile:      flagEnvFile,
+		Filter:       flagFilter,
+		Query:        flagQuery,
 	}
 	return cli.Run(opts)
 }

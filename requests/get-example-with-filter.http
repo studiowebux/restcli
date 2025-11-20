@@ -1,0 +1,5 @@
+### Get Example
+GET https://jsonplaceholder.typicode.com/posts
+
+# @filter [?userId==`1`]
+# @query [].{id: id, title: title, userId: userId}

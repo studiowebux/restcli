@@ -11,6 +11,7 @@ import (
 
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
+	"github.com/studiowebux/restcli/internal/filter"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/session"
@@ -45,6 +46,8 @@ type RunOptions struct {
 	ShowFull     bool
 	ExtraVars    []string // key=value pairs from -e flag
 	EnvFile      string   // path to .env file
+	Filter       string   // JMESPath filter expression
+	Query        string   // JMESPath query or $(bash command)
 }
 
 // Run executes a request file in CLI mode
@@ -258,6 +261,34 @@ func Run(opts RunOptions) error {
 		if token, err := parser.ExtractJSONToken(result.Body, "token"); err == nil {
 			resolver.AddSessionVariable("token", token)
 			mgr.SetSessionVariable("token", token)
+		}
+	}
+
+	// Apply filter and query to response body
+	// Priority: CLI flags > request-level > profile defaults
+	filterExpr := opts.Filter
+	if filterExpr == "" {
+		filterExpr = request.Filter
+	}
+	if filterExpr == "" && useProfile {
+		filterExpr = profile.DefaultFilter
+	}
+
+	queryExpr := opts.Query
+	if queryExpr == "" {
+		queryExpr = request.Query
+	}
+	if queryExpr == "" && useProfile {
+		queryExpr = profile.DefaultQuery
+	}
+
+	// Apply filter/query if specified
+	if filterExpr != "" || queryExpr != "" {
+		filteredBody, err := filter.Apply(result.Body, filterExpr, queryExpr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: filter/query error: %v\n", err)
+		} else {
+			result.Body = filteredBody
 		}
 	}
 

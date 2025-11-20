@@ -1,0 +1,7 @@
+{
+  "$schema": "../http-request.schema.json",
+  "name": "Get Posts",
+  "method": "GET",
+  "url": "https://jsonplaceholder.typicode.com/posts",
+  "query": "$(jq '[.[] | select(.userId == 10)] | .[].title')"
+}

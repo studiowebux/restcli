@@ -9,6 +9,8 @@ type HttpRequest struct {
 	URL                 string                 `json:"url" yaml:"url"`
 	Headers             map[string]string      `json:"headers,omitempty" yaml:"headers,omitempty"`
 	Body                string                 `json:"body,omitempty" yaml:"body,omitempty"`
+	Filter              string                 `json:"filter,omitempty" yaml:"filter,omitempty"` // JMESPath filter expression
+	Query               string                 `json:"query,omitempty" yaml:"query,omitempty"`   // JMESPath query or $(bash command)
 	Documentation       *Documentation         `json:"documentation,omitempty" yaml:"documentation,omitempty"`
 	DocumentationLines  []string               `json:"-" yaml:"-"` // Raw documentation comment lines for lazy loading
 	documentationParsed bool                   `json:"-" yaml:"-"` // Whether documentation has been parsed (unexported for internal use)
@@ -72,13 +74,15 @@ type Session struct {
 
 // Profile represents a header/variable profile
 type Profile struct {
-	Name      string                    `json:"name"`
-	Headers   map[string]string         `json:"headers,omitempty"`
-	Variables map[string]VariableValue  `json:"variables,omitempty"`
-	Workdir   string                    `json:"workdir,omitempty"`
-	OAuth     *OAuthConfig              `json:"oauth,omitempty"`
-	Editor    string                    `json:"editor,omitempty"`
-	Output    string                    `json:"output,omitempty"` // json, yaml, text
+	Name          string                    `json:"name"`
+	Headers       map[string]string         `json:"headers,omitempty"`
+	Variables     map[string]VariableValue  `json:"variables,omitempty"`
+	Workdir       string                    `json:"workdir,omitempty"`
+	OAuth         *OAuthConfig              `json:"oauth,omitempty"`
+	Editor        string                    `json:"editor,omitempty"`
+	Output        string                    `json:"output,omitempty"`        // json, yaml, text
+	DefaultFilter string                    `json:"defaultFilter,omitempty"` // Global JMESPath filter for all responses
+	DefaultQuery  string                    `json:"defaultQuery,omitempty"`  // Global JMESPath query for all responses
 }
 
 // VariableValue can be a simple string or a multi-value variable

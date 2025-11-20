@@ -114,6 +114,55 @@ Variables can execute shell commands using `$(command)` syntax:
 
 **Security Note:** Shell commands run with your user permissions. Only use trusted commands in your profiles.
 
+### Multi-Value Variables with Aliases
+
+Variables can have multiple options with aliases for quick switching:
+
+```json
+{
+  "name": "Development",
+  "variables": {
+    "environment": {
+      "options": ["http://localhost:3000", "https://dev.api.com", "https://staging.api.com"],
+      "active": 0,
+      "description": "API environment",
+      "aliases": {
+        "local": 0,
+        "dev": 1,
+        "staging": 2
+      }
+    },
+    "apiVersion": {
+      "options": ["v1", "v2", "v3"],
+      "active": 1,
+      "description": "API version",
+      "aliases": {
+        "legacy": 0,
+        "current": 1,
+        "beta": 2
+      }
+    }
+  }
+}
+```
+
+**Usage with aliases:**
+
+```bash
+# Use alias to select option
+restcli run api -p Development -e environment=staging -e apiVersion=beta
+
+# Or use the actual value
+restcli run api -p Development -e environment=https://staging.api.com
+```
+
+**Structure:**
+
+- `options`: Array of possible values
+- `active`: Index of currently active option (0-based)
+- `description`: Optional description of the variable
+- `aliases`: Map of alias names to option indices
+
 ### Profiles
 
 Profiles store your headers and variables permanently. Create profiles in `.profiles.json`:
@@ -164,6 +213,95 @@ Profiles store your headers and variables permanently. Create profiles in `.prof
 **Important:** Configure your headers and variables in `.profiles.json`, not `.session.json`.
 
 The TUI auto-extracts `token` or `accessToken` from JSON responses and temporarily stores them in the session.
+
+---
+
+## Filter & Query
+
+Transform and filter response bodies using JMESPath expressions or bash commands.
+
+### JMESPath Syntax
+
+Use AWS CLI-style JMESPath expressions to filter and transform JSON responses:
+
+```bash
+# Filter with JMESPath expression
+restcli run api --filter "items[?status==\`active\`]"
+
+# Query/transform with JMESPath
+restcli run api --query "[].{name: name, id: id}"
+
+# Combine filter and query
+restcli run api --filter "users[?age>\`18\`]" --query "[].email"
+```
+
+### Bash Command Syntax
+
+Use `$(command)` to pipe the response through any bash command:
+
+```bash
+# Use jq for complex transformations
+restcli run api --query '$(jq ".items[].name")'
+
+# Use other tools
+restcli run api --query '$(grep -o "id.*")'
+```
+
+### In Request Files
+
+Add `filter` and `query` to your request files:
+
+**YAML format:**
+
+```yaml
+name: List Active Items
+method: GET
+url: "https://api.example.com/items"
+filter: "items[?status==`active`]"
+query: "[].{name: name, id: id}"
+```
+
+**JSON format:**
+
+```json
+{
+  "name": "Get User Emails",
+  "method": "GET",
+  "url": "https://api.example.com/users",
+  "query": "$(jq '.users[].email')"
+}
+```
+
+**HTTP format:**
+
+```text
+### Get Active Items
+# @filter items[?status==`active`]
+# @query [].name
+GET https://api.example.com/items
+```
+
+### Profile Defaults
+
+Set default filters for all requests in a profile:
+
+```json
+{
+  "name": "Production",
+  "headers": { "Authorization": "Bearer {{token}}" },
+  "variables": { "baseUrl": "https://api.prod.com" },
+  "defaultFilter": "",
+  "defaultQuery": "[].{id: id, name: name}"
+}
+```
+
+### Priority
+
+Filter and query expressions are applied in this priority order:
+
+1. CLI flags (`--filter`, `--query`)
+2. Request file (`filter`, `query` fields)
+3. Profile defaults (`defaultFilter`, `defaultQuery`)
 
 ---
 

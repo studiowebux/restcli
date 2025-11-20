@@ -52,6 +52,16 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 
 		// Documentation annotations (before anything else) - store for lazy parsing
 		if strings.HasPrefix(line, "#") && currentRequest != nil {
+			// Check for @filter and @query annotations first
+			trimmed := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			if strings.HasPrefix(trimmed, "@filter ") {
+				currentRequest.Filter = strings.TrimSpace(strings.TrimPrefix(trimmed, "@filter"))
+				continue
+			}
+			if strings.HasPrefix(trimmed, "@query ") {
+				currentRequest.Query = strings.TrimSpace(strings.TrimPrefix(trimmed, "@query"))
+				continue
+			}
 			currentRequest.DocumentationLines = append(currentRequest.DocumentationLines, line)
 			continue
 		}
