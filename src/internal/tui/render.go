@@ -520,10 +520,12 @@ func (m *Model) updateResponseView() {
 
 		// Try to pretty-print and highlight JSON
 		var bodyText string
+		var isJSON bool
 		var jsonData interface{}
 		if err := json.Unmarshal([]byte(m.currentResponse.Body), &jsonData); err == nil {
 			if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-				bodyText = highlightJSON(string(prettyJSON))
+				bodyText = string(prettyJSON)
+				isJSON = true
 			} else {
 				// Fallback to raw body if formatting fails
 				bodyText = m.currentResponse.Body
@@ -539,6 +541,12 @@ func (m *Model) updateResponseView() {
 			wrapWidth = 40 // Minimum reasonable width
 		}
 		wrappedBody := wrapText(bodyText, wrapWidth)
+
+		// Apply syntax highlighting after wrapping (for JSON only)
+		if isJSON {
+			wrappedBody = highlightJSON(wrappedBody)
+		}
+
 		content.WriteString(wrappedBody)
 		content.WriteString("\n")
 	}
