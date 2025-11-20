@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,23 @@ import (
 	"github.com/studiowebux/restcli/internal/types"
 	"gopkg.in/yaml.v3"
 )
+
+// promptForVariable prompts the user to enter a value for a variable
+func promptForVariable(name string) (string, error) {
+	fmt.Fprintf(os.Stderr, "Enter value for '%s': ", name)
+	reader := bufio.NewReader(os.Stdin)
+	value, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
+}
+
+// isInteractive checks if stdin is a terminal (not piped)
+func isInteractive() bool {
+	stat, _ := os.Stdin.Stat()
+	return (stat.Mode() & os.ModeCharDevice) != 0
+}
 
 // RunOptions contains options for running a request in CLI mode
 type RunOptions struct {
@@ -37,15 +55,26 @@ func Run(opts RunOptions) error {
 		return fmt.Errorf("failed to load session: %w", err)
 	}
 
-	// Set active profile if specified
-	if opts.Profile != "" {
+	// Determine if we're using a profile or interactive mode
+	useProfile := opts.Profile != ""
+	var profile *types.Profile
+	var profileVars map[string]types.VariableValue
+	var sessionVars map[string]string
+
+	if useProfile {
+		// Set active profile if specified
 		if err := mgr.SetActiveProfile(opts.Profile); err != nil {
 			return fmt.Errorf("failed to set profile: %w", err)
 		}
+		profile = mgr.GetActiveProfile()
+		profileVars = profile.Variables
+		sessionVars = mgr.GetSession().Variables
+	} else {
+		// No profile - use empty vars (will prompt for missing)
+		profile = &types.Profile{}
+		profileVars = make(map[string]types.VariableValue)
+		sessionVars = make(map[string]string)
 	}
-
-	// Get active profile
-	profile := mgr.GetActiveProfile()
 
 	// Determine working directory
 	workdir, err := config.GetWorkingDirectory(profile.Workdir)
@@ -72,14 +101,15 @@ func Run(opts RunOptions) error {
 	// Use first request (TODO: support selecting specific request by name)
 	request := requests[0]
 
-	// Override body if specified
+	// Check if stdin is being piped (for body override)
+	stdinPiped := false
 	if opts.BodyOverride != "" {
 		request.Body = opts.BodyOverride
 	} else {
-		// Check for stdin body override (for piping)
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) == 0 {
 			// Data is being piped in
+			stdinPiped = true
 			bodyBytes, err := io.ReadAll(os.Stdin)
 			if err == nil && len(bodyBytes) > 0 {
 				request.Body = string(bodyBytes)
@@ -87,10 +117,12 @@ func Run(opts RunOptions) error {
 		}
 	}
 
-	// Merge profile headers with request headers
+	// Merge profile headers with request headers (only if using profile)
 	mergedHeaders := make(map[string]string)
-	for k, v := range profile.Headers {
-		mergedHeaders[k] = v
+	if useProfile {
+		for k, v := range profile.Headers {
+			mergedHeaders[k] = v
+		}
 	}
 	for k, v := range request.Headers {
 		mergedHeaders[k] = v
@@ -105,13 +137,15 @@ func Run(opts RunOptions) error {
 			varName := parts[0]
 			varValue := parts[1]
 
-			// Check if the value is an alias for a multi-value variable
-			if profileVar, ok := profile.Variables[varName]; ok && profileVar.IsMultiValue() {
-				if profileVar.MultiValue.Aliases != nil {
-					if idx, aliasFound := profileVar.MultiValue.Aliases[varValue]; aliasFound {
-						// Resolve alias to actual value
-						if idx >= 0 && idx < len(profileVar.MultiValue.Options) {
-							varValue = profileVar.MultiValue.Options[idx]
+			// Check if the value is an alias for a multi-value variable (only if using profile)
+			if useProfile {
+				if profileVar, ok := profile.Variables[varName]; ok && profileVar.IsMultiValue() {
+					if profileVar.MultiValue.Aliases != nil {
+						if idx, aliasFound := profileVar.MultiValue.Aliases[varValue]; aliasFound {
+							// Resolve alias to actual value
+							if idx >= 0 && idx < len(profileVar.MultiValue.Options) {
+								varValue = profileVar.MultiValue.Options[idx]
+							}
 						}
 					}
 				}
@@ -139,8 +173,49 @@ func Run(opts RunOptions) error {
 		}
 	}
 
+	// If no profile specified, prompt for missing variables interactively
+	if !useProfile {
+		// Extract all variables required by the request
+		requiredVars := parser.ExtractRequestVariables(&request)
+
+		// Find variables that are not satisfied by cliVars or envVars
+		var missingVars []string
+		for _, varName := range requiredVars {
+			// Skip if provided via -e flag
+			if _, ok := cliVars[varName]; ok {
+				continue
+			}
+			// Skip env.* variables if they exist in environment
+			if strings.HasPrefix(varName, "env.") {
+				envKey := varName[4:]
+				if _, ok := envVars[envKey]; ok {
+					continue
+				}
+			}
+			missingVars = append(missingVars, varName)
+		}
+
+		// Prompt for missing variables
+		if len(missingVars) > 0 {
+			if stdinPiped {
+				return fmt.Errorf("cannot prompt for variables while stdin is being piped. Missing: %s", strings.Join(missingVars, ", "))
+			}
+			if !isInteractive() {
+				return fmt.Errorf("missing variables (non-interactive mode): %s", strings.Join(missingVars, ", "))
+			}
+
+			for _, varName := range missingVars {
+				value, err := promptForVariable(varName)
+				if err != nil {
+					return fmt.Errorf("failed to read input for '%s': %w", varName, err)
+				}
+				cliVars[varName] = value
+			}
+		}
+	}
+
 	// Resolve variables (CLI vars have highest priority)
-	resolver := parser.NewVariableResolver(profile.Variables, mgr.GetSession().Variables, cliVars, envVars)
+	resolver := parser.NewVariableResolver(profileVars, sessionVars, cliVars, envVars)
 	resolvedRequest, err := resolver.ResolveRequest(&request)
 	if err != nil {
 		return fmt.Errorf("failed to resolve variables: %w", err)

@@ -602,6 +602,12 @@ OTHER
   ?            Show this help
   q            Quit
 
+CLI MODE
+  restcli <file>           Execute without profile (prompts for vars)
+  restcli <file> -p <name> Execute with profile (no prompts)
+  restcli <file> -e k=v    Provide variable (won't be prompted)
+  --env-file <path>        Load environment variables from file
+
 Use ↑/↓ or j/k to scroll, / to search, ESC or ? to close`
 
 	// Apply search filter if active

@@ -78,6 +78,54 @@ func (vr *VariableResolver) GetShellErrors() []string {
 	return vr.shellErrors
 }
 
+// ExtractVariableNames extracts all unique variable names from a string
+// Returns variable names without the {{ }} brackets
+func ExtractVariableNames(input string) []string {
+	matches := varPattern.FindAllStringSubmatch(input, -1)
+	seen := make(map[string]bool)
+	var names []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			name := strings.TrimSpace(match[1])
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
+
+// ExtractRequestVariables extracts all unique variable names from a request
+// Includes variables from URL, headers, and body
+func ExtractRequestVariables(req *types.HttpRequest) []string {
+	seen := make(map[string]bool)
+	var names []string
+
+	// Helper to add unique names
+	addNames := func(vars []string) {
+		for _, name := range vars {
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+
+	// Extract from URL
+	addNames(ExtractVariableNames(req.URL))
+
+	// Extract from headers
+	for _, v := range req.Headers {
+		addNames(ExtractVariableNames(v))
+	}
+
+	// Extract from body
+	addNames(ExtractVariableNames(req.Body))
+
+	return names
+}
+
 // LoadEnvFile loads environment variables from a .env file
 func LoadEnvFile(path string) (map[string]string, error) {
 	envVars := make(map[string]string)

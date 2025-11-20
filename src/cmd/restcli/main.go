@@ -31,13 +31,16 @@ var rootCmd = &cobra.Command{
 Run without arguments to start the TUI, or provide a .http file to execute it directly.
 File extension is optional - 'get-user' resolves to 'get-user.http' automatically.
 
+When running without -p (profile), you'll be prompted for any missing variables.
+Use -p to load a profile with predefined variables and headers.
+
 Examples:
   restcli                              # Start interactive TUI
-  restcli get-user                     # Execute (auto-resolves .http/.yaml/.json)
-  restcli run request.http             # Execute request in CLI mode
-  restcli run api -e userId=123        # Override variable
+  restcli get-user                     # Execute and prompt for missing vars
+  restcli run request.http             # Execute and prompt for missing vars
+  restcli run api -p dev               # Use 'dev' profile (no prompts)
+  restcli run api -e userId=123        # Provide var, prompt for others
   restcli run api -e env=dev -e v=2    # Multiple variables
-  restcli run api -e userId=u1         # Use alias for multi-value variable
   restcli --help                       # Show help`,
 	Version: version,
 	Args:    cobra.MaximumNArgs(1),
