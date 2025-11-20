@@ -2,7 +2,7 @@
 
 A keyboard-driven TUI for testing HTTP endpoints.
 
-> Go version only. Deno version deprecated. Tested on macOS.
+> Only tested on MacOS
 
 ## Features
 

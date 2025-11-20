@@ -1,10 +1,15 @@
 package tui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
@@ -43,6 +48,40 @@ var (
 	styleSubtle = lipgloss.NewStyle().
 			Foreground(colorGray)
 )
+
+// highlightJSON applies syntax highlighting to JSON content
+func highlightJSON(jsonStr string) string {
+	lexer := lexers.Get("json")
+	if lexer == nil {
+		return jsonStr
+	}
+	lexer = chroma.Coalesce(lexer)
+
+	// Use monokai style for good contrast in terminals
+	style := styles.Get("monokai")
+	if style == nil {
+		style = styles.Fallback
+	}
+
+	// Use terminal256 formatter for wide terminal support
+	formatter := formatters.Get("terminal256")
+	if formatter == nil {
+		return jsonStr
+	}
+
+	iterator, err := lexer.Tokenise(nil, jsonStr)
+	if err != nil {
+		return jsonStr
+	}
+
+	var buf bytes.Buffer
+	err = formatter.Format(&buf, style, iterator)
+	if err != nil {
+		return jsonStr
+	}
+
+	return buf.String()
+}
 
 // renderMain renders the main TUI view (file sidebar + response panel)
 func (m Model) renderMain() string {
@@ -479,12 +518,12 @@ func (m *Model) updateResponseView() {
 	if m.currentResponse.Body != "" {
 		content.WriteString(styleTitle.Render("Body") + "\n")
 
-		// Try to pretty-print JSON
+		// Try to pretty-print and highlight JSON
 		var bodyText string
 		var jsonData interface{}
 		if err := json.Unmarshal([]byte(m.currentResponse.Body), &jsonData); err == nil {
 			if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-				bodyText = string(prettyJSON)
+				bodyText = highlightJSON(string(prettyJSON))
 			} else {
 				// Fallback to raw body if formatting fails
 				bodyText = m.currentResponse.Body
