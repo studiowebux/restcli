@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/studiowebux/restcli/internal/converter"
 	"github.com/studiowebux/restcli/internal/types"
 	"gopkg.in/yaml.v3"
 )
@@ -66,16 +67,88 @@ func parseYAML(data []byte) ([]types.HttpRequest, error) {
 	return []types.HttpRequest{request}, nil
 }
 
-// DetectFormat detects whether a file is traditional .http format or YAML/JSON
+// IsOpenAPISpec checks if the data is an OpenAPI specification
+func IsOpenAPISpec(data []byte) bool {
+	var probe struct {
+		OpenAPI string `json:"openapi" yaml:"openapi"`
+		Swagger string `json:"swagger" yaml:"swagger"`
+	}
+
+	// Try YAML first (also handles JSON)
+	if err := yaml.Unmarshal(data, &probe); err == nil {
+		return probe.OpenAPI != "" || probe.Swagger != ""
+	}
+	return false
+}
+
+// parseOpenAPISnippet converts an OpenAPI spec to HttpRequest(s)
+func parseOpenAPISnippet(data []byte) ([]types.HttpRequest, error) {
+	// Parse the OpenAPI spec
+	var spec converter.OpenAPISpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		// Try JSON
+		if err := json.Unmarshal(data, &spec); err != nil {
+			return nil, fmt.Errorf("failed to parse OpenAPI spec: %w", err)
+		}
+	}
+
+	// Get base URL from servers
+	baseURL := "{{baseUrl}}"
+	if len(spec.Servers) > 0 && spec.Servers[0].URL != "" {
+		baseURL = spec.Servers[0].URL
+	}
+
+	// Convert each operation to HttpRequest
+	var requests []types.HttpRequest
+
+	for path, pathItem := range spec.Paths {
+		operations := map[string]*converter.OpenAPIOperation{
+			"GET":    pathItem.Get,
+			"POST":   pathItem.Post,
+			"PUT":    pathItem.Put,
+			"DELETE": pathItem.Delete,
+			"PATCH":  pathItem.Patch,
+		}
+
+		for method, operation := range operations {
+			if operation == nil {
+				continue
+			}
+
+			req := converter.OperationToHttpRequest(method, path, operation, baseURL, &spec)
+			requests = append(requests, req)
+		}
+	}
+
+	if len(requests) == 0 {
+		return nil, fmt.Errorf("no operations found in OpenAPI spec")
+	}
+
+	return requests, nil
+}
+
+// DetectFormat detects whether a file is traditional .http format, YAML/JSON, or OpenAPI
 func DetectFormat(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	// Extension-based detection
 	switch ext {
-	case ".yaml", ".yml":
+	case ".yaml", ".yml", ".json":
+		// For YAML/JSON files, check if it's OpenAPI
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", err
+		}
+
+		if IsOpenAPISpec(data) {
+			return "openapi", nil
+		}
+
+		if ext == ".json" {
+			return "json", nil
+		}
 		return "yaml", nil
-	case ".json":
-		return "json", nil
+
 	case ".http":
 		// For .http files, we need to peek at the content
 		data, err := os.ReadFile(filePath)
@@ -86,6 +159,11 @@ func DetectFormat(filePath string) (string, error) {
 		// If it starts with YAML document separator or looks like JSON, treat as structured
 		content := strings.TrimSpace(string(data))
 		if strings.HasPrefix(content, "---") || strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[") {
+			// Check if it's OpenAPI
+			if IsOpenAPISpec(data) {
+				return "openapi", nil
+			}
+
 			// Try to parse as YAML/JSON
 			if strings.HasPrefix(content, "{") || strings.HasPrefix(content, "[") {
 				return "json", nil
@@ -107,6 +185,12 @@ func Parse(filePath string) ([]types.HttpRequest, error) {
 	}
 
 	switch format {
+	case "openapi":
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		return parseOpenAPISnippet(data)
 	case "yaml", "json":
 		return ParseYAMLFile(filePath)
 	case "http":

@@ -1,0 +1,59 @@
+{
+  "openapi": "3.0.0",
+  "info": { "title": "API", "version": "1.0" },
+  "servers": [{ "url": "{{baseUrl}}" }],
+  "paths": {
+    "/posts/{id}": {
+      "get": {
+        "tags": ["Post"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" },
+            "description": "Post Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Get Post By Id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPostById"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GetPostById": {
+        "required": ["userId", "id", "title", "body"],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "example": 1
+          },
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "title": {
+            "type": "string",
+            "example": "Hello World"
+          },
+          "body": {
+            "type": "string",
+            "example": "Bonjour Monde"
+          }
+        }
+      }
+    }
+  }
+}

@@ -211,7 +211,7 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy, format string) 
 			// Generate content based on format
 			var content string
 			if format == "json" || format == "yaml" {
-				httpReq := operationToHttpRequest(method, path, operation, baseURL, spec)
+				httpReq := OperationToHttpRequest(method, path, operation, baseURL, spec)
 				if format == "json" {
 					data, err := json.MarshalIndent(httpReq, "", "  ")
 					if err != nil {
@@ -241,15 +241,55 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy, format string) 
 	return count, nil
 }
 
-// operationToHttpRequest converts an OpenAPI operation to types.HttpRequest
-func operationToHttpRequest(method, path string, operation *OpenAPIOperation, baseURL string, spec *OpenAPISpec) types.HttpRequest {
+// OperationToHttpRequest converts an OpenAPI operation to types.HttpRequest
+func OperationToHttpRequest(method, path string, operation *OpenAPIOperation, baseURL string, spec *OpenAPISpec) types.HttpRequest {
 	// Build URL with path parameters
 	url := baseURL + path
+
+	// First, convert explicitly defined path parameters
 	for _, param := range operation.Parameters {
 		if param.In == "path" {
 			url = strings.Replace(url, "{"+param.Name+"}", "{{"+param.Name+"}}", 1)
 		}
 	}
+
+	// Also convert any remaining {param} patterns in the path that weren't explicitly defined
+	// This handles cases where path parameters are in the URL but not in the parameters array
+	// Only convert single braces {param}, not already converted {{param}}
+	result := ""
+	remaining := url
+	for {
+		start := strings.Index(remaining, "{")
+		if start == -1 {
+			result += remaining
+			break
+		}
+
+		// Check if it's already a double brace
+		if start+1 < len(remaining) && remaining[start+1] == '{' {
+			// Skip over {{
+			end := strings.Index(remaining[start+2:], "}}")
+			if end == -1 {
+				result += remaining
+				break
+			}
+			result += remaining[:start+2+end+2]
+			remaining = remaining[start+2+end+2:]
+			continue
+		}
+
+		// Find closing single brace
+		end := strings.Index(remaining[start:], "}")
+		if end == -1 {
+			result += remaining
+			break
+		}
+
+		paramName := remaining[start+1 : start+end]
+		result += remaining[:start] + "{{" + paramName + "}}"
+		remaining = remaining[start+end+1:]
+	}
+	url = result
 
 	// Build headers
 	headers := make(map[string]string)
