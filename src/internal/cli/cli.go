@@ -236,8 +236,17 @@ func Run(opts RunOptions) error {
 		}
 	}
 
+	// Merge TLS config: request-level overrides profile-level
+	var tlsConfig *types.TLSConfig
+	if useProfile && profile.TLS != nil {
+		tlsConfig = profile.TLS
+	}
+	if request.TLS != nil {
+		tlsConfig = request.TLS
+	}
+
 	// Execute request
-	result, err := executor.Execute(resolvedRequest)
+	result, err := executor.Execute(resolvedRequest, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}

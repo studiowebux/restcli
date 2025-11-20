@@ -79,8 +79,17 @@ func (m *Model) executeRequest() tea.Cmd {
 		warnings := resolver.GetUnresolvedVariables()
 		shellErrs := resolver.GetShellErrors()
 
+		// Merge TLS config: request-level overrides profile-level
+		var tlsConfig *types.TLSConfig
+		if profile.TLS != nil {
+			tlsConfig = profile.TLS
+		}
+		if m.currentRequest.TLS != nil {
+			tlsConfig = m.currentRequest.TLS
+		}
+
 		// Execute request
-		result, err := executor.Execute(resolvedRequest)
+		result, err := executor.Execute(resolvedRequest, tlsConfig)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to execute request: %v", err))
 		}

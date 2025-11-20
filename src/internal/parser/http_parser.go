@@ -62,6 +62,29 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 				currentRequest.Query = strings.TrimSpace(strings.TrimPrefix(trimmed, "@query"))
 				continue
 			}
+			// Check for @tls.* annotations
+			if strings.HasPrefix(trimmed, "@tls.") {
+				if currentRequest.TLS == nil {
+					currentRequest.TLS = &types.TLSConfig{}
+				}
+				if strings.HasPrefix(trimmed, "@tls.certFile ") {
+					currentRequest.TLS.CertFile = strings.TrimSpace(strings.TrimPrefix(trimmed, "@tls.certFile"))
+					continue
+				}
+				if strings.HasPrefix(trimmed, "@tls.keyFile ") {
+					currentRequest.TLS.KeyFile = strings.TrimSpace(strings.TrimPrefix(trimmed, "@tls.keyFile"))
+					continue
+				}
+				if strings.HasPrefix(trimmed, "@tls.caFile ") {
+					currentRequest.TLS.CAFile = strings.TrimSpace(strings.TrimPrefix(trimmed, "@tls.caFile"))
+					continue
+				}
+				if strings.HasPrefix(trimmed, "@tls.insecureSkipVerify ") {
+					value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@tls.insecureSkipVerify"))
+					currentRequest.TLS.InsecureSkipVerify = value == "true"
+					continue
+				}
+			}
 			currentRequest.DocumentationLines = append(currentRequest.DocumentationLines, line)
 			continue
 		}

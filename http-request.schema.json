@@ -48,9 +48,36 @@
           "type": "string",
           "description": "Optional JMESPath query or $(bash command) to transform response"
         },
+        "tls": {
+          "$ref": "#/definitions/TLSConfig",
+          "description": "Optional TLS/mTLS configuration for secure connections"
+        },
         "documentation": {
           "$ref": "#/definitions/Documentation",
           "description": "Optional documentation for the request"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TLSConfig": {
+      "type": "object",
+      "properties": {
+        "certFile": {
+          "type": "string",
+          "description": "Path to client certificate file (PEM format)"
+        },
+        "keyFile": {
+          "type": "string",
+          "description": "Path to client private key file (PEM format)"
+        },
+        "caFile": {
+          "type": "string",
+          "description": "Path to CA certificate file for server verification (PEM format)"
+        },
+        "insecureSkipVerify": {
+          "type": "boolean",
+          "description": "Skip server certificate verification (insecure, for testing only)",
+          "default": false
         }
       },
       "additionalProperties": false

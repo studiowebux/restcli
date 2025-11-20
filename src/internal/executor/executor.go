@@ -2,9 +2,12 @@ package executor
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -12,7 +15,7 @@ import (
 )
 
 // Execute performs an HTTP request and returns the result
-func Execute(req *types.HttpRequest) (*types.RequestResult, error) {
+func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.RequestResult, error) {
 	startTime := time.Now()
 
 	// Create HTTP request
@@ -33,9 +36,10 @@ func Execute(req *types.HttpRequest) (*types.RequestResult, error) {
 		httpReq.Header.Set(key, value)
 	}
 
-	// Execute request
-	client := &http.Client{
-		Timeout: 30 * time.Second,
+	// Build HTTP client with optional TLS configuration
+	client, err := buildHTTPClient(tlsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure HTTP client: %w", err)
 	}
 
 	resp, err := client.Do(httpReq)
@@ -79,6 +83,46 @@ func Execute(req *types.HttpRequest) (*types.RequestResult, error) {
 	}
 
 	return result, nil
+}
+
+// buildHTTPClient creates an HTTP client with optional TLS/mTLS configuration
+func buildHTTPClient(tlsConfig *types.TLSConfig) (*http.Client, error) {
+	transport := &http.Transport{}
+
+	if tlsConfig != nil {
+		tlsCfg := &tls.Config{
+			InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
+		}
+
+		// Load client certificate if provided (for mTLS)
+		if tlsConfig.CertFile != "" && tlsConfig.KeyFile != "" {
+			cert, err := tls.LoadX509KeyPair(tlsConfig.CertFile, tlsConfig.KeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load client certificate: %w", err)
+			}
+			tlsCfg.Certificates = []tls.Certificate{cert}
+		}
+
+		// Load CA certificate if provided (for server verification)
+		if tlsConfig.CAFile != "" {
+			caCert, err := os.ReadFile(tlsConfig.CAFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read CA certificate: %w", err)
+			}
+			caCertPool := x509.NewCertPool()
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				return nil, fmt.Errorf("failed to parse CA certificate")
+			}
+			tlsCfg.RootCAs = caCertPool
+		}
+
+		transport.TLSClientConfig = tlsCfg
+	}
+
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}, nil
 }
 
 // FormatDuration formats duration in milliseconds to human-readable string

@@ -11,6 +11,7 @@ type HttpRequest struct {
 	Body                string                 `json:"body,omitempty" yaml:"body,omitempty"`
 	Filter              string                 `json:"filter,omitempty" yaml:"filter,omitempty"` // JMESPath filter expression
 	Query               string                 `json:"query,omitempty" yaml:"query,omitempty"`   // JMESPath query or $(bash command)
+	TLS                 *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty"`       // TLS/mTLS configuration
 	Documentation       *Documentation         `json:"documentation,omitempty" yaml:"documentation,omitempty"`
 	DocumentationLines  []string               `json:"-" yaml:"-"` // Raw documentation comment lines for lazy loading
 	documentationParsed bool                   `json:"-" yaml:"-"` // Whether documentation has been parsed (unexported for internal use)
@@ -79,6 +80,7 @@ type Profile struct {
 	Variables     map[string]VariableValue  `json:"variables,omitempty"`
 	Workdir       string                    `json:"workdir,omitempty"`
 	OAuth         *OAuthConfig              `json:"oauth,omitempty"`
+	TLS           *TLSConfig                `json:"tls,omitempty"`           // TLS/mTLS configuration
 	Editor        string                    `json:"editor,omitempty"`
 	Output        string                    `json:"output,omitempty"`        // json, yaml, text
 	DefaultFilter string                    `json:"defaultFilter,omitempty"` // Global JMESPath filter for all responses
@@ -119,6 +121,21 @@ type OAuthConfig struct {
 	ResponseType     string `json:"responseType,omitempty"` // code or token
 	WebhookPort      int    `json:"webhookPort,omitempty"`
 	TokenStorageKey  string `json:"tokenStorageKey,omitempty"`
+}
+
+// TLSConfig contains TLS/mTLS configuration
+type TLSConfig struct {
+	// Client certificate path (PEM format)
+	CertFile string `json:"certFile,omitempty" yaml:"certFile,omitempty"`
+
+	// Client private key path (PEM format)
+	KeyFile string `json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
+
+	// CA certificate path for server verification (PEM format)
+	CAFile string `json:"caFile,omitempty" yaml:"caFile,omitempty"`
+
+	// Skip server certificate verification (insecure, for testing only)
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty" yaml:"insecureSkipVerify,omitempty"`
 }
 
 // RequestResult contains the HTTP response data

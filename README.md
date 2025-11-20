@@ -305,6 +305,82 @@ Filter and query expressions are applied in this priority order:
 
 ---
 
+## mTLS (Mutual TLS)
+
+Configure client certificates for secure API connections that require mutual TLS authentication.
+
+### Profile Configuration
+
+Add TLS configuration to your profile in `.profiles.json`:
+
+```json
+{
+  "name": "production",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "tls": {
+    "certFile": "/path/to/client.crt",
+    "keyFile": "/path/to/client.key",
+    "caFile": "/path/to/ca.crt"
+  }
+}
+```
+
+### Per-Request Configuration
+
+**YAML format:**
+
+```yaml
+name: Secure API Call
+method: GET
+url: "https://secure-api.example.com/data"
+tls:
+  certFile: "/path/to/client.crt"
+  keyFile: "/path/to/client.key"
+  caFile: "/path/to/ca.crt"
+```
+
+**JSON format:**
+
+```json
+{
+  "name": "Secure Request",
+  "method": "GET",
+  "url": "https://secure-api.example.com/data",
+  "tls": {
+    "certFile": "/path/to/client.crt",
+    "keyFile": "/path/to/client.key"
+  }
+}
+```
+
+**HTTP format:**
+
+```text
+### Secure API Call
+# @tls.certFile /path/to/client.crt
+# @tls.keyFile /path/to/client.key
+# @tls.caFile /path/to/ca.crt
+GET https://secure-api.example.com/data
+```
+
+### Configuration Options
+
+- `certFile`: Path to client certificate (PEM format)
+- `keyFile`: Path to client private key (PEM format)
+- `caFile`: Path to CA certificate for server verification (PEM format)
+- `insecureSkipVerify`: Skip server certificate verification (for testing only)
+
+### Priority
+
+TLS configuration is applied in this priority order:
+
+1. Request file (`tls` field)
+2. Profile configuration (`tls` field)
+
+---
+
 # Completion command
 
 For macOS (Zsh):
