@@ -1,8 +1,5 @@
 {
   "name": "Get User",
   "method": "GET",
-  "url": "https://jsonplaceholder.typicode.com/todos/{{todoId}}",
-  "headers": {
-    "Authorization": "Bearer {{token}}"
-  }
+  "url": "https://jsonplaceholder.typicode.com/todos/{{todoId}}"
 }
