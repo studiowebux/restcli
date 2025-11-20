@@ -12,3 +12,5 @@ bin/
 test-requests/
 
 .DS_Store
+
+src/restcli

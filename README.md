@@ -164,3 +164,26 @@ Profiles store your headers and variables permanently. Create profiles in `.prof
 **Important:** Configure your headers and variables in `.profiles.json`, not `.session.json`.
 
 The TUI auto-extracts `token` or `accessToken` from JSON responses and temporarily stores them in the session.
+
+---
+
+# Completion command
+
+For macOS (Zsh):
+
+# Create completions directory
+
+mkdir -p ~/.zsh/completions
+
+# Add to ~/.zshrc (if not already there)
+
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+
+# Generate completions
+
+restcli completion zsh > ~/.zsh/completions/\_restcli
+
+# Reload shell
+
+source ~/.zshrc

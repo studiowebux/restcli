@@ -95,6 +95,61 @@ Supports both local files and remote URLs.`,
 	},
 }
 
+var completionCmd = &cobra.Command{
+	Use:   "completion [bash|zsh|fish|powershell]",
+	Short: "Generate shell completion scripts",
+	Long: `Generate shell completion scripts for restcli.
+
+To load completions:
+
+Bash (Linux):
+  $ restcli completion bash > /etc/bash_completion.d/restcli
+
+Bash (macOS with Homebrew):
+  $ restcli completion bash > $(brew --prefix)/etc/bash_completion.d/restcli
+
+Zsh (macOS/Linux):
+  # Create completions directory
+  $ mkdir -p ~/.zsh/completions
+
+  # Add to ~/.zshrc (if not already present)
+  $ echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+  $ echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+
+  # Generate completions
+  $ restcli completion zsh > ~/.zsh/completions/_restcli
+
+  # Reload shell
+  $ source ~/.zshrc
+
+Zsh (Oh My Zsh):
+  $ mkdir -p ~/.oh-my-zsh/completions
+  $ restcli completion zsh > ~/.oh-my-zsh/completions/_restcli
+
+Fish:
+  $ restcli completion fish > ~/.config/fish/completions/restcli.fish
+
+PowerShell:
+  PS> restcli completion powershell | Out-String | Invoke-Expression
+`,
+	DisableFlagsInUseLine: true,
+	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		switch args[0] {
+		case "bash":
+			return rootCmd.GenBashCompletion(os.Stdout)
+		case "zsh":
+			return rootCmd.GenZshCompletion(os.Stdout)
+		case "fish":
+			return rootCmd.GenFishCompletion(os.Stdout, true)
+		case "powershell":
+			return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
+		}
+		return nil
+	},
+}
+
 // Flags for root/run command
 var (
 	flagProfile    string
@@ -152,6 +207,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(curl2httpCmd)
 	rootCmd.AddCommand(openapi2httpCmd)
+	rootCmd.AddCommand(completionCmd)
 }
 
 // runCLI executes a request file in CLI mode
