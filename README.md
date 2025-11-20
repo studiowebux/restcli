@@ -309,19 +309,27 @@ Filter and query expressions are applied in this priority order:
 
 For macOS (Zsh):
 
-# Create completions directory
+**Create completions directory**
 
+```bash
 mkdir -p ~/.zsh/completions
+```
 
-# Add to ~/.zshrc (if not already there)
+**Add to ~/.zshrc (if not already there)**
 
+```bash
 echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
 echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+```
 
-# Generate completions
+**Generate completions**
 
+```bash
 restcli completion zsh > ~/.zsh/completions/\_restcli
+```
 
-# Reload shell
+**Reload shell**
 
+```bash
 source ~/.zshrc
+```
