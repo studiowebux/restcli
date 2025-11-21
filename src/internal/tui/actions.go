@@ -14,6 +14,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
+	"github.com/studiowebux/restcli/internal/filter"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/oauth"
 	"github.com/studiowebux/restcli/internal/parser"
@@ -92,6 +93,30 @@ func (m *Model) executeRequest() tea.Cmd {
 		result, err := executor.Execute(resolvedRequest, tlsConfig)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to execute request: %v", err))
+		}
+
+		// Apply filter and query to response body
+		// Priority: request-level > profile defaults
+		filterExpr := resolvedRequest.Filter
+		if filterExpr == "" {
+			filterExpr = profile.DefaultFilter
+		}
+
+		queryExpr := resolvedRequest.Query
+		if queryExpr == "" {
+			queryExpr = profile.DefaultQuery
+		}
+
+		// Apply filter/query if specified
+		if filterExpr != "" || queryExpr != "" {
+			filteredBody, err := filter.Apply(result.Body, filterExpr, queryExpr)
+			if err != nil {
+				// Don't fail the request, but we could add to warnings
+				// For now, just log it (could be improved to show in UI)
+				_ = err
+			} else {
+				result.Body = filteredBody
+			}
 		}
 
 		// Save to history

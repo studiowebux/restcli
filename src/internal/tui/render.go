@@ -1060,6 +1060,30 @@ func (m *Model) updateInspectView() {
 					}
 				}
 			}
+			content.WriteString("\n")
+		}
+
+		// Show filter if present
+		if resolvedRequest.Filter != "" {
+			content.WriteString("Filter:\n")
+			wrappedFilter := wrapText(resolvedRequest.Filter, wrapWidth-2)
+			for _, line := range strings.Split(wrappedFilter, "\n") {
+				if line != "" {
+					content.WriteString("  " + line + "\n")
+				}
+			}
+			content.WriteString("\n")
+		}
+
+		// Show query if present
+		if resolvedRequest.Query != "" {
+			content.WriteString("Query:\n")
+			wrappedQuery := wrapText(resolvedRequest.Query, wrapWidth-2)
+			for _, line := range strings.Split(wrappedQuery, "\n") {
+				if line != "" {
+					content.WriteString("  " + line + "\n")
+				}
+			}
 		}
 	}
 

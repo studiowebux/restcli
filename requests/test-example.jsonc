@@ -1,0 +1,20 @@
+{
+  // This is a test JSONC file with comments
+  "$schema": "../http-request.schema.json",
+  "name": "Test GET Request with Comments",
+  "method": "GET",
+  "url": "https://jsonplaceholder.typicode.com/posts/1",
+
+  /* Multi-line comment
+   * This demonstrates JSONC support
+   * in the REST CLI tool
+   */
+  "headers": {
+    "Accept": "application/json",
+    // User-Agent header
+    "User-Agent": "restcli/1.0"
+  },
+
+  // Optional filter to extract specific fields
+  "filter": "title"
+}

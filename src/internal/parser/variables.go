@@ -193,6 +193,9 @@ func (vr *VariableResolver) ResolveRequest(req *types.HttpRequest) (*types.HttpR
 		Method:        req.Method,
 		Headers:       make(map[string]string),
 		Documentation: req.Documentation,
+		Filter:        req.Filter,
+		Query:         req.Query,
+		TLS:           req.TLS,
 	}
 
 	// Resolve URL

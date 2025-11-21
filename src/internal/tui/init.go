@@ -74,7 +74,7 @@ func Run() error {
 	return nil
 }
 
-// loadFiles loads all .http, .yaml, .yml files from the working directory
+// loadFiles loads all .http, .yaml, .yml, .json, .jsonc files from the working directory
 func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 	profile := mgr.GetActiveProfile()
 	workdir, err := config.GetWorkingDirectory(profile.Workdir)
@@ -114,7 +114,7 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".http" || ext == ".yaml" || ext == ".yml" || ext == ".json" {
+		if ext == ".http" || ext == ".yaml" || ext == ".yml" || ext == ".json" || ext == ".jsonc" {
 			relPath, _ := filepath.Rel(workdir, path)
 
 			files = append(files, types.FileInfo{

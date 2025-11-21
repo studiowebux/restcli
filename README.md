@@ -6,7 +6,7 @@ A keyboard-driven TUI for testing HTTP endpoints.
 
 ## Features
 
-- File-based requests (`.http`, `.yaml`, `.json`)
+- File-based requests (`.http`, `.yaml`, `.json`, `.jsonc`)
 - Variable substitution with `{{varName}}` and shell commands `$(cmd)`
 - Header profiles for quick account switching
 - OAuth 2.0 with PKCE support
@@ -80,6 +80,24 @@ headers:
   "url": "https://jsonplaceholder.typicode.com/todo/2",
   "headers": { "Content-Type": "application/json" },
   "body": "{\"name\": \"John\"}"
+}
+```
+
+JSONC format supports comments:
+
+```jsonc
+{
+  // Single-line comments are supported
+  "name": "Get Post",
+  "method": "GET",
+  "url": "https://jsonplaceholder.typicode.com/posts/1",
+
+  /* Multi-line comments
+   * are also supported
+   */
+  "headers": {
+    "Accept": "application/json"
+  }
 }
 ```
 

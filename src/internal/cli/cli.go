@@ -217,6 +217,39 @@ func Run(opts RunOptions) error {
 		}
 	}
 
+	// If using profile, check for multi-value variables that need selection
+	if useProfile {
+		// Extract all variables required by the request
+		requiredVars := parser.ExtractRequestVariables(&request)
+
+		for _, varName := range requiredVars {
+			// Skip if already provided via -e flag
+			if _, ok := cliVars[varName]; ok {
+				continue
+			}
+
+			// Check if this is a multi-value variable in the profile
+			if profileVar, ok := profileVars[varName]; ok && profileVar.IsMultiValue() {
+				mv := profileVar.MultiValue
+
+				// Always prompt for multi-value variables (unless -e was used)
+				if stdinPiped {
+					return fmt.Errorf("multi-value variable '%s' requires selection. Use -e %s=<value> or -e %s=<alias>", varName, varName, varName)
+				}
+				if !isInteractive() {
+					return fmt.Errorf("multi-value variable '%s' requires selection (non-interactive mode). Use -e %s=<value>", varName, varName)
+				}
+
+				// Show interactive selector (active index will be the default)
+				value, err := promptForMultiValueVariable(varName, mv)
+				if err != nil {
+					return fmt.Errorf("failed to select value for '%s': %w", varName, err)
+				}
+				cliVars[varName] = value
+			}
+		}
+	}
+
 	// Resolve variables (CLI vars have highest priority)
 	resolver := parser.NewVariableResolver(profileVars, sessionVars, cliVars, envVars)
 	resolvedRequest, err := resolver.ResolveRequest(&request)

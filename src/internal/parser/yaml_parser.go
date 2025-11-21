@@ -9,10 +9,11 @@ import (
 
 	"github.com/studiowebux/restcli/internal/converter"
 	"github.com/studiowebux/restcli/internal/types"
+	"github.com/tidwall/jsonc"
 	"gopkg.in/yaml.v3"
 )
 
-// ParseYAMLFile parses a YAML or JSON file containing HTTP requests
+// ParseYAMLFile parses a YAML, JSON, or JSONC file containing HTTP requests
 func ParseYAMLFile(filePath string) ([]types.HttpRequest, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -21,8 +22,8 @@ func ParseYAMLFile(filePath string) ([]types.HttpRequest, error) {
 
 	ext := strings.ToLower(filepath.Ext(filePath))
 
-	// Try to parse as JSON first if extension is .json
-	if ext == ".json" {
+	// Try to parse as JSON first if extension is .json or .jsonc
+	if ext == ".json" || ext == ".jsonc" {
 		return parseJSON(data)
 	}
 
@@ -30,17 +31,20 @@ func ParseYAMLFile(filePath string) ([]types.HttpRequest, error) {
 	return parseYAML(data)
 }
 
-// parseJSON parses JSON format
+// parseJSON parses JSON format (including JSONC with comments)
 func parseJSON(data []byte) ([]types.HttpRequest, error) {
+	// Strip comments from JSONC format to get valid JSON
+	cleanJSON := jsonc.ToJSON(data)
+
 	// Try to unmarshal as array first
 	var requests []types.HttpRequest
-	if err := json.Unmarshal(data, &requests); err == nil {
+	if err := json.Unmarshal(cleanJSON, &requests); err == nil {
 		return requests, nil
 	}
 
 	// Try to unmarshal as single request
 	var request types.HttpRequest
-	if err := json.Unmarshal(data, &request); err != nil {
+	if err := json.Unmarshal(cleanJSON, &request); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
@@ -127,14 +131,14 @@ func parseOpenAPISnippet(data []byte) ([]types.HttpRequest, error) {
 	return requests, nil
 }
 
-// DetectFormat detects whether a file is traditional .http format, YAML/JSON, or OpenAPI
+// DetectFormat detects whether a file is traditional .http format, YAML/JSON/JSONC, or OpenAPI
 func DetectFormat(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	// Extension-based detection
 	switch ext {
-	case ".yaml", ".yml", ".json":
-		// For YAML/JSON files, check if it's OpenAPI
+	case ".yaml", ".yml", ".json", ".jsonc":
+		// For YAML/JSON/JSONC files, check if it's OpenAPI
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			return "", err
@@ -144,7 +148,7 @@ func DetectFormat(filePath string) (string, error) {
 			return "openapi", nil
 		}
 
-		if ext == ".json" {
+		if ext == ".json" || ext == ".jsonc" {
 			return "json", nil
 		}
 		return "yaml", nil

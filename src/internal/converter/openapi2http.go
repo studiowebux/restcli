@@ -320,13 +320,72 @@ func OperationToHttpRequest(method, path string, operation *OpenAPIOperation, ba
 
 	// Build documentation
 	var doc *types.Documentation
-	if operation.Summary != "" || operation.Description != "" || len(operation.Tags) > 0 {
+	if operation.Summary != "" || operation.Description != "" || len(operation.Tags) > 0 || len(operation.Parameters) > 0 || len(operation.Responses) > 0 {
 		doc = &types.Documentation{
 			Description: operation.Summary,
 			Tags:        operation.Tags,
 		}
 		if operation.Description != "" && operation.Description != operation.Summary {
 			doc.Description = operation.Description
+		}
+
+		// Add parameters
+		if len(operation.Parameters) > 0 {
+			doc.Parameters = make([]types.Parameter, 0, len(operation.Parameters))
+			for _, param := range operation.Parameters {
+				docParam := types.Parameter{
+					Name:        param.Name,
+					Required:    param.Required,
+					Description: param.Description,
+				}
+				// Extract type from schema
+				if param.Schema != nil {
+					if paramType, ok := param.Schema["type"].(string); ok {
+						docParam.Type = paramType
+					}
+				}
+				doc.Parameters = append(doc.Parameters, docParam)
+			}
+		}
+
+		// Add responses
+		if len(operation.Responses) > 0 {
+			doc.Responses = make([]types.Response, 0, len(operation.Responses))
+			for code, resp := range operation.Responses {
+				docResp := types.Response{
+					Code:        code,
+					Description: resp.Description,
+				}
+
+				// Extract content type and fields from response schema
+				for contentType, mediaType := range resp.Content {
+					docResp.ContentType = contentType
+
+					// Try to extract fields from schema
+					if mediaType.Schema != nil {
+						if props, ok := mediaType.Schema["properties"].(map[string]interface{}); ok {
+							docResp.Fields = make([]types.ResponseField, 0)
+							for fieldName, fieldSchema := range props {
+								if fieldMap, ok := fieldSchema.(map[string]interface{}); ok {
+									field := types.ResponseField{
+										Name: fieldName,
+									}
+									if fieldType, ok := fieldMap["type"].(string); ok {
+										field.Type = fieldType
+									}
+									if fieldDesc, ok := fieldMap["description"].(string); ok {
+										field.Description = fieldDesc
+									}
+									docResp.Fields = append(docResp.Fields, field)
+								}
+							}
+						}
+					}
+					break // Only use first content type
+				}
+
+				doc.Responses = append(doc.Responses, docResp)
+			}
 		}
 	}
 

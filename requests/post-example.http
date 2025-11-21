@@ -4,6 +4,6 @@ Content-Type: application/json
 
 {
   "title": "Test Post",
-  "body": "This is a test",
+  "body": "This is a test - {{foo}}",
   "userId": 1
 }

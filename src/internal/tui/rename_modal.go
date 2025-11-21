@@ -14,6 +14,7 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 	case "esc":
 		m.mode = ModeNormal
 		m.renameInput = ""
+		m.errorMsg = ""
 
 	case "enter":
 		if m.renameInput == "" {
@@ -23,7 +24,6 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 
 		if len(m.files) == 0 {
 			m.errorMsg = "No file selected"
-			m.mode = ModeNormal
 			return nil
 		}
 
@@ -55,6 +55,13 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 
+		// Create directories if the new path includes subdirectories
+		newDir := filepath.Dir(newPath)
+		if err := os.MkdirAll(newDir, 0755); err != nil {
+			m.errorMsg = fmt.Sprintf("Failed to create directory: %v", err)
+			return nil
+		}
+
 		// Rename the file
 		if err := os.Rename(oldPath, newPath); err != nil {
 			m.errorMsg = fmt.Sprintf("Failed to rename file: %v", err)
@@ -69,6 +76,9 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.refreshFiles()
 
 	default:
+		// Clear error when user starts typing
+		m.errorMsg = ""
+
 		// Handle common text input operations (paste, clear, backspace)
 		if _, shouldContinue := handleTextInput(&m.renameInput, msg); shouldContinue {
 			return nil
@@ -89,10 +99,18 @@ func (m *Model) renderRenameModal() string {
 	}
 
 	currentName := m.files[m.fileIndex].Name
-	content := fmt.Sprintf("Current: %s\n\nNew name: %s\n\nEnter new name, then press Enter to rename, ESC to cancel",
+	content := fmt.Sprintf("Current: %s\n\nNew name: %s",
 		currentName, addCursor(m.renameInput))
 
-	return m.renderModal("Rename File", content, 60, 12)
+	// Show error if present (wrapped to modal width)
+	if m.errorMsg != "" {
+		wrappedError := wrapText(m.errorMsg, 54) // Modal width (60) minus padding
+		content += "\n\n" + styleError.Render(wrappedError)
+	}
+
+	content += "\n\nEnter new name, then press Enter to rename, ESC to cancel"
+
+	return m.renderModal("Rename File", content, 60, 15)
 }
 
 // renderEditorConfigModal renders the editor configuration modal
