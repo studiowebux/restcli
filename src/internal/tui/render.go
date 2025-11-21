@@ -47,6 +47,10 @@ var (
 
 	styleSubtle = lipgloss.NewStyle().
 			Foreground(colorGray)
+
+	styleSearchHighlight = lipgloss.NewStyle().
+			Background(lipgloss.AdaptiveColor{Light: "#ffff00", Dark: "#444400"}). // Yellow background, dark yellow for dark mode
+			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})  // Black text on light, white on dark
 )
 
 // highlightJSON applies syntax highlighting to JSON content
@@ -206,12 +210,14 @@ func (m Model) renderSidebar(width, height int) string {
 
 		line := fmt.Sprintf("%s %s", hexNum, name)
 
-		// Check if this file is a search match
+		// Check if this file is a search match (only when searching files, not response)
 		isSearchMatch := false
-		for _, matchIdx := range m.searchMatches {
-			if i == matchIdx {
-				isSearchMatch = true
-				break
+		if !m.searchInResponseCtx {
+			for _, matchIdx := range m.searchMatches {
+				if i == matchIdx {
+					isSearchMatch = true
+					break
+				}
 			}
 		}
 
@@ -399,6 +405,7 @@ func (m *Model) updateViewport() {
 // updateResponseView updates the response viewport content
 func (m *Model) updateResponseView() {
 	if m.currentResponse == nil {
+		m.responseContent = ""
 		m.responseView.SetContent("")
 		return
 	}
@@ -557,7 +564,35 @@ func (m *Model) updateResponseView() {
 		content.WriteString(styleError.Render("Error: " + m.currentResponse.Error))
 	}
 
-	m.responseView.SetContent(content.String())
+	contentStr := content.String()
+	m.responseContent = contentStr
+
+	// Apply search highlighting if we're searching in response
+	if m.searchInResponseCtx && len(m.searchMatches) > 0 {
+		contentStr = m.highlightSearchMatches(contentStr)
+	}
+
+	m.responseView.SetContent(contentStr)
+}
+
+// highlightSearchMatches highlights lines that match the current search
+func (m *Model) highlightSearchMatches(content string) string {
+	lines := strings.Split(content, "\n")
+
+	// Create a map of line numbers to highlight for faster lookup
+	matchLines := make(map[int]bool)
+	for _, lineNum := range m.searchMatches {
+		matchLines[lineNum] = true
+	}
+
+	// Highlight matching lines with background color
+	for i := range lines {
+		if matchLines[i] {
+			lines[i] = styleSearchHighlight.Render(lines[i])
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // updateHelpView updates the help viewport content
@@ -573,9 +608,11 @@ NAVIGATION (Keyboard Only)
   PageUp/Down    Full page scroll (focused panel)
   Home/End       Jump to first/last
   :              Goto hex line
+  Ctrl+P         Recent files (MRU)
 
 SEARCH
-  /              Search files
+  /              Search files or response (context-aware)
+                 Supports regex patterns (e.g., .*foo.*bar)
   n              Next search result (vim-style)
   N              Previous search result (vim-style)
   Ctrl+R         Next search result (alternative)
@@ -592,6 +629,7 @@ FILE OPERATIONS
   X            Configure editor
   d            Duplicate file
   D            Delete file (with confirmation)
+  F            Create new file
   R            Rename file
   r            Refresh file list
 
@@ -601,6 +639,8 @@ RESPONSE
   b            Toggle body visibility
   B            Toggle headers visibility (request + response)
   f            Toggle fullscreen (ESC to exit)
+  w            Pin response for comparison
+  W            Show diff (compare pinned vs current)
   ↑/↓, j/k     Scroll response (when body shown)
 
 CONFIGURATION
@@ -624,6 +664,7 @@ VARIABLE EDITOR (multi-value)
 DOCUMENTATION & HISTORY
   m            View documentation
   H            View history
+  r            Replay request (when in history modal)
 
 MODAL NAVIGATION
   ↑/↓, j/k     Navigate items
@@ -638,8 +679,8 @@ OAUTH
   O            Configure OAuth
 
 TEXT INPUT (in modals)
-  Cmd+V        Paste from clipboard (macOS)
-  Ctrl+V       Paste from clipboard
+  Ctrl+V       Paste from clipboard (recommended)
+  Cmd+V        Paste from clipboard (macOS, may not work in Terminal.app)
   Shift+Insert Paste (alternative)
   Ctrl+Y       Paste (alternative)
   Ctrl+K       Clear input
@@ -1084,7 +1125,33 @@ func (m *Model) updateInspectView() {
 					content.WriteString("  " + line + "\n")
 				}
 			}
+			content.WriteString("\n")
 		}
+
+		// Show TLS configuration if present
+		if resolvedRequest.TLS != nil {
+			content.WriteString("TLS Configuration:\n")
+			if resolvedRequest.TLS.CertFile != "" {
+				content.WriteString("  Cert: " + resolvedRequest.TLS.CertFile + "\n")
+			}
+			if resolvedRequest.TLS.KeyFile != "" {
+				content.WriteString("  Key: " + resolvedRequest.TLS.KeyFile + "\n")
+			}
+			if resolvedRequest.TLS.CAFile != "" {
+				content.WriteString("  CA: " + resolvedRequest.TLS.CAFile + "\n")
+			}
+			if resolvedRequest.TLS.InsecureSkipVerify {
+				content.WriteString("  " + styleWarning.Render("Insecure Skip Verify: true") + "\n")
+			}
+			content.WriteString("\n")
+		}
+	}
+
+	// Show parsing option if enabled (from original request, not resolved)
+	if m.currentRequest.ParseEscapes {
+		content.WriteString("Response Parsing:\n")
+		content.WriteString("  " + styleSuccess.Render("Enabled") + " - Escape sequences (\\n, \\t, etc.) will be parsed\n")
+		content.WriteString("\n")
 	}
 
 	m.modalView.SetContent(content.String())
@@ -1123,7 +1190,7 @@ func (m *Model) updateHistoryView() {
 
 			content.WriteString(line + "\n")
 		}
-		content.WriteString("\n" + styleSubtle.Render("↑/↓: Navigate | Enter: Load | ESC: Close"))
+		content.WriteString("\n" + styleSubtle.Render("↑/↓: Navigate | Enter: Load | r: Replay | ESC: Close"))
 	}
 
 	// Save current scroll position before updating content

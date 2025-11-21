@@ -195,6 +195,7 @@ func (vr *VariableResolver) ResolveRequest(req *types.HttpRequest) (*types.HttpR
 		Documentation: req.Documentation,
 		Filter:        req.Filter,
 		Query:         req.Query,
+		ParseEscapes:  req.ParseEscapes,
 		TLS:           req.TLS,
 	}
 

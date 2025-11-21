@@ -42,6 +42,9 @@ const (
 	ModeProfileEdit
 	ModeVariableAlias
 	ModeShellErrors
+	ModeCreateFile
+	ModeMRU
+	ModeDiff
 )
 
 // Model represents the TUI state
@@ -53,19 +56,21 @@ type Model struct {
 	// File list
 	files         []types.FileInfo
 	fileIndex     int    // Current selected file
-	fileOffset    int    // Scroll offset for file list
-	searchQuery   string // File search query
-	searchMatches []int  // Indices of files matching search
-	searchIndex   int    // Current position in searchMatches
-	gotoInput     string // Goto line input
+	fileOffset          int    // Scroll offset for file list
+	searchQuery         string // Search query (files or response based on focus)
+	searchMatches       []int  // Indices of files matching search OR line numbers in response
+	searchIndex         int    // Current position in searchMatches
+	searchInResponseCtx bool   // True if current search is in response context
+	gotoInput           string // Goto line input
 
 	// Request/Response
-	currentRequests []types.HttpRequest
-	currentRequest  *types.HttpRequest
-	currentResponse *types.RequestResult
-	responseView    viewport.Model
-	helpView        viewport.Model
-	modalView       viewport.Model // For scrollable modal content
+	currentRequests       []types.HttpRequest
+	currentRequest        *types.HttpRequest
+	currentResponse       *types.RequestResult
+	responseView          viewport.Model
+	responseContent       string // Full formatted response content for searching
+	helpView              viewport.Model
+	modalView             viewport.Model // For scrollable modal content
 
 	// UI state
 	width        int
@@ -149,6 +154,19 @@ type Model struct {
 	// Shell errors state
 	shellErrors      []string
 	shellErrorScroll int
+
+	// Create file state
+	createFileInput  string // Filename/path input
+	createFileType   int    // Selected file type (0=http, 1=json, 2=yaml, 3=jsonc)
+	createFileCursor int    // Cursor position in input
+
+	// MRU state
+	mruIndex int // Selected index in MRU list
+
+	// Diff state
+	pinnedResponse *types.RequestResult // Response pinned for comparison
+	pinnedRequest  *types.HttpRequest   // Request info for pinned response
+	diffView       viewport.Model       // Viewport for diff display
 }
 
 // Init initializes the TUI
@@ -164,9 +182,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		cmd = m.handleKeyPress(msg)
 
-	// Mouse events disabled - keyboard only interface
+	// Mouse events - capture to prevent terminal scrolling, but don't use them for navigation
 	case tea.MouseMsg:
-		// No-op - ignore all mouse events
+		// Explicitly handle and discard mouse scroll to prevent terminal buffer scrolling
+		// This keeps the app "on top" when scrolling with the mouse
+		// All navigation remains keyboard-only as intended
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -266,6 +286,12 @@ func (m Model) View() string {
 		return m.renderDeleteModal()
 	case ModeShellErrors:
 		return m.renderShellErrorsModal()
+	case ModeCreateFile:
+		return m.renderCreateFileModal()
+	case ModeMRU:
+		return m.renderMRUModal()
+	case ModeDiff:
+		return m.renderDiffModal()
 	default:
 		return m.renderMain()
 	}

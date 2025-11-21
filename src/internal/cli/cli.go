@@ -334,6 +334,11 @@ func Run(opts RunOptions) error {
 		}
 	}
 
+	// Parse escape sequences AFTER filter/query (as the final processing step)
+	if request.ParseEscapes {
+		result.Body = executor.ParseEscapeSequences(result.Body)
+	}
+
 	// Determine output format
 	outputFormat := opts.OutputFormat
 	if outputFormat == "" {

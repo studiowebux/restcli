@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -46,8 +47,23 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 			newName += filepath.Ext(oldPath)
 		}
 
+		// Expand tilde to home directory
+		if strings.HasPrefix(newName, "~/") {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to get home directory: %v", err)
+				return nil
+			}
+			newName = filepath.Join(homeDir, newName[2:])
+		}
+
 		// Build absolute new path
-		newPath := filepath.Join(dir, newName)
+		var newPath string
+		if filepath.IsAbs(newName) {
+			newPath = newName
+		} else {
+			newPath = filepath.Join(dir, newName)
+		}
 
 		// Check if file already exists
 		if _, err := os.Stat(newPath); err == nil {

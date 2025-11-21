@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,6 +72,9 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.Request
 	for key, values := range resp.Header {
 		headers[key] = strings.Join(values, ", ")
 	}
+
+	// Note: Escape sequence parsing is now done AFTER filter/query in actions.go and cli.go
+	// to ensure parsing happens as the final step
 
 	result := &types.RequestResult{
 		Status:       resp.StatusCode,
@@ -158,4 +162,46 @@ func IsClientErrorStatus(status int) bool {
 // IsServerErrorStatus returns true if status code is 5xx
 func IsServerErrorStatus(status int) bool {
 	return status >= 500 && status < 600
+}
+
+// ParseEscapeSequences parses common escape sequences in a string AND removes outer JSON quotes
+// This is a best-effort parser that handles: \n, \t, \r, \", \\, etc.
+// Should be called AFTER filter/query operations to ensure it's the final processing step
+// Only applies when # @parsing true is set
+func ParseEscapeSequences(s string) string {
+	result := s
+
+	// First, try to unquote if it's a JSON-encoded string (removes outer quotes)
+	// This handles cases like "Hello\nWorld" -> Hello\nWorld
+	if len(result) >= 2 && result[0] == '"' && result[len(result)-1] == '"' {
+		// Try to unmarshal as a JSON string
+		var unquoted string
+		if err := json.Unmarshal([]byte(result), &unquoted); err == nil {
+			result = unquoted
+			// After unquoting, the escape sequences are already parsed by JSON unmarshaling
+			return result
+		}
+	}
+
+	// If not a quoted JSON string, manually parse escape sequences
+	// Important: Process \\ FIRST to handle escaped backslashes correctly
+	// Otherwise \\n would become \<newline> instead of \n
+
+	// Replace escaped backslash with a placeholder first
+	const placeholder = "\x00BACKSLASH\x00"
+	result = strings.ReplaceAll(result, "\\\\", placeholder)
+
+	// Now replace other escape sequences
+	result = strings.ReplaceAll(result, "\\n", "\n")
+	result = strings.ReplaceAll(result, "\\t", "\t")
+	result = strings.ReplaceAll(result, "\\r", "\r")
+	result = strings.ReplaceAll(result, "\\\"", "\"")
+	result = strings.ReplaceAll(result, "\\'", "'")
+	result = strings.ReplaceAll(result, "\\b", "\b")
+	result = strings.ReplaceAll(result, "\\f", "\f")
+
+	// Finally replace the placeholder with actual backslash
+	result = strings.ReplaceAll(result, placeholder, "\\")
+
+	return result
 }

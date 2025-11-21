@@ -52,6 +52,12 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleDeleteKeys(msg)
 	case ModeShellErrors:
 		return m.handleShellErrorsKeys(msg)
+	case ModeCreateFile:
+		return m.handleCreateFileKeys(msg)
+	case ModeMRU:
+		return m.handleMRUKeys(msg)
+	case ModeDiff:
+		return m.handleDiffKeys(msg)
 	}
 
 	return nil
@@ -283,6 +289,13 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case "R":
 		m.mode = ModeRename
 		m.renameInput = ""
+	case "F":
+		// Create new file
+		m.mode = ModeCreateFile
+		m.createFileInput = ""
+		m.createFileType = 0 // Default to .http
+		m.createFileCursor = 0
+		m.errorMsg = ""
 	case "r":
 		return m.refreshFiles()
 
@@ -300,6 +313,25 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.fullscreen = !m.fullscreen
 		m.updateViewport()       // Recalculate viewport width for fullscreen
 		m.updateResponseView()   // Regenerate content (wrapping changes based on fullscreen)
+	case "w":
+		// Pin current response for comparison
+		if m.currentResponse != nil {
+			m.pinnedResponse = m.currentResponse
+			m.pinnedRequest = m.currentRequest
+			m.statusMsg = "Response pinned for comparison (press W to view diff)"
+		} else {
+			m.errorMsg = "No response to pin"
+		}
+	case "W":
+		// Show diff between pinned and current response
+		if m.pinnedResponse == nil {
+			m.errorMsg = "No pinned response (press 'w' to pin current response first)"
+		} else if m.currentResponse == nil {
+			m.errorMsg = "No current response to compare"
+		} else {
+			m.mode = ModeDiff
+			m.updateDiffView()
+		}
 
 	// Editors and modals
 	case "v":
@@ -317,10 +349,26 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		// If search is active, go to next match (vim-style)
 		if len(m.searchMatches) > 0 {
 			m.searchIndex = (m.searchIndex + 1) % len(m.searchMatches)
-			m.fileIndex = m.searchMatches[m.searchIndex]
-			m.adjustScrollOffset()
-			m.loadRequestsFromCurrentFile()
-			m.statusMsg = fmt.Sprintf("Match %d of %d", m.searchIndex+1, len(m.searchMatches))
+
+			if m.searchInResponseCtx {
+				// Navigate in response
+				m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[m.searchIndex]))
+				context := "text"
+				if isRegexPattern(m.searchQuery) {
+					context = "regex"
+				}
+				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
+			} else {
+				// Navigate in files
+				m.fileIndex = m.searchMatches[m.searchIndex]
+				m.adjustScrollOffset()
+				m.loadRequestsFromCurrentFile()
+				context := "text"
+				if isRegexPattern(m.searchQuery) {
+					context = "regex"
+				}
+				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
+			}
 		} else {
 			// No active search - create new profile
 			m.mode = ModeProfileCreate
@@ -333,10 +381,26 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			if m.searchIndex < 0 {
 				m.searchIndex = len(m.searchMatches) - 1
 			}
-			m.fileIndex = m.searchMatches[m.searchIndex]
-			m.adjustScrollOffset()
-			m.loadRequestsFromCurrentFile()
-			m.statusMsg = fmt.Sprintf("Match %d of %d", m.searchIndex+1, len(m.searchMatches))
+
+			if m.searchInResponseCtx {
+				// Navigate in response
+				m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[m.searchIndex]))
+				context := "text"
+				if isRegexPattern(m.searchQuery) {
+					context = "regex"
+				}
+				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
+			} else {
+				// Navigate in files
+				m.fileIndex = m.searchMatches[m.searchIndex]
+				m.adjustScrollOffset()
+				m.loadRequestsFromCurrentFile()
+				context := "text"
+				if isRegexPattern(m.searchQuery) {
+					context = "regex"
+				}
+				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
+			}
 		}
 	case "m":
 		m.mode = ModeDocumentation
@@ -376,6 +440,12 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.statusMsg = "No active search - press / to search"
 		}
+
+	case "ctrl+p":
+		// Open MRU (Most Recently Used) files list
+		m.mode = ModeMRU
+		m.mruIndex = 0
+		m.errorMsg = ""
 
 	// View configuration
 	case "C":
@@ -989,6 +1059,12 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	case "enter":
 		if len(m.historyEntries) > 0 && m.historyIndex < len(m.historyEntries) {
 			return m.loadHistoryEntry(m.historyIndex)
+		}
+
+	// Replay selected history entry (re-execute the request)
+	case "r":
+		if len(m.historyEntries) > 0 && m.historyIndex < len(m.historyEntries) {
+			return m.replayHistoryEntry(m.historyIndex)
 		}
 
 	// Page up/down - move cursor by page amount

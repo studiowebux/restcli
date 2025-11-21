@@ -11,6 +11,7 @@ type HttpRequest struct {
 	Body                string                 `json:"body,omitempty" yaml:"body,omitempty"`
 	Filter              string                 `json:"filter,omitempty" yaml:"filter,omitempty"` // JMESPath filter expression
 	Query               string                 `json:"query,omitempty" yaml:"query,omitempty"`   // JMESPath query or $(bash command)
+	ParseEscapes        bool                   `json:"parseEscapes,omitempty" yaml:"parseEscapes,omitempty"` // Parse escape sequences in response body
 	TLS                 *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty"`       // TLS/mTLS configuration
 	Documentation       *Documentation         `json:"documentation,omitempty" yaml:"documentation,omitempty"`
 	DocumentationLines  []string               `json:"-" yaml:"-"` // Raw documentation comment lines for lazy loading
@@ -71,6 +72,7 @@ type Session struct {
 	Variables      map[string]string `json:"variables,omitempty"`
 	ActiveProfile  string            `json:"activeProfile,omitempty"`
 	HistoryEnabled *bool             `json:"historyEnabled,omitempty"`
+	RecentFiles    []string          `json:"recentFiles,omitempty"` // Most recently used files (MRU)
 }
 
 // Profile represents a header/variable profile

@@ -65,8 +65,8 @@ func Run() error {
 	}
 
 	// Start TUI (pass pointer since Update uses pointer receiver)
-	// Note: Mouse is disabled by default in bubbletea
-	p := tea.NewProgram(&m, tea.WithAltScreen())
+	// Enable mouse cell motion to capture scroll events (which we'll discard to prevent terminal scrolling)
+	p := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -117,6 +118,11 @@ func (m *Model) executeRequest() tea.Cmd {
 			} else {
 				result.Body = filteredBody
 			}
+		}
+
+		// Parse escape sequences AFTER filter/query (as the final processing step)
+		if resolvedRequest.ParseEscapes {
+			result.Body = executor.ParseEscapeSequences(result.Body)
 		}
 
 		// Save to history
@@ -366,22 +372,66 @@ func (m *Model) copyToClipboard() tea.Cmd {
 	}
 }
 
-// performSearch performs file search - finds all matches
+// performSearch performs context-aware search (files or response based on focus)
 func (m *Model) performSearch() {
 	if m.searchQuery == "" {
+		wasSearchingResponse := m.searchInResponseCtx
 		m.searchMatches = nil
 		m.searchIndex = 0
+		m.searchInResponseCtx = false
+		// Clear highlighting from response if we were searching there
+		if wasSearchingResponse && m.currentResponse != nil {
+			m.updateResponseView()
+		}
 		return
 	}
 
-	query := strings.ToLower(m.searchQuery)
-	m.searchMatches = nil
+	// Determine context: searching in response or files
+	if m.focusedPanel == "response" && m.currentResponse != nil {
+		m.searchInResponse()
+	} else {
+		m.searchInFiles()
+	}
+}
 
-	// Find all matching files
-	for i, file := range m.files {
-		if strings.Contains(strings.ToLower(file.Name), query) {
-			m.searchMatches = append(m.searchMatches, i)
+// isRegexPattern detects if a pattern looks like regex
+func isRegexPattern(s string) bool {
+	regexChars := ".*+?[]{}()|^$\\"
+	for _, char := range regexChars {
+		if strings.ContainsRune(s, char) {
+			return true
 		}
+	}
+	return false
+}
+
+// searchInFiles searches in file names with optional regex support
+func (m *Model) searchInFiles() {
+	m.searchMatches = nil
+	m.searchInResponseCtx = false
+	m.errorMsg = "" // Clear any previous errors
+
+	// Auto-detect regex
+	useRegex := isRegexPattern(m.searchQuery)
+
+	if useRegex {
+		// Try regex search
+		pattern, err := regexp.Compile(m.searchQuery)
+		if err != nil {
+			// Fall back to substring search if regex is invalid
+			m.searchInFilesSubstring()
+			return
+		}
+
+		for i, file := range m.files {
+			if pattern.MatchString(file.Name) {
+				m.searchMatches = append(m.searchMatches, i)
+			}
+		}
+	} else {
+		// Simple substring search (case-insensitive)
+		m.searchInFilesSubstring()
+		return
 	}
 
 	if len(m.searchMatches) == 0 {
@@ -394,7 +444,117 @@ func (m *Model) performSearch() {
 	m.fileIndex = m.searchMatches[0]
 	m.adjustScrollOffset()
 	m.loadRequestsFromCurrentFile()
-	m.statusMsg = fmt.Sprintf("Match 1 of %d", len(m.searchMatches))
+
+	mode := "regex"
+	m.statusMsg = fmt.Sprintf("[Files] Match 1 of %d (%s)", len(m.searchMatches), mode)
+}
+
+// searchInFilesSubstring performs case-insensitive substring search
+func (m *Model) searchInFilesSubstring() {
+	query := strings.ToLower(m.searchQuery)
+
+	for i, file := range m.files {
+		if strings.Contains(strings.ToLower(file.Name), query) {
+			m.searchMatches = append(m.searchMatches, i)
+		}
+	}
+
+	if len(m.searchMatches) == 0 {
+		m.errorMsg = "No matching files found"
+		return
+	}
+
+	m.searchIndex = 0
+	m.fileIndex = m.searchMatches[0]
+	m.adjustScrollOffset()
+	m.loadRequestsFromCurrentFile()
+	m.statusMsg = fmt.Sprintf("[Files] Match 1 of %d (text)", len(m.searchMatches))
+}
+
+// searchInResponse searches in response body
+func (m *Model) searchInResponse() {
+	m.searchMatches = nil
+	m.searchInResponseCtx = true
+	m.errorMsg = "" // Clear any previous errors
+
+	// Get full response content (not just visible viewport)
+	content := m.responseContent
+	if content == "" {
+		m.errorMsg = "No response to search"
+		return
+	}
+	lines := strings.Split(content, "\n")
+
+	// Auto-detect regex
+	useRegex := isRegexPattern(m.searchQuery)
+
+	if useRegex {
+		// Try regex search
+		pattern, err := regexp.Compile(m.searchQuery)
+		if err != nil {
+			// Fall back to substring search if regex is invalid
+			m.searchInResponseSubstring(lines)
+			return
+		}
+
+		for lineNum, line := range lines {
+			// Strip ANSI codes for searching
+			cleanLine := stripANSI(line)
+			if pattern.MatchString(cleanLine) {
+				m.searchMatches = append(m.searchMatches, lineNum)
+			}
+		}
+
+		if len(m.searchMatches) == 0 {
+			m.errorMsg = "No matches found in response"
+			return
+		}
+
+		m.searchIndex = 0
+		m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[0]))
+		m.statusMsg = fmt.Sprintf("[Response] Match 1 of %d (regex)", len(m.searchMatches))
+		m.updateResponseView() // Re-render with highlighting
+	} else {
+		m.searchInResponseSubstring(lines)
+	}
+}
+
+// searchInResponseSubstring performs case-insensitive substring search in response
+func (m *Model) searchInResponseSubstring(lines []string) {
+	query := strings.ToLower(m.searchQuery)
+
+	for lineNum, line := range lines {
+		cleanLine := stripANSI(line)
+		if strings.Contains(strings.ToLower(cleanLine), query) {
+			m.searchMatches = append(m.searchMatches, lineNum)
+		}
+	}
+
+	if len(m.searchMatches) == 0 {
+		m.errorMsg = "No matches found in response"
+		return
+	}
+
+	m.searchIndex = 0
+	m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[0]))
+	m.statusMsg = fmt.Sprintf("[Response] Match 1 of %d (text)", len(m.searchMatches))
+	m.updateResponseView() // Re-render with highlighting
+}
+
+// centerLineInViewport calculates the Y offset to center a line in the viewport
+func (m *Model) centerLineInViewport(lineNum int) int {
+	// Center the line by setting offset to lineNum - half viewport height
+	offset := lineNum - (m.responseView.Height / 2)
+	if offset < 0 {
+		offset = 0
+	}
+	return offset
+}
+
+// stripANSI removes ANSI color codes from a string
+func stripANSI(s string) string {
+	ansiPattern := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return ansiPattern.ReplaceAllString(s, "")
 }
 
 // adjustScrollOffset adjusts scroll offset to keep selected file visible
@@ -479,6 +639,34 @@ func (m *Model) loadHistoryEntry(index int) tea.Cmd {
 	m.statusMsg = fmt.Sprintf("Loaded history entry from %s", entry.Timestamp[:19])
 
 	return nil
+}
+
+// replayHistoryEntry re-executes a request from history
+func (m *Model) replayHistoryEntry(index int) tea.Cmd {
+	if index < 0 || index >= len(m.historyEntries) {
+		return nil
+	}
+
+	entry := m.historyEntries[index]
+
+	// Convert history entry to HttpRequest
+	request := &types.HttpRequest{
+		Name:    entry.RequestName,
+		Method:  entry.Method,
+		URL:     entry.URL,
+		Headers: entry.Headers,
+		Body:    entry.Body,
+	}
+
+	// Set as current request
+	m.currentRequest = request
+
+	// Close history modal
+	m.mode = ModeNormal
+	m.statusMsg = fmt.Sprintf("Replaying request from %s", entry.Timestamp[:19])
+
+	// Execute the request
+	return m.executeRequest()
 }
 
 // startOAuthFlow starts the OAuth PKCE flow
@@ -597,4 +785,7 @@ func (m *Model) loadRequestsFromCurrentFile() {
 	} else {
 		m.currentRequest = nil
 	}
+
+	// Track in MRU list
+	_ = m.sessionMgr.AddRecentFile(filePath)
 }

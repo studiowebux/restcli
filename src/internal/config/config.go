@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -70,6 +71,15 @@ func Initialize() error {
 func GetWorkingDirectory(profileWorkdir string) (string, error) {
 	if profileWorkdir == "" {
 		return RequestsDir, nil
+	}
+
+	// Expand tilde to home directory
+	if strings.HasPrefix(profileWorkdir, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		profileWorkdir = filepath.Join(homeDir, profileWorkdir[2:])
 	}
 
 	// If it's an absolute path, use it directly

@@ -282,3 +282,42 @@ func (m *Manager) SetHistoryEnabled(enabled bool) error {
 	m.session.HistoryEnabled = &enabled
 	return m.SaveSession()
 }
+
+// AddRecentFile adds a file to the MRU (Most Recently Used) list
+// The file is added to the front of the list, and duplicates are removed
+// The list is limited to maxRecentFiles (20) entries
+func (m *Manager) AddRecentFile(filePath string) error {
+	const maxRecentFiles = 20
+
+	// Initialize if nil
+	if m.session.RecentFiles == nil {
+		m.session.RecentFiles = []string{}
+	}
+
+	// Remove duplicate if exists
+	newRecent := []string{}
+	for _, f := range m.session.RecentFiles {
+		if f != filePath {
+			newRecent = append(newRecent, f)
+		}
+	}
+
+	// Add to front
+	newRecent = append([]string{filePath}, newRecent...)
+
+	// Limit to maxRecentFiles
+	if len(newRecent) > maxRecentFiles {
+		newRecent = newRecent[:maxRecentFiles]
+	}
+
+	m.session.RecentFiles = newRecent
+	return m.SaveSession()
+}
+
+// GetRecentFiles returns the MRU file list
+func (m *Manager) GetRecentFiles() []string {
+	if m.session.RecentFiles == nil {
+		return []string{}
+	}
+	return m.session.RecentFiles
+}
