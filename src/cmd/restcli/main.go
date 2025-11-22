@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	version = "0.1.0"
+	version = "0.0.17"
 )
 
 func main() {
@@ -152,15 +152,15 @@ PowerShell:
 
 // Flags for root/run command
 var (
-	flagProfile    string
-	flagOutput     string
-	flagSave       string
-	flagBody       string
-	flagFull       bool
-	flagExtraVars  []string
-	flagEnvFile    string
-	flagFilter     string
-	flagQuery      string
+	flagProfile   string
+	flagOutput    string
+	flagSave      string
+	flagBody      string
+	flagFull      bool
+	flagExtraVars []string
+	flagEnvFile   string
+	flagFilter    string
+	flagQuery     string
 )
 
 // Flags for curl2http

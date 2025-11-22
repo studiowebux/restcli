@@ -2,8 +2,6 @@ module github.com/studiowebux/restcli
 
 go 1.24.0
 
-toolchain go1.24.10
-
 require (
 	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
