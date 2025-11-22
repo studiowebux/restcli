@@ -1,3 +1,7 @@
+---
+title: Quick Start
+---
+
 # Quick Start (CLI)
 
 ## First Request

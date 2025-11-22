@@ -1,3 +1,10 @@
+---
+title: Request Schema
+tags:
+  - reference
+---
+
+
 # Request Schema Reference
 
 Complete schema for request files (`.yaml`, `.json`, `.jsonc` formats).

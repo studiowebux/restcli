@@ -1,3 +1,10 @@
+---
+title: curl2http Converter
+description: Convert cURL commands to REST CLI request files.
+tags:
+  - converter
+---
+
 # curl2http Converter
 
 Convert cURL commands to REST CLI request files.

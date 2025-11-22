@@ -1,3 +1,10 @@
+---
+title: openapi2http Converter
+description: Convert OpenAPI/Swagger specifications to REST CLI request files.
+tags:
+  - converter
+---
+
 # openapi2http Converter
 
 Convert OpenAPI/Swagger specifications to REST CLI request files.

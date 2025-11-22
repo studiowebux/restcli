@@ -1,3 +1,8 @@
+---
+title: Examples
+---
+
+
 # Examples
 
 Practical examples for common use cases.

@@ -1,3 +1,9 @@
+---
+title: Authentication
+tags:
+  - guide
+---
+
 # Authentication
 
 REST CLI supports multiple authentication methods.

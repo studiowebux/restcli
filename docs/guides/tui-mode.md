@@ -1,3 +1,9 @@
+---
+title: TUI Mode
+tags:
+  - guide
+---
+
 # TUI Mode
 
 Keyboard-driven interface for testing HTTP endpoints.

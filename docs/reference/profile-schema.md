@@ -1,3 +1,9 @@
+---
+title: Profile Schema
+tags:
+  - reference
+---
+
 # Profile Schema Reference
 
 Complete schema for `.profiles.json`.

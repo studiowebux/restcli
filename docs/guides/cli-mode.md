@@ -1,3 +1,9 @@
+---
+title: CLI Mode
+tags:
+  - guide
+---
+
 # CLI Mode
 
 Execute requests from the command line.

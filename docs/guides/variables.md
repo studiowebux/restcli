@@ -1,3 +1,9 @@
+---
+title: Variables
+tags:
+  - guide
+---
+
 # Variables
 
 Variables enable dynamic request configuration.

@@ -1,3 +1,10 @@
+---
+title: Filtering & Querying
+tags:
+  - guide
+---
+
+
 # Filtering and Querying
 
 Transform response data using JMESPath expressions or bash/Linux commands.

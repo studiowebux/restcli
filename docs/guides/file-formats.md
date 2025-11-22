@@ -1,3 +1,9 @@
+---
+title: File Formats
+tags:
+  - guide
+---
+
 # File Formats
 
 REST CLI supports multiple request file formats.

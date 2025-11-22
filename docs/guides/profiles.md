@@ -1,3 +1,9 @@
+---
+title: Profiles
+tags:
+  - guide
+---
+
 # Profiles
 
 Profiles store persistent configuration for different environments or users.

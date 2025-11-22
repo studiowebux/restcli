@@ -1,3 +1,9 @@
+---
+title: Keyboard Shortcuts
+tags:
+  - reference
+---
+
 # Keyboard Shortcuts Reference
 
 Complete keyboard shortcuts for TUI mode.
