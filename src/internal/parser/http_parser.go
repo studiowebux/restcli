@@ -67,6 +67,11 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 				currentRequest.ParseEscapes = value == "true"
 				continue
 			}
+			if strings.HasPrefix(trimmed, "@streaming ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@streaming"))
+				currentRequest.Streaming = value == "true"
+				continue
+			}
 			// Check for @tls.* annotations
 			if strings.HasPrefix(trimmed, "@tls.") {
 				if currentRequest.TLS == nil {

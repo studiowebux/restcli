@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -23,6 +24,7 @@ const (
 	ModeVariableDelete
 	ModeVariableOptions
 	ModeVariableManage
+	ModeVariablePromptInteractive
 	ModeHeaderList
 	ModeHeaderAdd
 	ModeHeaderEdit
@@ -31,6 +33,7 @@ const (
 	ModeProfileCreate
 	ModeDocumentation
 	ModeHistory
+	ModeHistoryClearConfirm
 	ModeHelp
 	ModeInspect
 	ModeRename
@@ -72,6 +75,12 @@ type Model struct {
 	helpView              viewport.Model
 	modalView             viewport.Model // For scrollable modal content
 
+	// Streaming state
+	streamingActive       bool                  // True when streaming is in progress
+	streamedBody          string                // Accumulated streamed response body
+	streamChannel         chan streamChunkMsg   // Channel for receiving stream chunks
+	streamCancelFunc      context.CancelFunc    // Function to cancel the streaming request
+
 	// UI state
 	width        int
 	height       int
@@ -107,15 +116,16 @@ type Model struct {
 	profileNamePos int // Cursor position in profile name
 
 	// Profile edit state
-	profileEditField     int    // 0=name, 1=workdir, 2=editor, 3=output
-	profileEditName      string
-	profileEditWorkdir   string
-	profileEditEditor    string
-	profileEditOutput    string
-	profileEditNamePos   int
-	profileEditWorkdirPos int
-	profileEditEditorPos  int
-	profileEditOutputPos  int
+	profileEditField         int    // 0=name, 1=workdir, 2=editor, 3=output, 4=history
+	profileEditName          string
+	profileEditWorkdir       string
+	profileEditEditor        string
+	profileEditOutput        string
+	profileEditHistoryEnabled *bool  // nil=default, true/false=override
+	profileEditNamePos       int
+	profileEditWorkdirPos    int
+	profileEditEditorPos     int
+	profileEditOutputPos     int
 
 	// Documentation viewer state
 	docCollapsed      map[int]bool
@@ -167,6 +177,16 @@ type Model struct {
 	pinnedResponse *types.RequestResult // Response pinned for comparison
 	pinnedRequest  *types.HttpRequest   // Request info for pinned response
 	diffView       viewport.Model       // Viewport for diff display
+
+	// Interactive variable prompt state
+	interactiveVarNames  []string          // Queue of variables to prompt for
+	interactiveVarValues map[string]string // Collected values
+	interactiveVarInput  string            // Current input value
+	interactiveVarCursor int               // Cursor position in input
+
+	// Streaming state
+	isStreaming  bool   // True when actively streaming response
+	streamCancel func() // Function to cancel ongoing stream
 }
 
 // Init initializes the TUI
@@ -209,6 +229,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateResponseView()
 		// Auto-switch focus to response panel so user can immediately scroll
 		m.focusedPanel = "response"
+		// Clear interactive variable values for next execution
+		m.interactiveVarValues = nil
 		// Show shell errors modal if any
 		if len(msg.shellErrors) > 0 {
 			m.shellErrors = msg.shellErrors
@@ -216,6 +238,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = ModeShellErrors
 			m.updateShellErrorsView()
 		}
+
+	case streamChunkMsg:
+		// Accumulate streaming chunks
+		m.streamedBody += string(msg.chunk)
+
+		// Update the display with current streamed content
+		if m.currentResponse == nil {
+			m.currentResponse = &types.RequestResult{}
+		}
+		m.currentResponse.Body = m.streamedBody
+		m.statusMsg = "Streaming... (press 'q' to stop)"
+		m.updateResponseView()
+		m.focusedPanel = "response"
+
+		// Auto-scroll to bottom to show latest data
+		m.responseView.GotoBottom()
+
+		// If not done, wait for next chunk
+		if !msg.done {
+			return m, m.waitForStreamChunk()
+		}
+
+		// Stream complete
+		m.streamingActive = false
+		m.streamChannel = nil
+		m.streamCancelFunc = nil
+		m.statusMsg = "Stream completed"
 
 	case oauthSuccessMsg:
 		m.statusMsg = fmt.Sprintf("OAuth successful! Token stored (expires in %d seconds)", msg.expiresIn)
@@ -227,6 +276,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Loaded %d history entries", len(msg.entries))
 		}
 		m.updateHistoryView() // Update viewport content with loaded history
+
+	case promptInteractiveVarsMsg:
+		// Initialize interactive variable prompting
+		m.interactiveVarNames = msg.varNames
+		m.interactiveVarValues = make(map[string]string)
+		m.interactiveVarInput = ""
+		m.interactiveVarCursor = 0
+		m.mode = ModeVariablePromptInteractive
 
 	case errorMsg:
 		m.errorMsg = string(msg)
@@ -262,6 +319,8 @@ func (m Model) View() string {
 		return m.renderHelp()
 	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage, ModeVariableAlias:
 		return m.renderVariableEditor()
+	case ModeVariablePromptInteractive:
+		return m.renderInteractiveVariablePrompt()
 	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
 		return m.renderHeaderEditor()
 	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit:
@@ -270,6 +329,8 @@ func (m Model) View() string {
 		return m.renderDocumentation()
 	case ModeHistory:
 		return m.renderHistory()
+	case ModeHistoryClearConfirm:
+		return m.renderHistoryClearConfirmation()
 	case ModeInspect:
 		return m.renderInspect()
 	case ModeOAuthConfig:
@@ -316,6 +377,15 @@ type oauthSuccessMsg struct {
 
 type historyLoadedMsg struct {
 	entries []types.HistoryEntry
+}
+
+type promptInteractiveVarsMsg struct {
+	varNames []string
+}
+
+type streamChunkMsg struct {
+	chunk []byte
+	done  bool
 }
 
 type errorMsg string

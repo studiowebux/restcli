@@ -13,15 +13,32 @@ func (v *VariableValue) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &str); err == nil {
 		v.StringValue = &str
 		v.MultiValue = nil
+		v.Interactive = false
 		return nil
 	}
 
-	// Try to unmarshal as a MultiValueVariable
-	var mv MultiValueVariable
-	if err := json.Unmarshal(data, &mv); err == nil {
-		v.StringValue = nil
-		v.MultiValue = &mv
-		return nil
+	// Try to unmarshal as an object (could be MultiValueVariable or have Interactive field)
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		// Check for interactive flag
+		if interactive, ok := obj["interactive"].(bool); ok {
+			v.Interactive = interactive
+		}
+
+		// Check if it has multi-value options
+		if options, ok := obj["options"].([]interface{}); ok && len(options) > 0 {
+			var mv MultiValueVariable
+			if err := json.Unmarshal(data, &mv); err == nil {
+				v.StringValue = nil
+				v.MultiValue = &mv
+				return nil
+			}
+		} else if value, ok := obj["value"].(string); ok {
+			// Object with string value and interactive flag
+			v.StringValue = &value
+			v.MultiValue = nil
+			return nil
+		}
 	}
 
 	return errors.New("variable value must be either a string or a multi-value object")
@@ -29,6 +46,29 @@ func (v *VariableValue) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON implements custom JSON marshaling for VariableValue
 func (v VariableValue) MarshalJSON() ([]byte, error) {
+	// If interactive flag is set, wrap in object
+	if v.Interactive {
+		obj := make(map[string]interface{})
+		obj["interactive"] = true
+		if v.StringValue != nil {
+			obj["value"] = *v.StringValue
+		} else if v.MultiValue != nil {
+			// Merge multi-value fields into object
+			obj["options"] = v.MultiValue.Options
+			obj["active"] = v.MultiValue.Active
+			if v.MultiValue.Description != "" {
+				obj["description"] = v.MultiValue.Description
+			}
+			if v.MultiValue.Aliases != nil && len(v.MultiValue.Aliases) > 0 {
+				obj["aliases"] = v.MultiValue.Aliases
+			}
+		} else {
+			obj["value"] = ""
+		}
+		return json.Marshal(obj)
+	}
+
+	// Non-interactive: use simple representation
 	if v.StringValue != nil {
 		return json.Marshal(*v.StringValue)
 	}
@@ -45,15 +85,32 @@ func (v *VariableValue) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&str); err == nil {
 		v.StringValue = &str
 		v.MultiValue = nil
+		v.Interactive = false
 		return nil
 	}
 
-	// Try to unmarshal as a MultiValueVariable
-	var mv MultiValueVariable
-	if err := unmarshal(&mv); err == nil {
-		v.StringValue = nil
-		v.MultiValue = &mv
-		return nil
+	// Try to unmarshal as an object
+	var obj map[string]interface{}
+	if err := unmarshal(&obj); err == nil {
+		// Check for interactive flag
+		if interactive, ok := obj["interactive"].(bool); ok {
+			v.Interactive = interactive
+		}
+
+		// Check if it has multi-value options
+		if options, ok := obj["options"].([]interface{}); ok && len(options) > 0 {
+			var mv MultiValueVariable
+			if err := unmarshal(&mv); err == nil {
+				v.StringValue = nil
+				v.MultiValue = &mv
+				return nil
+			}
+		} else if value, ok := obj["value"].(string); ok {
+			// Object with string value and interactive flag
+			v.StringValue = &value
+			v.MultiValue = nil
+			return nil
+		}
 	}
 
 	return errors.New("variable value must be either a string or a multi-value object")
@@ -61,6 +118,29 @@ func (v *VariableValue) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // MarshalYAML implements custom YAML marshaling for VariableValue
 func (v VariableValue) MarshalYAML() (interface{}, error) {
+	// If interactive flag is set, wrap in object
+	if v.Interactive {
+		obj := make(map[string]interface{})
+		obj["interactive"] = true
+		if v.StringValue != nil {
+			obj["value"] = *v.StringValue
+		} else if v.MultiValue != nil {
+			// Merge multi-value fields into object
+			obj["options"] = v.MultiValue.Options
+			obj["active"] = v.MultiValue.Active
+			if v.MultiValue.Description != "" {
+				obj["description"] = v.MultiValue.Description
+			}
+			if v.MultiValue.Aliases != nil && len(v.MultiValue.Aliases) > 0 {
+				obj["aliases"] = v.MultiValue.Aliases
+			}
+		} else {
+			obj["value"] = ""
+		}
+		return obj, nil
+	}
+
+	// Non-interactive: use simple representation
 	if v.StringValue != nil {
 		return *v.StringValue, nil
 	}

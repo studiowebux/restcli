@@ -13,6 +13,7 @@
   - [Profiles](guides/profiles.md)
   - [Variables](guides/variables.md)
   - [Filtering](guides/filtering.md)
+  - [Streaming](guides/streaming.md)
   - [CLI](guides/cli-mode.md)
   - [TUI](guides/tui-mode.md)
 - Reference

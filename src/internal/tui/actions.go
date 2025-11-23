@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -51,82 +52,111 @@ func (m *Model) navigateFiles(delta int) {
 
 // executeRequest executes the current request
 func (m *Model) executeRequest() tea.Cmd {
-	return func() tea.Msg {
-		if m.currentRequest == nil {
+	if m.currentRequest == nil {
+		return func() tea.Msg {
 			return errorMsg("No request selected")
 		}
+	}
 
-		profile := m.sessionMgr.GetActiveProfile()
+	profile := m.sessionMgr.GetActiveProfile()
 
-		// Create a copy of the request to avoid mutation
-		requestCopy := *m.currentRequest
-		requestCopy.Headers = make(map[string]string)
-
-		// Merge headers into the copy
-		for k, v := range profile.Headers {
-			requestCopy.Headers[k] = v
+	// Check for interactive variables that need prompting (only if we haven't collected values yet)
+	if m.interactiveVarValues == nil {
+		interactiveVars := m.getInteractiveVariables()
+		if len(interactiveVars) > 0 {
+			// Trigger interactive prompt mode
+			return func() tea.Msg {
+				return promptInteractiveVarsMsg{varNames: interactiveVars}
+			}
 		}
-		for k, v := range m.currentRequest.Headers {
-			requestCopy.Headers[k] = v
-		}
+	}
 
-		// Resolve variables (load system env vars for {{env.VAR_NAME}} support)
-		resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil, parser.LoadSystemEnv())
-		resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
-		if err != nil {
+	// Create a copy of the request to avoid mutation
+	requestCopy := *m.currentRequest
+	requestCopy.Headers = make(map[string]string)
+
+	// Merge headers into the copy
+	for k, v := range profile.Headers {
+		requestCopy.Headers[k] = v
+	}
+	for k, v := range m.currentRequest.Headers {
+		requestCopy.Headers[k] = v
+	}
+
+	// Resolve variables (load system env vars for {{env.VAR_NAME}} support)
+	// Include any interactive variable values collected
+	cliVars := m.interactiveVarValues
+	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, cliVars, parser.LoadSystemEnv())
+	resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
+	if err != nil {
+		return func() tea.Msg {
 			return errorMsg(fmt.Sprintf("Failed to resolve variables: %v", err))
 		}
+	}
 
-		// Get warnings for unresolved variables (short, for status bar)
-		warnings := resolver.GetUnresolvedVariables()
-		shellErrs := resolver.GetShellErrors()
+	// Get warnings for unresolved variables (short, for status bar)
+	warnings := resolver.GetUnresolvedVariables()
+	shellErrs := resolver.GetShellErrors()
 
-		// Merge TLS config: request-level overrides profile-level
-		var tlsConfig *types.TLSConfig
-		if profile.TLS != nil {
-			tlsConfig = profile.TLS
-		}
-		if m.currentRequest.TLS != nil {
-			tlsConfig = m.currentRequest.TLS
-		}
+	// Merge TLS config: request-level overrides profile-level
+	var tlsConfig *types.TLSConfig
+	if profile.TLS != nil {
+		tlsConfig = profile.TLS
+	}
+	if m.currentRequest.TLS != nil {
+		tlsConfig = m.currentRequest.TLS
+	}
 
-		// Execute request
+	// Check if this is a streaming request
+	if resolvedRequest.Streaming {
+		m.statusMsg = fmt.Sprintf("Starting streaming request: %s", resolvedRequest.Name)
+		return m.executeStreamingRequest(resolvedRequest, tlsConfig, warnings, shellErrs, profile)
+	}
+
+	// Regular non-streaming execution
+	m.statusMsg = fmt.Sprintf("Executing request: %s", resolvedRequest.Name)
+	return m.executeRegularRequest(resolvedRequest, tlsConfig, warnings, shellErrs, profile)
+}
+
+// executeRegularRequest executes a standard (non-streaming) HTTP request
+func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsConfig *types.TLSConfig, warnings, shellErrs []string, profile *types.Profile) tea.Cmd {
+	return func() tea.Msg {
+		// Execute request normally
 		result, err := executor.Execute(resolvedRequest, tlsConfig)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to execute request: %v", err))
 		}
 
-		// Apply filter and query to response body
-		// Priority: request-level > profile defaults
+		// Apply filter and query
 		filterExpr := resolvedRequest.Filter
 		if filterExpr == "" {
 			filterExpr = profile.DefaultFilter
 		}
-
 		queryExpr := resolvedRequest.Query
 		if queryExpr == "" {
 			queryExpr = profile.DefaultQuery
 		}
 
-		// Apply filter/query if specified
 		if filterExpr != "" || queryExpr != "" {
 			filteredBody, err := filter.Apply(result.Body, filterExpr, queryExpr)
 			if err != nil {
-				// Don't fail the request, but we could add to warnings
-				// For now, just log it (could be improved to show in UI)
 				_ = err
 			} else {
 				result.Body = filteredBody
 			}
 		}
 
-		// Parse escape sequences AFTER filter/query (as the final processing step)
+		// Parse escape sequences
 		if resolvedRequest.ParseEscapes {
 			result.Body = executor.ParseEscapeSequences(result.Body)
 		}
 
 		// Save to history
-		if m.sessionMgr.IsHistoryEnabled() && len(m.files) > 0 {
+		shouldSaveHistory := m.sessionMgr.IsHistoryEnabled()
+		if profile != nil && profile.HistoryEnabled != nil {
+			shouldSaveHistory = *profile.HistoryEnabled
+		}
+		if shouldSaveHistory && len(m.files) > 0 {
 			filePath := m.files[m.fileIndex].Path
 			history.Save(filePath, resolvedRequest, result)
 		}
@@ -142,6 +172,54 @@ func (m *Model) executeRequest() tea.Cmd {
 		}
 
 		return requestExecutedMsg{result: result, warnings: warnings, shellErrors: shellErrs}
+	}
+}
+
+// executeStreamingRequest starts a streaming request in a goroutine with real-time updates
+func (m *Model) executeStreamingRequest(resolvedRequest *types.HttpRequest, tlsConfig *types.TLSConfig, warnings, shellErrs []string, profile *types.Profile) tea.Cmd {
+	// Create a channel for streaming chunks
+	m.streamChannel = make(chan streamChunkMsg, 100)
+	m.streamingActive = true
+	m.streamedBody = ""
+
+	// Create a cancellable context for the request
+	ctx, cancel := context.WithCancel(context.Background())
+	m.streamCancelFunc = cancel
+
+	// Start the request in a goroutine
+	go func() {
+		chunkChan := m.streamChannel
+		defer cancel()
+		defer close(chunkChan)
+
+		// Execute with streaming callback - sends chunks as they arrive
+		_, err := executor.ExecuteWithStreaming(ctx, resolvedRequest, tlsConfig, func(chunk []byte, done bool) {
+			chunkChan <- streamChunkMsg{chunk: chunk, done: done}
+		})
+
+		if err != nil {
+			chunkChan <- streamChunkMsg{chunk: []byte(fmt.Sprintf("Error: %v", err)), done: true}
+			return
+		}
+
+		// Streaming complete - result is accumulated in streamedBody by the Update handler
+	}()
+
+	// Return a command that waits for the first chunk
+	return m.waitForStreamChunk()
+}
+
+// waitForStreamChunk returns a Cmd that waits for the next chunk from the stream channel
+func (m *Model) waitForStreamChunk() tea.Cmd {
+	return func() tea.Msg {
+		if m.streamChannel == nil {
+			return errorMsg("No active stream")
+		}
+		msg, ok := <-m.streamChannel
+		if !ok {
+			return errorMsg("Stream closed unexpectedly")
+		}
+		return msg
 	}
 }
 
@@ -788,4 +866,39 @@ func (m *Model) loadRequestsFromCurrentFile() {
 
 	// Track in MRU list
 	_ = m.sessionMgr.AddRecentFile(filePath)
+}
+
+// getInteractiveVariables returns a list of interactive variables from the active profile
+func (m *Model) getInteractiveVariables() []string {
+	profile := m.sessionMgr.GetActiveProfile()
+	if profile == nil {
+		return nil
+	}
+
+	var interactiveVars []string
+	for name, value := range profile.Variables {
+		if value.Interactive {
+			interactiveVars = append(interactiveVars, name)
+		}
+	}
+	return interactiveVars
+}
+
+// executeRequestWithInteractiveVars is called after interactive variables are collected
+func (m *Model) executeRequestWithInteractiveVars() tea.Cmd {
+	// Simply call executeRequest again, which will now have the values
+	return m.executeRequest()
+}
+
+// renderHistoryClearConfirmation renders the confirmation modal for clearing all history
+func (m *Model) renderHistoryClearConfirmation() string {
+	count := len(m.historyEntries)
+	content := "⚠️  WARNING\n\n"
+	content += "This will permanently delete ALL history entries.\n\n"
+	content += fmt.Sprintf("Total entries to delete: %d\n\n", count)
+	content += "This action cannot be undone!\n\n"
+	content += "Are you sure you want to continue?"
+
+	footer := "[y]es [n]o/ESC"
+	return m.renderModalWithFooter("Clear All History", content, footer, 60, 14)
 }

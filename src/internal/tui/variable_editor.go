@@ -47,6 +47,9 @@ func (m *Model) renderVariableEditor() string {
 				if v.value.IsMultiValue() {
 					line += " [multi]"
 				}
+				if v.value.Interactive {
+					line += " [interactive]"
+				}
 				if i == m.varEditIndex {
 					line = styleSelected.Render(line)
 				}
@@ -63,7 +66,7 @@ func (m *Model) renderVariableEditor() string {
 			}
 		}
 
-		footer = "[a]dd [e]dit [d]elete [o]ptions [m]anage [ESC]"
+		footer = "[a]dd [e]dit [d]elete [o]ptions [m]anage [i]nteractive [ESC]"
 
 	case ModeVariableAdd:
 		content.WriteString("Add Variable\n\n")
@@ -338,6 +341,21 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 			m.varEditCursor = 0
 			m.varEditNamePos = 0
 			m.varEditValuePos = 0
+
+		case "i":
+			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
+				name := sortedNames[m.varEditIndex]
+				varValue := profile.Variables[name]
+				// Toggle interactive flag
+				varValue.Interactive = !varValue.Interactive
+				profile.Variables[name] = varValue
+				m.sessionMgr.SaveProfiles()
+				if varValue.Interactive {
+					m.statusMsg = fmt.Sprintf("Variable '%s' is now interactive", name)
+				} else {
+					m.statusMsg = fmt.Sprintf("Variable '%s' is no longer interactive", name)
+				}
+			}
 		}
 
 	case ModeVariableAdd, ModeVariableEdit:

@@ -1,0 +1,2 @@
+### Get Stream
+GET http://localhost:8000/stream

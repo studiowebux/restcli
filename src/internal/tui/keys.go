@@ -6,6 +6,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/history"
 )
 
 // handleKeyPress routes key presses based on current mode
@@ -14,6 +15,14 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
 		return tea.Quit
+	case "q":
+		// If streaming is active, stop it
+		if m.streamingActive && m.streamCancelFunc != nil {
+			m.streamCancelFunc()
+			m.streamingActive = false
+			m.statusMsg = "Stream stopped by user"
+			return nil
+		}
 	}
 
 	// Mode-specific handling
@@ -26,6 +35,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleGotoKeys(msg)
 	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage, ModeVariableAlias:
 		return m.handleVariableEditorKeys(msg)
+	case ModeVariablePromptInteractive:
+		return m.handleInteractiveVariablePromptKeys(msg)
 	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
 		return m.handleHeaderEditorKeys(msg)
 	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit:
@@ -34,6 +45,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleDocumentationKeys(msg)
 	case ModeHistory:
 		return m.handleHistoryKeys(msg)
+	case ModeHistoryClearConfirm:
+		return m.handleHistoryClearConfirmKeys(msg)
 	case ModeHelp:
 		return m.handleHelpKeys(msg)
 	case ModeInspect:
@@ -1067,6 +1080,10 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 			return m.replayHistoryEntry(m.historyIndex)
 		}
 
+	// Clear all history with confirmation
+	case "C":
+		m.mode = ModeHistoryClearConfirm
+
 	// Page up/down - move cursor by page amount
 	case "pgup":
 		pageSize := m.modalView.Height
@@ -1177,6 +1194,29 @@ func (m *Model) handleDeleteKeys(msg tea.KeyMsg) tea.Cmd {
 	case "y", "Y":
 		// Perform delete
 		return m.deleteFile()
+	}
+	return nil
+}
+
+// handleHistoryClearConfirmKeys handles keys in history clear confirmation mode
+func (m *Model) handleHistoryClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "n", "N":
+		m.mode = ModeHistory
+		m.statusMsg = "Clear history cancelled"
+
+	case "y", "Y":
+		// Clear all history
+		if err := history.Clear(); err != nil {
+			m.errorMsg = fmt.Sprintf("Failed to clear history: %v", err)
+			m.mode = ModeHistory
+		} else {
+			m.historyEntries = nil
+			m.historyIndex = 0
+			m.mode = ModeHistory
+			m.statusMsg = "All history cleared"
+			m.updateHistoryView()
+		}
 	}
 	return nil
 }

@@ -248,6 +248,31 @@ func Run(opts RunOptions) error {
 				cliVars[varName] = value
 			}
 		}
+
+		// Check for interactive variables that always need prompting
+		for varName, varValue := range profileVars {
+			// Skip if already provided via -e flag
+			if _, ok := cliVars[varName]; ok {
+				continue
+			}
+
+			// If variable is marked as interactive, always prompt
+			if varValue.Interactive {
+				if stdinPiped {
+					return fmt.Errorf("interactive variable '%s' requires input. Use -e %s=<value>", varName, varName)
+				}
+				if !isInteractive() {
+					return fmt.Errorf("interactive variable '%s' requires input (non-interactive mode). Use -e %s=<value>", varName, varName)
+				}
+
+				// Prompt for the value
+				value, err := promptForVariable(varName)
+				if err != nil {
+					return fmt.Errorf("failed to read input for interactive variable '%s': %w", varName, err)
+				}
+				cliVars[varName] = value
+			}
+		}
 	}
 
 	// Resolve variables (CLI vars have highest priority)
@@ -284,8 +309,16 @@ func Run(opts RunOptions) error {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
-	// Save to history if enabled
-	if mgr.IsHistoryEnabled() {
+	// Save to history if enabled (check both global and profile settings)
+	shouldSaveHistory := mgr.IsHistoryEnabled()
+	if useProfile {
+		profile := mgr.GetActiveProfile()
+		if profile != nil && profile.HistoryEnabled != nil {
+			// Profile setting overrides global
+			shouldSaveHistory = *profile.HistoryEnabled
+		}
+	}
+	if shouldSaveHistory {
 		if err := history.Save(filePath, resolvedRequest, result); err != nil {
 			// Don't fail if history save fails, just log
 			fmt.Fprintf(os.Stderr, "Warning: failed to save history: %v\n", err)

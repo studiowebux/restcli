@@ -1,7 +1,9 @@
 package executor
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -38,7 +40,8 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.Request
 	}
 
 	// Build HTTP client with optional TLS configuration
-	client, err := buildHTTPClient(tlsConfig)
+	// Use standard 30 second timeout for non-streaming requests
+	client, err := buildHTTPClient(tlsConfig, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure HTTP client: %w", err)
 	}
@@ -89,8 +92,156 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.Request
 	return result, nil
 }
 
+// ExecuteWithStreaming performs an HTTP request with streaming support
+// Auto-detects streaming based on Content-Type and Transfer-Encoding headers
+// Calls streamCallback for each chunk received
+func ExecuteWithStreaming(ctx context.Context, req *types.HttpRequest, tlsConfig *types.TLSConfig, streamCallback types.StreamCallback) (*types.RequestResult, error) {
+	startTime := time.Now()
+
+	// Create HTTP request
+	var bodyReader io.Reader
+	requestSize := 0
+	if req.Body != "" {
+		bodyReader = bytes.NewBufferString(req.Body)
+		requestSize = len(req.Body)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	for key, value := range req.Headers {
+		httpReq.Header.Set(key, value)
+	}
+
+	// Build HTTP client with optional TLS configuration
+	// Use no timeout for streaming requests (timeout is managed by context)
+	client, err := buildHTTPClient(tlsConfig, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure HTTP client: %w", err)
+	}
+
+	resp, err := client.Do(httpReq)
+	duration := time.Since(startTime).Milliseconds()
+
+	if err != nil {
+		return &types.RequestResult{
+			Error:       err.Error(),
+			Duration:    duration,
+			RequestSize: requestSize,
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	// Build response headers map
+	headers := make(map[string]string)
+	for key, values := range resp.Header {
+		headers[key] = strings.Join(values, ", ")
+	}
+
+	// Detect if response is streaming
+	contentType := resp.Header.Get("Content-Type")
+	transferEncoding := resp.Header.Get("Transfer-Encoding")
+	isStreaming := strings.Contains(contentType, "text/event-stream") ||
+		strings.Contains(contentType, "application/stream+json") ||
+		strings.Contains(contentType, "application/x-ndjson") ||
+		strings.Contains(contentType, "application/jsonlines") ||
+		strings.Contains(transferEncoding, "chunked")
+
+	var bodyBytes []byte
+	var readErr error
+
+	if isStreaming {
+		// Stream the response (works with or without callback)
+		bodyBytes, readErr = streamResponse(ctx, resp.Body, streamCallback)
+	} else {
+		// Non-streaming: read all at once
+		bodyBytes, readErr = io.ReadAll(resp.Body)
+	}
+
+	if readErr != nil {
+		// Check if cancelled
+		if ctx.Err() == context.Canceled {
+			return &types.RequestResult{
+				Status:      resp.StatusCode,
+				StatusText:  resp.Status,
+				Headers:     headers,
+				Body:        string(bodyBytes), // Partial body
+				Error:       "Request cancelled",
+				Duration:    time.Since(startTime).Milliseconds(),
+				RequestSize: requestSize,
+				ResponseSize: len(bodyBytes),
+			}, nil
+		}
+		return &types.RequestResult{
+			Status:      resp.StatusCode,
+			StatusText:  resp.Status,
+			Headers:     headers,
+			Error:       fmt.Sprintf("failed to read response body: %v", readErr),
+			Duration:    time.Since(startTime).Milliseconds(),
+			RequestSize: requestSize,
+		}, nil
+	}
+
+	result := &types.RequestResult{
+		Status:       resp.StatusCode,
+		StatusText:   resp.Status,
+		Headers:      headers,
+		Body:         string(bodyBytes),
+		Duration:     time.Since(startTime).Milliseconds(),
+		RequestSize:  requestSize,
+		ResponseSize: len(bodyBytes),
+	}
+
+	return result, nil
+}
+
+// streamResponse reads the response body in chunks and calls the callback for each chunk
+// callback can be nil, in which case chunks are just accumulated
+func streamResponse(ctx context.Context, body io.Reader, callback types.StreamCallback) ([]byte, error) {
+	var fullBody bytes.Buffer
+	reader := bufio.NewReader(body)
+	buffer := make([]byte, 4096) // 4KB chunks
+
+	for {
+		// Check for cancellation
+		select {
+		case <-ctx.Done():
+			if callback != nil {
+				callback(nil, true) // Signal done with cancellation
+			}
+			return fullBody.Bytes(), context.Canceled
+		default:
+		}
+
+		n, err := reader.Read(buffer)
+		if n > 0 {
+			chunk := buffer[:n]
+			fullBody.Write(chunk)
+			if callback != nil {
+				callback(chunk, false)
+			}
+		}
+
+		if err == io.EOF {
+			if callback != nil {
+				callback(nil, true) // Signal done
+			}
+			break
+		}
+		if err != nil {
+			return fullBody.Bytes(), err
+		}
+	}
+
+	return fullBody.Bytes(), nil
+}
+
 // buildHTTPClient creates an HTTP client with optional TLS/mTLS configuration
-func buildHTTPClient(tlsConfig *types.TLSConfig) (*http.Client, error) {
+// timeout parameter: 0 = no timeout, > 0 = specific timeout
+func buildHTTPClient(tlsConfig *types.TLSConfig, timeout time.Duration) (*http.Client, error) {
 	transport := &http.Transport{}
 
 	if tlsConfig != nil {
@@ -124,7 +275,7 @@ func buildHTTPClient(tlsConfig *types.TLSConfig) (*http.Client, error) {
 	}
 
 	return &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   timeout,
 		Transport: transport,
 	}, nil
 }

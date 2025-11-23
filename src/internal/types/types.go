@@ -12,6 +12,7 @@ type HttpRequest struct {
 	Filter              string                 `json:"filter,omitempty" yaml:"filter,omitempty"` // JMESPath filter expression
 	Query               string                 `json:"query,omitempty" yaml:"query,omitempty"`   // JMESPath query or $(bash command)
 	ParseEscapes        bool                   `json:"parseEscapes,omitempty" yaml:"parseEscapes,omitempty"` // Parse escape sequences in response body
+	Streaming           bool                   `json:"streaming,omitempty" yaml:"streaming,omitempty"` // Enable real-time streaming display (for SSE, infinite streams)
 	TLS                 *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty"`       // TLS/mTLS configuration
 	Documentation       *Documentation         `json:"documentation,omitempty" yaml:"documentation,omitempty"`
 	DocumentationLines  []string               `json:"-" yaml:"-"` // Raw documentation comment lines for lazy loading
@@ -87,6 +88,7 @@ type Profile struct {
 	Output        string                    `json:"output,omitempty"`        // json, yaml, text
 	DefaultFilter string                    `json:"defaultFilter,omitempty"` // Global JMESPath filter for all responses
 	DefaultQuery  string                    `json:"defaultQuery,omitempty"`  // Global JMESPath query for all responses
+	HistoryEnabled *bool                    `json:"historyEnabled,omitempty"` // Override global history setting (nil = use global)
 }
 
 // VariableValue can be a simple string or a multi-value variable
@@ -96,6 +98,9 @@ type VariableValue struct {
 
 	// Multi-value variable
 	MultiValue *MultiValueVariable
+
+	// Interactive flag - when true, always prompts for value during execution
+	Interactive bool
 }
 
 // MultiValueVariable represents a variable with multiple options
@@ -139,6 +144,10 @@ type TLSConfig struct {
 	// Skip server certificate verification (insecure, for testing only)
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty" yaml:"insecureSkipVerify,omitempty"`
 }
+
+// StreamCallback is called during streaming responses with each chunk
+// done indicates if this is the final chunk
+type StreamCallback func(chunk []byte, done bool)
 
 // RequestResult contains the HTTP response data
 type RequestResult struct {

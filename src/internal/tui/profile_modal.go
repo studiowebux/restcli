@@ -60,6 +60,7 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 			m.profileEditWorkdir = profile.Workdir
 			m.profileEditEditor = profile.Editor
 			m.profileEditOutput = profile.Output
+			m.profileEditHistoryEnabled = profile.HistoryEnabled
 			m.profileEditNamePos = len(profile.Name)
 			m.profileEditWorkdirPos = len(profile.Workdir)
 			m.profileEditEditorPos = len(profile.Editor)
@@ -125,13 +126,30 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "tab":
 		// Move to next field
-		m.profileEditField = (m.profileEditField + 1) % 4
+		m.profileEditField = (m.profileEditField + 1) % 5
 
 	case "shift+tab":
 		// Move to previous field
 		m.profileEditField--
 		if m.profileEditField < 0 {
-			m.profileEditField = 3
+			m.profileEditField = 4
+		}
+
+	case " ":
+		// Toggle history setting (only on history field)
+		if m.profileEditField == 4 {
+			if m.profileEditHistoryEnabled == nil {
+				// nil -> true
+				enabled := true
+				m.profileEditHistoryEnabled = &enabled
+			} else if *m.profileEditHistoryEnabled {
+				// true -> false
+				disabled := false
+				m.profileEditHistoryEnabled = &disabled
+			} else {
+				// false -> nil (default)
+				m.profileEditHistoryEnabled = nil
+			}
 		}
 
 	case "enter":
@@ -145,6 +163,7 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 			profile.Workdir = m.profileEditWorkdir
 			profile.Editor = m.profileEditEditor
 			profile.Output = m.profileEditOutput
+			profile.HistoryEnabled = m.profileEditHistoryEnabled
 
 			m.sessionMgr.SaveProfiles()
 
@@ -330,9 +349,27 @@ func (m *Model) renderProfileModal() string {
 			content.WriteString(outputLabel + truncateField(m.profileEditOutput, fieldWidth) + "\n")
 		}
 
+		// History field (toggle)
+		historyLabel := "History: "
+		historyValue := "default"
+		if m.profileEditHistoryEnabled != nil {
+			if *m.profileEditHistoryEnabled {
+				historyValue = "enabled"
+			} else {
+				historyValue = "disabled"
+			}
+		}
+		if m.profileEditField == 4 {
+			historyLabel = styleSelected.Render(historyLabel)
+			content.WriteString(historyLabel + styleSelected.Render(historyValue) + " [SPACE to toggle]\n")
+		} else {
+			content.WriteString(historyLabel + historyValue + "\n")
+		}
+
 		content.WriteString("\nOutput: json, yaml, or text")
-		content.WriteString("\n\n[TAB] next [Enter] save [ESC] cancel")
-		return m.renderModal("Profile", content.String(), 70, 18)
+		content.WriteString("\nHistory: default (uses global), enabled, or disabled")
+		content.WriteString("\n\n[TAB] next [SPACE] toggle [Enter] save [ESC] cancel")
+		return m.renderModal("Profile", content.String(), 70, 20)
 
 	} else {
 		content.WriteString("Create Profile\n\n")

@@ -125,6 +125,92 @@ Only use trusted commands.
 
 Validate commands in profiles before committing to repositories.
 
+## Interactive Variables
+
+Variables that always prompt for input at execution time, useful for dynamic values like LLM prompts, user inputs, or secrets.
+
+### Marking Variables as Interactive
+
+In TUI mode, press `v` to open the variable editor, select a variable, and press `i` to toggle interactive mode.
+
+Interactive variables are marked with `[interactive]` in the variable list.
+
+### Behavior
+
+**TUI Mode:**
+- Modal prompts appear automatically before request execution
+- Shows variable name and default value (if any)
+- Enter value and press Enter to continue
+- ESC to cancel execution
+
+**CLI Mode:**
+- Always prompts for interactive variables (unless provided via `-e` flag)
+- Cannot run in non-interactive mode without explicit values
+- Bypassed by providing value: `restcli -e promptVar=value request.http`
+
+### Example
+
+Profile variable marked as interactive:
+
+```json
+{
+  "name": "LLM API",
+  "variables": {
+    "userPrompt": {
+      "value": "Default question...",
+      "interactive": true
+    },
+    "apiKey": {
+      "value": "sk-...",
+      "interactive": true
+    }
+  }
+}
+```
+
+Request:
+
+```text
+POST https://api.openai.com/v1/chat/completions
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{
+  "model": "gpt-4",
+  "messages": [{"role": "user", "content": "{{userPrompt}}"}]
+}
+```
+
+On execution:
+1. Prompts for `userPrompt` value
+2. Prompts for `apiKey` value
+3. Executes request with entered values
+
+Values are stored in session (ephemeral) for the current execution only.
+
+### Use Cases
+
+- **LLM prompts:** Change query text each time without editing files
+- **Secrets:** Prompt for API keys/tokens instead of storing in profiles
+- **User input:** Dynamic form data, search terms, IDs
+- **One-time values:** Verification codes, session tokens
+
+### Combined with Multi-Value
+
+Interactive variables can also be multi-value:
+
+```json
+{
+  "llmModel": {
+    "options": ["gpt-4", "gpt-3.5-turbo", "claude-3"],
+    "active": 0,
+    "interactive": true
+  }
+}
+```
+
+This prompts for selection every time, even though there's a default.
+
 ## Multi-Value Variables
 
 Variables with multiple options and aliases.
