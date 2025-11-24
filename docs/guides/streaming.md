@@ -8,16 +8,6 @@ tags:
 
 REST CLI automatically detects and handles streaming HTTP responses.
 
-## Auto-Detection
-
-Streaming is detected based on response headers:
-
-- `Content-Type: text/event-stream` (Server-Sent Events)
-- `Content-Type: application/stream+json` (JSON streaming)
-- `Transfer-Encoding: chunked` (Chunked transfer encoding)
-
-No configuration required - it just works!
-
 ## Supported Streaming Types
 
 ### Server-Sent Events (SSE)
@@ -80,6 +70,7 @@ Response arrives as progressive chunks.
 ### TUI Mode
 
 **Real-Time Streaming:**
+
 - **Progressive display** - data appears in real-time as it arrives
 - **Auto-scroll** - automatically scrolls to show latest data
 - **Status indicator** - shows "Streaming..." with stop instructions
@@ -89,6 +80,7 @@ Response arrives as progressive chunks.
 - Works with all filtering and parsing features
 
 **How it works:**
+
 1. Execute a streaming request (SSE, chunked transfer, etc.)
 2. Data appears on screen immediately as chunks arrive
 3. Viewport auto-scrolls to show the latest content
@@ -97,15 +89,25 @@ Response arrives as progressive chunks.
 
 ### CLI Mode
 
-**Current Behavior:**
-- Waits for complete response
-- Auto-detection ensures proper handling
-- Full response printed when done
+**Real-Time Streaming:**
+
+- Same auto-detection as TUI (SSE, chunked transfer, JSON streaming)
+- Progressive output to stdout as chunks arrive
+- Press **Ctrl+C** to cancel stream at any time
+- Works with `@streaming true` directive
+- Output can be piped: `restcli run stream.http | jq`
+- Clean cancellation with "Stream cancelled by user" message
 
 **Output:**
+
 ```bash
-restcli stream-events.http
-# Waits for stream to complete, then shows full response
+restcli run stream-events.http
+data: {"event": "message", "text": "Hello"}
+
+data: {"event": "message", "text": "World"}
+
+^C
+Stream cancelled by user
 ```
 
 ## Enabling Streaming
@@ -121,11 +123,13 @@ GET https://example.com/events
 ```
 
 **When to use:**
+
 - **Infinite streams**: SSE, WebSocket upgrades, long-polling
 - **Real-time data**: Live logs, metrics, notifications
 - **When you need immediate feedback**: Don't want to wait for completion
 
 **When NOT to use:**
+
 - Regular API requests
 - Finite streams that complete quickly
 - When you need filtering/querying (not yet supported for streaming)
@@ -146,82 +150,17 @@ Transfer-Encoding: chunked                → Buffered
 All responses                             → Real-time display
 ```
 
-### Implementation
-
-- Uses `bufio.Reader` for efficient chunk reading
-- 4KB buffer size for optimal performance
-- **Asynchronous processing** - request runs in goroutine
-- **Real-time updates** - chunks sent via channel to UI
-- **Context-based cancellation** - clean shutdown on user request
-- **Auto-scroll** - viewport scrolls to bottom on each update
-- No timeout for SSE streams - runs indefinitely until stopped
-
-## Examples
-
-### OpenAI Streaming
-
-```text
-### Chat with Streaming
-POST https://api.openai.com/v1/chat/completions
-Authorization: Bearer {{apiKey}}
-Content-Type: application/json
-
-{
-  "model": "gpt-4",
-  "stream": true,
-  "messages": [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "{{userPrompt}}"}
-  ]
-}
-```
-
-Variable `apiKey` can be marked as [interactive](./variables.md#interactive-variables) to prompt securely.
-
-### SSE Endpoint
-
-```text
-### Watch Events
-# @streaming true
-GET https://your-api.com/events/stream
-Authorization: Bearer {{token}}
-Accept: text/event-stream
-```
-
-With `@streaming true`, events appear in real-time as they arrive. Press `q` to stop.
-
-### Large File Download
-
-```text
-### Download Report
-GET https://api.example.com/reports/2024/export.csv
-```
-
-If server uses chunked encoding, handles efficiently.
-
-## Limitations
-
-- **CLI Mode:** Currently waits for completion (TUI has real-time streaming)
-- **No manual toggle:** Always auto-detects (cannot force on/off)
-- **Memory:** Very long streams accumulate in memory - stop periodically if needed
-
-## Best Practices
-
-1. **Infinite Streams:** Use `q` to stop SSE streams when you have enough data
-2. **Memory Management:** For very long streams, stop and restart periodically
-3. **Testing:** Test streaming endpoints - they work like curl now!
-4. **LLM APIs:** Perfect for OpenAI, Anthropic, and similar streaming APIs with real-time token display
-
 ## Keyboard Controls
 
+### TUI Mode
+
 When streaming is active:
+
 - **`q`** - Stop the stream immediately
 - **`j`/`k` or arrow keys** - Scroll through streamed data (auto-scroll pauses)
 - **`G`** - Jump to bottom (resume auto-scroll)
 - **`g`** - Jump to top
 
-## Related
+### CLI Mode
 
-- [Variables](./variables.md) - Use interactive variables for prompts
-- [Filtering](./filtering.md) - Apply JMESPath to streaming responses
-- [Profiles](./profiles.md) - Store API keys and configuration
+- **`Ctrl+C`** - Cancel stream immediately

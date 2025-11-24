@@ -1,0 +1,5 @@
+### Get Countries
+# @protocol graphql
+POST https://countries.trevorblades.com/graphql
+
+{ countries { code name } }

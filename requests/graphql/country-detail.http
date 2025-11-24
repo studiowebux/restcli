@@ -1,0 +1,5 @@
+### Get Country Details
+# @protocol graphql
+POST https://countries.trevorblades.com/graphql
+
+{ country(code: "US") { name native capital emoji currency languages { code name } } }

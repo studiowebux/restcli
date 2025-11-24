@@ -2,10 +2,12 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -303,8 +305,27 @@ func Run(opts RunOptions) error {
 		tlsConfig = request.TLS
 	}
 
-	// Execute request
-	result, err := executor.Execute(resolvedRequest, tlsConfig)
+	// Execute request with streaming support (matches TUI behavior)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle Ctrl+C for graceful cancellation
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	go func() {
+		<-sigChan
+		fmt.Fprintln(os.Stderr, "\nStream cancelled by user")
+		cancel()
+	}()
+
+	// Use streaming executor with real-time output callback
+	result, err := executor.ExecuteWithStreaming(ctx, resolvedRequest, tlsConfig, func(chunk []byte, done bool) {
+		if !done {
+			// Write chunks directly to stdout for real-time display
+			os.Stdout.Write(chunk)
+		}
+	})
+
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}

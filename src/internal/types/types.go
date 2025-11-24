@@ -5,6 +5,7 @@ import "time"
 // HttpRequest represents an HTTP request definition from .http files
 type HttpRequest struct {
 	Name                string                 `json:"name,omitempty" yaml:"name,omitempty"`
+	Protocol            string                 `json:"protocol,omitempty" yaml:"protocol,omitempty"` // Protocol type: http, graphql (defaults to http)
 	Method              string                 `json:"method" yaml:"method"`
 	URL                 string                 `json:"url" yaml:"url"`
 	Headers             map[string]string      `json:"headers,omitempty" yaml:"headers,omitempty"`

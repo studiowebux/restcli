@@ -54,6 +54,10 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 		if strings.HasPrefix(line, "#") && currentRequest != nil {
 			// Check for @filter and @query annotations first
 			trimmed := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			if strings.HasPrefix(trimmed, "@protocol ") {
+				currentRequest.Protocol = strings.TrimSpace(strings.TrimPrefix(trimmed, "@protocol "))
+				continue
+			}
 			if strings.HasPrefix(trimmed, "@filter ") {
 				currentRequest.Filter = strings.TrimSpace(strings.TrimPrefix(trimmed, "@filter"))
 				continue

@@ -21,6 +21,11 @@ import (
 func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.RequestResult, error) {
 	startTime := time.Now()
 
+	// Handle GraphQL protocol
+	if req.Protocol == "graphql" {
+		return executeGraphQL(req, tlsConfig, startTime)
+	}
+
 	// Create HTTP request
 	var bodyReader io.Reader
 	requestSize := 0
@@ -97,6 +102,11 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.Request
 // Calls streamCallback for each chunk received
 func ExecuteWithStreaming(ctx context.Context, req *types.HttpRequest, tlsConfig *types.TLSConfig, streamCallback types.StreamCallback) (*types.RequestResult, error) {
 	startTime := time.Now()
+
+	// Handle GraphQL protocol
+	if req.Protocol == "graphql" {
+		return executeGraphQL(req, tlsConfig, startTime)
+	}
 
 	// Create HTTP request
 	var bodyReader io.Reader
@@ -355,4 +365,114 @@ func ParseEscapeSequences(s string) string {
 	result = strings.ReplaceAll(result, placeholder, "\\")
 
 	return result
+}
+
+// executeGraphQL handles GraphQL protocol requests
+func executeGraphQL(req *types.HttpRequest, tlsConfig *types.TLSConfig, startTime time.Time) (*types.RequestResult, error) {
+	// Build GraphQL request payload
+	graphqlPayload := map[string]interface{}{
+		"query": req.Body,
+	}
+
+	// Marshal to JSON
+	payloadBytes, err := json.Marshal(graphqlPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal GraphQL query: %w", err)
+	}
+
+	requestSize := len(payloadBytes)
+
+	// Create HTTP POST request (GraphQL is always POST)
+	httpReq, err := http.NewRequest("POST", req.URL, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set Content-Type for GraphQL
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// Set other headers from the request
+	for key, value := range req.Headers {
+		httpReq.Header.Set(key, value)
+	}
+
+	// Build HTTP client with TLS configuration
+	client, err := buildHTTPClient(tlsConfig, 30*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure HTTP client: %w", err)
+	}
+
+	resp, err := client.Do(httpReq)
+	duration := time.Since(startTime).Milliseconds()
+
+	if err != nil {
+		return &types.RequestResult{
+			Error:       err.Error(),
+			Duration:    duration,
+			RequestSize: requestSize,
+		}, nil
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return &types.RequestResult{
+			Status:      resp.StatusCode,
+			StatusText:  resp.Status,
+			Error:       fmt.Sprintf("failed to read response body: %v", err),
+			Duration:    duration,
+			RequestSize: requestSize,
+		}, nil
+	}
+
+	// Build response headers map
+	headers := make(map[string]string)
+	for key, values := range resp.Header {
+		headers[key] = strings.Join(values, ", ")
+	}
+
+	// Parse GraphQL response to check for errors
+	var graphqlResp struct {
+		Data   interface{}            `json:"data"`
+		Errors []interface{}          `json:"errors,omitempty"`
+	}
+
+	responseBody := string(bodyBytes)
+	if err := json.Unmarshal(bodyBytes, &graphqlResp); err == nil {
+		// Successfully parsed as GraphQL response
+		if len(graphqlResp.Errors) > 0 {
+			// GraphQL returned errors - format them nicely
+			errorsJSON, _ := json.MarshalIndent(graphqlResp.Errors, "", "  ")
+			responseBody = fmt.Sprintf("{\n  \"data\": %s,\n  \"errors\": %s\n}",
+				formatJSON(graphqlResp.Data),
+				string(errorsJSON))
+		} else {
+			// No errors, just show formatted data
+			dataJSON, _ := json.MarshalIndent(graphqlResp.Data, "", "  ")
+			responseBody = string(dataJSON)
+		}
+	}
+	// If parsing fails, just use raw body
+
+	result := &types.RequestResult{
+		Status:       resp.StatusCode,
+		StatusText:   resp.Status,
+		Headers:      headers,
+		Body:         responseBody,
+		Duration:     duration,
+		RequestSize:  requestSize,
+		ResponseSize: len(bodyBytes),
+	}
+
+	return result, nil
+}
+
+// formatJSON formats any data structure as JSON
+func formatJSON(data interface{}) string {
+	jsonBytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", data)
+	}
+	return string(jsonBytes)
 }

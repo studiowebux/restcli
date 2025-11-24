@@ -190,6 +190,7 @@ func LoadSystemEnv() map[string]string {
 func (vr *VariableResolver) ResolveRequest(req *types.HttpRequest) (*types.HttpRequest, error) {
 	resolved := &types.HttpRequest{
 		Name:          req.Name,
+		Protocol:      req.Protocol,
 		Method:        req.Method,
 		Headers:       make(map[string]string),
 		Documentation: req.Documentation,
