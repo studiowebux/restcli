@@ -176,7 +176,10 @@ type Model struct {
 	// Diff state
 	pinnedResponse *types.RequestResult // Response pinned for comparison
 	pinnedRequest  *types.HttpRequest   // Request info for pinned response
-	diffView       viewport.Model       // Viewport for diff display
+	diffView       viewport.Model       // Viewport for diff display (unified mode)
+	diffViewMode   string               // "unified" or "split"
+	diffLeftView   viewport.Model       // Left pane viewport (pinned) for split mode
+	diffRightView  viewport.Model       // Right pane viewport (current) for split mode
 
 	// Interactive variable prompt state
 	interactiveVarNames  []string          // Queue of variables to prompt for

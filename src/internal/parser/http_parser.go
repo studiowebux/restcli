@@ -159,6 +159,12 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 					continue
 				}
 
+				// Remove surrounding quotes from header value if present
+				// e.g., Content-Type: "application/json" -> Content-Type: application/json
+				if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+					value = value[1 : len(value)-1]
+				}
+
 				// Valid header
 				currentRequest.Headers[key] = value
 				continue
