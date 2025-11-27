@@ -207,11 +207,14 @@ func (m *Model) updateDiffView() {
 		m.diffRightView.Width = paneWidth - 4
 		m.diffRightView.Height = paneHeight - 2
 
-		// Format body content for each pane
-		leftContent := formatResponseBody(m.pinnedResponse.Body, paneWidth-6)
-		rightContent := formatResponseBody(m.currentResponse.Body, paneWidth-6)
+		// Generate diff-styled content with background highlighting
+		leftContent, rightContent := compareTextSplitView(
+			m.pinnedResponse.Body,
+			m.currentResponse.Body,
+			paneWidth-6,
+		)
 
-		// Set content for both viewports
+		// Set styled content for both viewports
 		m.diffLeftView.SetContent(leftContent)
 		m.diffRightView.SetContent(rightContent)
 
@@ -469,4 +472,101 @@ func compareTextLineByLine(pinned, current string) string {
 	}
 
 	return result.String()
+}
+
+// compareTextSplitView generates side-by-side diff with background highlighting
+// Returns two styled strings - one for left pane (pinned), one for right pane (current)
+func compareTextSplitView(pinned, current string, width int) (string, string) {
+	pinnedLines := strings.Split(pinned, "\n")
+	currentLines := strings.Split(current, "\n")
+
+	var leftResult, rightResult strings.Builder
+
+	// Handle empty cases
+	if pinned == "" && current == "" {
+		return styleSubtle.Render("(empty)"), styleSubtle.Render("(empty)")
+	}
+	if pinned == "" {
+		pinnedLines = make([]string, len(currentLines))
+	}
+	if current == "" {
+		currentLines = make([]string, len(pinnedLines))
+	}
+
+	maxLines := len(pinnedLines)
+	if len(currentLines) > maxLines {
+		maxLines = len(currentLines)
+	}
+
+	for i := 0; i < maxLines; i++ {
+		pinnedLine := ""
+		if i < len(pinnedLines) {
+			pinnedLine = pinnedLines[i]
+		}
+
+		currentLine := ""
+		if i < len(currentLines) {
+			currentLine = currentLines[i]
+		}
+
+		// Wrap lines before styling to ensure proper width
+		wrappedPinned := wrapText(pinnedLine, width)
+		wrappedCurrent := wrapText(currentLine, width)
+
+		// Split wrapped lines to handle multi-line wraps
+		pinnedWrappedLines := strings.Split(wrappedPinned, "\n")
+		currentWrappedLines := strings.Split(wrappedCurrent, "\n")
+
+		// Ensure both sides have same number of lines for alignment
+		maxWrappedLines := len(pinnedWrappedLines)
+		if len(currentWrappedLines) > maxWrappedLines {
+			maxWrappedLines = len(currentWrappedLines)
+		}
+
+		for j := 0; j < maxWrappedLines; j++ {
+			leftLine := ""
+			if j < len(pinnedWrappedLines) {
+				leftLine = pinnedWrappedLines[j]
+			}
+
+			rightLine := ""
+			if j < len(currentWrappedLines) {
+				rightLine = currentWrappedLines[j]
+			}
+
+			// Compare original lines to determine if they differ
+			isDifferent := pinnedLine != currentLine
+
+			// Apply styling based on difference
+			if isDifferent {
+				// Lines are different - apply background colors
+				if leftLine != "" {
+					leftResult.WriteString(styleDiffRemoved.Render(leftLine) + "\n")
+				} else {
+					leftResult.WriteString("\n") // Empty line for alignment
+				}
+
+				if rightLine != "" {
+					rightResult.WriteString(styleDiffAdded.Render(rightLine) + "\n")
+				} else {
+					rightResult.WriteString("\n") // Empty line for alignment
+				}
+			} else {
+				// Lines are identical - use neutral styling
+				if leftLine != "" {
+					leftResult.WriteString(styleDiffNeutral.Render(leftLine) + "\n")
+				} else {
+					leftResult.WriteString("\n")
+				}
+
+				if rightLine != "" {
+					rightResult.WriteString(styleDiffNeutral.Render(rightLine) + "\n")
+				} else {
+					rightResult.WriteString("\n")
+				}
+			}
+		}
+	}
+
+	return leftResult.String(), rightResult.String()
 }

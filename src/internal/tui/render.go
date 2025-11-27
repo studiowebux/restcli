@@ -51,6 +51,18 @@ var (
 	styleSearchHighlight = lipgloss.NewStyle().
 			Background(lipgloss.AdaptiveColor{Light: "#ffff00", Dark: "#444400"}). // Yellow background, dark yellow for dark mode
 			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})  // Black text on light, white on dark
+
+	// Diff background styles for split view highlighting
+	styleDiffRemoved = lipgloss.NewStyle().
+			Background(lipgloss.AdaptiveColor{Light: "#ffe0e0", Dark: "#4a2020"}). // Light red / Dark red
+			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
+
+	styleDiffAdded = lipgloss.NewStyle().
+			Background(lipgloss.AdaptiveColor{Light: "#e0ffe0", Dark: "#204a20"}). // Light green / Dark green
+			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
+
+	styleDiffNeutral = lipgloss.NewStyle().
+			Foreground(colorGray)
 )
 
 // highlightJSON applies syntax highlighting to JSON content
