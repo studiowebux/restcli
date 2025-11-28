@@ -573,7 +573,14 @@ func (m *Model) updateResponseView() {
 	// Error
 	if m.currentResponse.Error != "" {
 		content.WriteString("\n")
-		content.WriteString(styleError.Render("Error: " + m.currentResponse.Error))
+		// Wrap error text to viewport width to prevent cropping
+		wrapWidth := m.responseView.Width
+		if wrapWidth < 40 {
+			wrapWidth = 40
+		}
+		errorText := "Error: " + m.currentResponse.Error
+		wrappedError := wrapText(errorText, wrapWidth)
+		content.WriteString(styleError.Render(wrappedError))
 	}
 
 	contentStr := content.String()

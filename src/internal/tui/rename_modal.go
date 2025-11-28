@@ -95,13 +95,14 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 		// Clear error when user starts typing
 		m.errorMsg = ""
 
-		// Handle common text input operations (paste, clear, backspace)
-		if _, shouldContinue := handleTextInput(&m.renameInput, msg); shouldContinue {
+		// Handle text input with cursor support (arrow keys, etc.)
+		if _, shouldContinue := handleTextInputWithCursor(&m.renameInput, &m.renameCursor, msg); shouldContinue {
 			return nil
 		}
-		// Append character to rename input
+		// Insert character at cursor position
 		if len(msg.String()) == 1 {
-			m.renameInput += msg.String()
+			m.renameInput = m.renameInput[:m.renameCursor] + msg.String() + m.renameInput[m.renameCursor:]
+			m.renameCursor++
 		}
 	}
 
@@ -115,8 +116,10 @@ func (m *Model) renderRenameModal() string {
 	}
 
 	currentName := m.files[m.fileIndex].Name
+	// Show cursor at correct position
+	inputWithCursor := m.renameInput[:m.renameCursor] + "█" + m.renameInput[m.renameCursor:]
 	content := fmt.Sprintf("Current: %s\n\nNew name: %s",
-		currentName, addCursor(m.renameInput))
+		currentName, inputWithCursor)
 
 	// Show error if present (wrapped to modal width)
 	if m.errorMsg != "" {

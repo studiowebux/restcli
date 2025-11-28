@@ -302,12 +302,13 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case "R":
 		m.mode = ModeRename
 		m.renameInput = ""
+		m.renameCursor = 0
 	case "F":
 		// Create new file
 		m.mode = ModeCreateFile
 		m.createFileInput = ""
-		m.createFileType = 0 // Default to .http
 		m.createFileCursor = 0
+		m.createFileType = 0 // Default to .http
 		m.errorMsg = ""
 	case "r":
 		return m.refreshFiles()

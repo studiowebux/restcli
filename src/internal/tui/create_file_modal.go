@@ -108,13 +108,14 @@ func (m *Model) handleCreateFileKeys(msg tea.KeyMsg) tea.Cmd {
 		// Clear error when user starts typing
 		m.errorMsg = ""
 
-		// Handle common text input operations
-		if _, shouldContinue := handleTextInput(&m.createFileInput, msg); shouldContinue {
+		// Handle text input with cursor support (arrow keys, etc.)
+		if _, shouldContinue := handleTextInputWithCursor(&m.createFileInput, &m.createFileCursor, msg); shouldContinue {
 			return nil
 		}
-		// Append character to input
+		// Insert character at cursor position
 		if len(msg.String()) == 1 {
-			m.createFileInput += msg.String()
+			m.createFileInput = m.createFileInput[:m.createFileCursor] + msg.String() + m.createFileInput[m.createFileCursor:]
+			m.createFileCursor++
 		}
 	}
 
@@ -145,8 +146,10 @@ func (m *Model) renderCreateFileModal() string {
 		}
 	}
 
+	// Show cursor at correct position
+	inputWithCursor := m.createFileInput[:m.createFileCursor] + "█" + m.createFileInput[m.createFileCursor:]
 	content := fmt.Sprintf("Working directory: %s\n\nFilename: %s\n\nFile type: %s\n(Press TAB to cycle)",
-		workdir, addCursor(m.createFileInput), fileTypeDisplay)
+		workdir, inputWithCursor, fileTypeDisplay)
 
 	// Show error if present (wrapped to modal width)
 	if m.errorMsg != "" {
