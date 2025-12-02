@@ -1,6 +1,6 @@
 # REST CLI
 
-Keyboard-driven TUI for testing HTTP endpoints.
+Keyboard-driven TUI for testing HTTP endpoints with Vim-style navigation.
 
 ## Why?
 
@@ -10,16 +10,35 @@ No more merge conflicts. No more outdated collections. Each endpoint is a file. 
 
 ## Features
 
-1. File-based requests (`.http`, `.yaml`, `.json`, `.jsonc`)
-2. Variable substitution with `{{varName}}` and shell commands `$(cmd)`
-3. Multi-value variables with aliases
-4. Profile system for header and variable management
-5. OAuth 2.0 with PKCE and mTLS support
-6. Response filtering with JMESPath or bash/Linux commands
-7. Response pinning and diff for regression testing
-8. Request history and embedded documentation
-9. CLI mode for scripting (JSON/YAML output)
-10. cURL and OpenAPI converters
+### Core
+1. **File-based requests** (`.http`, `.yaml`, `.json`, `.jsonc`, `openapi`) - one endpoint per file
+2. **Variable substitution** with `{{varName}}` and shell commands `$(cmd)`
+3. **Multi-value variables** with aliases (e.g., `dev`, `staging`, `prod`)
+4. **Profile system** for environment-specific headers and variables
+5. **Request history** with split view and live preview
+
+### Execution & Control
+6. **Streaming support** for SSE and real-time responses
+7. **GraphQL & HTTP protocols** with automatic detection
+8. **Request cancellation** (ESC to abort in-progress requests)
+9. **Confirmation modals** for critical endpoints
+10. **Concurrent request blocking** prevents accidental request
+
+### Security & Auth
+11. **OAuth 2.0** with PKCE flow and token auto-extraction
+12. **mTLS support** with client certificates
+13. **Variable interpolation in TLS paths** for dynamic cert loading
+
+### Analysis & Debugging
+14. **Response filtering** with JMESPath or bash commands
+15. **Response pinning and diff** for regression testing
+16. **Error detail modals** with full stack traces
+17. **Embedded documentation** viewer with collapsible trees
+
+### Automation
+18. **CLI mode** for scripting (JSON/YAML output)
+19. **cURL converter** (convert cURL to request files)
+20. **OpenAPI converter** (generate requests from specs)
 
 ## Installation
 
@@ -38,28 +57,60 @@ mv ../bin/restcli /usr/local/bin/
 
 ## Quick Start
 
-Create a request file `get-user.http`:
+### 1. Create a request file
 
+`get-user.http`:
 ```text
 ### Get User
 GET https://jsonplaceholder.typicode.com/users/1
 ```
 
-Run in TUI mode:
+### 2. Run in TUI mode
 
 ```bash
 restcli
 ```
 
-Run in CLI mode:
+Navigate with `j`/`k`, press `Enter` to execute, `ESC` to cancel.
+
+### 3. Or use CLI mode for automation
 
 ```bash
 restcli run get-user.http
+restcli run get-user.http --json  # Output as JSON
+```
+
+### 4. Add variables and profiles
+
+```text
+### Get User
+GET {{baseUrl}}/users/{{userId}}
+Authorization: Bearer {{token}}
+```
+
+Create `.profiles.json`:
+```json
+{
+  "profiles": [
+    {
+      "name": "dev",
+      "variables": {
+        "baseUrl": "https://api.dev.example.com",
+        "userId": "1"
+      }
+    }
+  ]
+}
+```
+
+Run with profile:
+```bash
+restcli -p dev
 ```
 
 ## Key Shortcuts
 
-Full shortcuts reference: `?` in-app or `restcli --help`
+Full reference: Press `?` in-app or see [docs/reference/keyboard-shortcuts.md](docs/reference/keyboard-shortcuts.md)
 
 ## Documentation
 
