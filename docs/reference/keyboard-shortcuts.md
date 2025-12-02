@@ -55,6 +55,7 @@ Green border indicates focused panel.
 | Key      | Action                        |
 | -------- | ----------------------------- |
 | `Enter`  | Execute selected request      |
+| `Esc`    | Cancel running request        |
 | `i`      | Inspect request details       |
 | `x`      | Edit in external editor       |
 | `X`      | Edit in inline editor         |
@@ -117,10 +118,13 @@ Search is context-aware based on focused panel and supports Regexes.
 
 ## Help and Info
 
-| Key | Action                  |
-| --- | ----------------------- |
-| `?` | Show help and shortcuts |
-| `q` | Quit application        |
+| Key | Action                      |
+| --- | --------------------------- |
+| `?` | Show help and shortcuts     |
+| `e` | Show full error details     |
+| `q` | Quit application            |
+
+**Note**: Press `e` when an error is displayed in the footer to view the complete error message with text wrapping.
 
 ## Modal Operations
 
@@ -177,8 +181,10 @@ Search is context-aware based on focused panel and supports Regexes.
 | Key     | Action                  |
 | ------- | ----------------------- |
 | `j`/`k` | Navigate history        |
+| `Enter` | Load selected response  |
 | `r`     | Replay selected request |
-| `d`     | Delete history entry    |
+| `p`     | Toggle preview pane     |
+| `C`     | Clear all history       |
 | `Esc`   | Close viewer            |
 
 ## Diff Viewer

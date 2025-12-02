@@ -155,3 +155,19 @@ func (m *Model) renderDeleteModal() string {
 
 	return m.renderModalWithFooter("Delete File", content, footer, 60, 12)
 }
+
+func (m *Model) renderConfirmExecutionModal() string {
+	if m.currentRequest == nil {
+		return m.renderModal("Confirm Execution", "No request selected\n\nPress ESC to close", 50, 10)
+	}
+
+	requestName := m.currentRequest.Name
+	if requestName == "" {
+		requestName = fmt.Sprintf("%s %s", m.currentRequest.Method, m.currentRequest.URL)
+	}
+
+	content := fmt.Sprintf("⚠️  Critical Endpoint\n\nAre you sure you want to execute:\n\n  %s\n\nThis request requires confirmation.", requestName)
+	footer := "[y]es [n]o / ESC"
+
+	return m.renderModalWithFooter("Confirm Execution", content, footer, 65, 14)
+}

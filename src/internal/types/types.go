@@ -14,6 +14,7 @@ type HttpRequest struct {
 	Query               string                 `json:"query,omitempty" yaml:"query,omitempty"`   // JMESPath query or $(bash command)
 	ParseEscapes        bool                   `json:"parseEscapes,omitempty" yaml:"parseEscapes,omitempty"` // Parse escape sequences in response body
 	Streaming           bool                   `json:"streaming,omitempty" yaml:"streaming,omitempty"` // Enable real-time streaming display (for SSE, infinite streams)
+	RequiresConfirmation bool                  `json:"requiresConfirmation,omitempty" yaml:"requiresConfirmation,omitempty"` // Require user confirmation before execution
 	TLS                 *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty"`       // TLS/mTLS configuration
 	Documentation       *Documentation         `json:"documentation,omitempty" yaml:"documentation,omitempty"`
 	DocumentationLines  []string               `json:"-" yaml:"-"` // Raw documentation comment lines for lazy loading
@@ -87,9 +88,10 @@ type Profile struct {
 	TLS           *TLSConfig                `json:"tls,omitempty"`           // TLS/mTLS configuration
 	Editor        string                    `json:"editor,omitempty"`
 	Output        string                    `json:"output,omitempty"`        // json, yaml, text
-	DefaultFilter string                    `json:"defaultFilter,omitempty"` // Global JMESPath filter for all responses
-	DefaultQuery  string                    `json:"defaultQuery,omitempty"`  // Global JMESPath query for all responses
-	HistoryEnabled *bool                    `json:"historyEnabled,omitempty"` // Override global history setting (nil = use global)
+	DefaultFilter  string `json:"defaultFilter,omitempty"`  // Global JMESPath filter for all responses
+	DefaultQuery   string `json:"defaultQuery,omitempty"`   // Global JMESPath query for all responses
+	HistoryEnabled *bool  `json:"historyEnabled,omitempty"` // Override global history setting (nil = use global)
+	MessageTimeout *int   `json:"messageTimeout,omitempty"` // Auto-clear footer messages after N seconds (nil = permanent/no auto-clear)
 }
 
 // VariableValue can be a simple string or a multi-value variable

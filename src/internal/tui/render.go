@@ -18,12 +18,12 @@ import (
 
 // Adaptive color definitions for light/dark terminal support
 var (
-	colorGreen = lipgloss.AdaptiveColor{Light: "#006400", Dark: "#00ff00"} // Dark green / Bright green
-	colorRed   = lipgloss.AdaptiveColor{Light: "#8b0000", Dark: "#ff0000"} // Dark red / Bright red
+	colorGreen  = lipgloss.AdaptiveColor{Light: "#006400", Dark: "#00ff00"} // Dark green / Bright green
+	colorRed    = lipgloss.AdaptiveColor{Light: "#8b0000", Dark: "#ff0000"} // Dark red / Bright red
 	colorYellow = lipgloss.AdaptiveColor{Light: "#b8860b", Dark: "#ffff00"} // Dark goldenrod / Yellow
-	colorBlue  = lipgloss.AdaptiveColor{Light: "#00008b", Dark: "#0000ff"} // Dark blue / Blue
-	colorGray  = lipgloss.AdaptiveColor{Light: "#555555", Dark: "#888888"} // Dark gray / Light gray
-	colorCyan  = lipgloss.AdaptiveColor{Light: "#008b8b", Dark: "#00ffff"} // Dark cyan / Cyan
+	colorBlue   = lipgloss.AdaptiveColor{Light: "#00008b", Dark: "#0000ff"} // Dark blue / Blue
+	colorGray   = lipgloss.AdaptiveColor{Light: "#555555", Dark: "#888888"} // Dark gray / Light gray
+	colorCyan   = lipgloss.AdaptiveColor{Light: "#008b8b", Dark: "#00ffff"} // Dark cyan / Cyan
 )
 
 // Style definitions
@@ -49,20 +49,20 @@ var (
 			Foreground(colorGray)
 
 	styleSearchHighlight = lipgloss.NewStyle().
-			Background(lipgloss.AdaptiveColor{Light: "#ffff00", Dark: "#444400"}). // Yellow background, dark yellow for dark mode
-			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})  // Black text on light, white on dark
+				Background(lipgloss.AdaptiveColor{Light: "#ffff00", Dark: "#444400"}). // Yellow background, dark yellow for dark mode
+				Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})  // Black text on light, white on dark
 
 	// Diff background styles for split view highlighting
 	styleDiffRemoved = lipgloss.NewStyle().
-			Background(lipgloss.AdaptiveColor{Light: "#ffe0e0", Dark: "#4a2020"}). // Light red / Dark red
-			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
+				Background(lipgloss.AdaptiveColor{Light: "#ffe0e0", Dark: "#4a2020"}). // Light red / Dark red
+				Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
 
 	styleDiffAdded = lipgloss.NewStyle().
 			Background(lipgloss.AdaptiveColor{Light: "#e0ffe0", Dark: "#204a20"}). // Light green / Dark green
 			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
 
 	styleDiffNeutral = lipgloss.NewStyle().
-			Foreground(colorGray)
+				Foreground(colorGray)
 )
 
 // highlightJSON applies syntax highlighting to JSON content
@@ -266,6 +266,17 @@ func (m Model) renderSidebar(width, height int) string {
 // renderResponse renders the response panel
 func (m Model) renderResponse(width, height int) string {
 	if m.currentResponse == nil {
+		// If loading, show viewport content (which has the loading indicator)
+		if m.loading {
+			viewportContent := m.responseView.View()
+			// Add padding manually
+			paddedLines := []string{""}
+			for _, line := range strings.Split(viewportContent, "\n") {
+				paddedLines = append(paddedLines, " "+line)
+			}
+			return strings.Join(paddedLines, "\n")
+		}
+		// Otherwise show empty state message
 		noResponse := styleSubtle.Render("No response yet\n\nPress Enter to execute request\n\nPress 'b' to toggle body visibility")
 		return lipgloss.NewStyle().
 			MaxWidth(width).
@@ -416,13 +427,32 @@ func (m *Model) updateViewport() {
 
 // updateResponseView updates the response viewport content
 func (m *Model) updateResponseView() {
+	var content strings.Builder
+
+	// Show loading indicator FIRST (even if no response yet)
+	if m.loading {
+		loadingBar := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00FF00")). // Green
+			Bold(true).
+			Width(m.responseView.Width).
+			Align(lipgloss.Center).
+			Render(">>> EXECUTING REQUEST <<<")
+		content.WriteString(loadingBar + "\n\n")
+	}
+
+	// Handle case where no response exists yet
 	if m.currentResponse == nil {
+		// If loading, show just the loading indicator
+		if m.loading {
+			m.responseContent = content.String()
+			m.responseView.SetContent(content.String())
+			return
+		}
+		// Otherwise show empty state
 		m.responseContent = ""
 		m.responseView.SetContent("")
 		return
 	}
-
-	var content strings.Builder
 
 	// Request section with resolved values
 	if m.currentRequest != nil {
@@ -621,9 +651,9 @@ func (m *Model) updateHelpView() {
 NAVIGATION (Keyboard Only)
   TAB            Switch focus (sidebar ↔ response)
   ↑/↓, j/k       Navigate files OR scroll response
-  gg             Go to first item (vim-style)
-  G              Go to last item (vim-style)
-  Ctrl+U/D       Half-page up/down (vim-style)
+  gg             Go to first item
+  G              Go to last item
+  Ctrl+U/D       Half-page up/down
   PageUp/Down    Full page scroll (focused panel)
   Home/End       Jump to first/last
   :              Goto hex line
@@ -632,9 +662,9 @@ NAVIGATION (Keyboard Only)
 SEARCH
   /              Search files or response (context-aware)
                  Supports regex patterns (e.g., .*foo.*bar)
-  n              Next search result (vim-style)
-  N              Previous search result (vim-style)
-  Ctrl+R         Next search result (alternative)
+  n              Next search result
+  N              Previous search result
+  Ctrl+R         Next search result
   ESC            Clear search / Cancel
 
 FOCUS
@@ -643,6 +673,7 @@ FOCUS
 
 FILE OPERATIONS
   Enter        Execute request
+  ESC          Cancel running request
   i            Inspect request
   x            Open in editor
   X            Configure editor
@@ -683,7 +714,9 @@ VARIABLE EDITOR (multi-value)
 DOCUMENTATION & HISTORY
   m            View documentation
   H            View history
+  p            Toggle preview pane (when in history - hides secrets)
   r            Replay request (when in history modal)
+  C            Clear all history (when in history modal - with confirmation)
 
 MODAL NAVIGATION
   ↑/↓, j/k     Navigate items
@@ -707,6 +740,7 @@ TEXT INPUT (in modals)
 
 OTHER
   ?            Show this help
+  e            View full error details (when error in footer)
   q            Quit
 
 CLI MODE
@@ -1177,18 +1211,28 @@ func (m *Model) updateInspectView() {
 	m.modalView.GotoTop()
 }
 
-// updateHistoryView updates the history viewport content
+// updateHistoryView updates the history viewport content for split view (Telescope-style)
 func (m *Model) updateHistoryView() {
-	// Set viewport dimensions for the modal (nearly full screen: m.width-6, m.height-3)
-	m.modalView.Width = m.width - 10  // Modal content width minus padding
-	m.modalView.Height = m.height - 7 // Modal content height minus padding and title lines
+	// Calculate dimensions for split view
+	modalWidth := m.width - 6
+	modalHeight := m.height - 3
+	listWidth := (modalWidth - 3) / 2          // Left pane width
+	previewWidth := modalWidth - listWidth - 3 // Right pane width
+	paneHeight := modalHeight - 4              // Account for borders and padding
 
-	var content strings.Builder
+	// Set viewport dimensions for left pane (history list)
+	m.modalView.Width = listWidth - 4   // Account for padding and borders
+	m.modalView.Height = paneHeight - 2 // Account for title
 
+	// Set viewport dimensions for right pane (response preview)
+	m.historyPreviewView.Width = previewWidth - 4
+	m.historyPreviewView.Height = paneHeight - 2
+
+	// Build content for left pane (history list)
+	var listContent strings.Builder
 	if len(m.historyEntries) == 0 {
-		content.WriteString("No history entries\n\nPress ESC to close")
+		listContent.WriteString("No history entries")
 	} else {
-		content.WriteString(fmt.Sprintf("%d history entries\n\n", len(m.historyEntries)))
 		// Show ALL entries (not just first 10) - viewport handles scrolling
 		for i, entry := range m.historyEntries {
 			statusStyle := styleSuccess
@@ -1207,19 +1251,43 @@ func (m *Model) updateHistoryView() {
 				line = styleSelected.Render(line)
 			}
 
-			content.WriteString(line + "\n")
+			listContent.WriteString(line + "\n")
 		}
-		content.WriteString("\n" + styleSubtle.Render("↑/↓: Navigate | Enter: Load | r: Replay | ESC: Close"))
 	}
 
-	// Save current scroll position before updating content
-	yOffset := m.modalView.YOffset
-	m.modalView.SetContent(content.String())
+	// Build content for right pane (response preview) - ONLY if preview is visible
+	if m.historyPreviewVisible {
+		var previewContent strings.Builder
+		if len(m.historyEntries) > 0 && m.historyIndex >= 0 && m.historyIndex < len(m.historyEntries) {
+			entry := m.historyEntries[m.historyIndex]
 
-	// If we have a selected item, scroll to make it visible
+			// Show response metadata
+			previewContent.WriteString(fmt.Sprintf("%s %s\n", entry.Method, entry.URL))
+			previewContent.WriteString(fmt.Sprintf("Status: %d %s\n", entry.ResponseStatus, entry.ResponseStatusText))
+			previewContent.WriteString(fmt.Sprintf("Size: %d bytes\n", entry.ResponseSize))
+			previewContent.WriteString(fmt.Sprintf("Time: %s\n\n", entry.Timestamp[:19]))
+
+			// Show response body
+			previewContent.WriteString(entry.ResponseBody)
+		} else {
+			previewContent.WriteString("No history entry selected")
+		}
+
+		// Set preview content (always start from top when selection changes)
+		m.historyPreviewView.SetContent(previewContent.String())
+		m.historyPreviewView.GotoTop()
+	} else {
+		// Clear preview content when hidden (security/privacy)
+		m.historyPreviewView.SetContent("")
+	}
+
+	// Save current scroll positions before updating content
+	listYOffset := m.modalView.YOffset
+	m.modalView.SetContent(listContent.String())
+
+	// Auto-scroll list to keep selected item visible
 	if len(m.historyEntries) > 0 && m.historyIndex >= 0 {
-		// Each entry is 1 line, plus 2 lines for header
-		selectedLine := m.historyIndex + 2
+		selectedLine := m.historyIndex
 
 		// Ensure selected item is visible in viewport
 		if selectedLine < m.modalView.YOffset {
@@ -1230,7 +1298,7 @@ func (m *Model) updateHistoryView() {
 			m.modalView.YOffset = selectedLine - m.modalView.Height + 1
 		} else {
 			// Selected item is already visible, keep current scroll position
-			m.modalView.YOffset = yOffset
+			m.modalView.YOffset = listYOffset
 		}
 	} else {
 		// No selection or empty history, go to top

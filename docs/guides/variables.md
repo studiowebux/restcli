@@ -18,6 +18,39 @@ GET {{baseUrl}}/users/{{userId}}
 Authorization: Bearer {{token}}
 ```
 
+## Where Variables Work
+
+Variables can be used in:
+
+- **URLs**: `{{baseUrl}}/users/{{userId}}`
+- **Headers**: `Authorization: Bearer {{token}}`
+- **Request Body**: `{"name": "{{userName}}"}`
+- **TLS Paths**: `# @tls.certFile {{certsPath}}/client.pem`
+- **Filters**: `# @filter items[?type=='{{itemType}}']`
+- **Queries**: `# @query {{jmespathQuery}}`
+
+### TLS Path Variables Example
+
+```text
+### Secure API Call
+# @tls.certFile {{certsPath}}/client.crt
+# @tls.keyFile {{certsPath}}/client.key
+# @tls.caFile {{caPath}}/ca.crt
+GET https://secure-api.example.com/data
+```
+
+With profile:
+
+```json
+{
+  "name": "Secure",
+  "variables": {
+    "certsPath": "/etc/ssl/mycerts",
+    "caPath": "/etc/ssl/ca"
+  }
+}
+```
+
 ## Setting Variables
 
 ### CLI Flags

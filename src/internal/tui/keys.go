@@ -20,6 +20,7 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		if m.streamingActive && m.streamCancelFunc != nil {
 			m.streamCancelFunc()
 			m.streamingActive = false
+			m.loading = false // Clear loading flag when stopping stream
 			m.statusMsg = "Stream stopped by user"
 			return nil
 		}
@@ -63,8 +64,12 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleConfigViewKeys(msg)
 	case ModeDelete:
 		return m.handleDeleteKeys(msg)
+	case ModeConfirmExecution:
+		return m.handleConfirmExecutionKeys(msg)
 	case ModeShellErrors:
 		return m.handleShellErrorsKeys(msg)
+	case ModeErrorDetail:
+		return m.handleErrorDetailKeys(msg)
 	case ModeCreateFile:
 		return m.handleCreateFileKeys(msg)
 	case ModeMRU:
@@ -82,6 +87,23 @@ func (m *Model) handleShellErrorsKeys(msg tea.KeyMsg) tea.Cmd {
 	case "esc", "q", "enter":
 		m.mode = ModeNormal
 		m.shellErrors = nil
+	case "j", "down":
+		m.modalView.LineDown(1)
+	case "k", "up":
+		m.modalView.LineUp(1)
+	case "g":
+		m.modalView.GotoTop()
+	case "G":
+		m.modalView.GotoBottom()
+	}
+	return nil
+}
+
+// handleErrorDetailKeys handles keyboard input in error detail modal
+func (m *Model) handleErrorDetailKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q", "enter":
+		m.mode = ModeNormal
 	case "j", "down":
 		m.modalView.LineDown(1)
 	case "k", "up":
@@ -279,6 +301,11 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	// File operations
 	case "enter":
+		// Block if request already in progress
+		if m.loading {
+			m.statusMsg = "Request already in progress"
+			return nil
+		}
 		m.statusMsg = "Executing request..."
 		return m.executeRequest()
 	case "i":
@@ -356,6 +383,11 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeHeaderList
 		m.headerEditIndex = 0
 		m.modalView.SetYOffset(0)
+	case "e":
+		// Open error detail modal if there's an error
+		if m.fullErrorMsg != "" {
+			m.mode = ModeErrorDetail
+		}
 	case "p":
 		m.mode = ModeProfileSwitch
 		m.profileIndex = 0
@@ -471,9 +503,24 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case "S":
 		return m.openSessionInEditor()
 
-	// Escape - exit fullscreen, clear search, or clear errors/messages
+	// Escape - cancel request, exit fullscreen, clear search, or clear errors/messages
 	case "esc":
-		if m.fullscreen {
+		// First priority: Cancel running request
+		if m.loading {
+			if m.streamingActive && m.streamCancelFunc != nil {
+				// Cancel streaming request
+				m.streamCancelFunc()
+				m.streamingActive = false
+				m.streamCancelFunc = nil
+			} else if m.requestCancelFunc != nil {
+				// Cancel regular request
+				m.requestCancelFunc()
+				m.requestCancelFunc = nil
+			}
+			m.loading = false
+			m.statusMsg = "Request cancelled by user"
+			m.updateResponseView() // Remove loading indicator
+		} else if m.fullscreen {
 			m.fullscreen = false
 			m.updateViewport()
 			m.updateResponseView()
@@ -1060,13 +1107,13 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	case "up", "k":
 		if m.historyIndex > 0 {
 			m.historyIndex--
-			m.updateHistoryView() // Regenerate to update highlight
+			m.updateHistoryView() // Regenerate to update highlight and preview
 		}
 
 	case "down", "j":
 		if m.historyIndex < len(m.historyEntries)-1 {
 			m.historyIndex++
-			m.updateHistoryView() // Regenerate to update highlight
+			m.updateHistoryView() // Regenerate to update highlight and preview
 		}
 
 	// Load selected history entry
@@ -1080,6 +1127,16 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(m.historyEntries) > 0 && m.historyIndex < len(m.historyEntries) {
 			return m.replayHistoryEntry(m.historyIndex)
 		}
+
+	// Toggle response preview pane visibility
+	case "p":
+		m.historyPreviewVisible = !m.historyPreviewVisible
+		if m.historyPreviewVisible {
+			m.statusMsg = "Preview pane shown"
+		} else {
+			m.statusMsg = "Preview pane hidden"
+		}
+		m.updateHistoryView() // Refresh to apply toggle
 
 	// Clear all history with confirmation
 	case "C":
@@ -1195,6 +1252,23 @@ func (m *Model) handleDeleteKeys(msg tea.KeyMsg) tea.Cmd {
 	case "y", "Y":
 		// Perform delete
 		return m.deleteFile()
+	}
+	return nil
+}
+
+// handleConfirmExecutionKeys handles keys in execution confirmation mode
+func (m *Model) handleConfirmExecutionKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "n", "N":
+		m.mode = ModeNormal
+		m.statusMsg = "Execution cancelled"
+		m.confirmationGiven = false
+
+	case "y", "Y":
+		// Set confirmation flag and execute request
+		m.confirmationGiven = true
+		m.mode = ModeNormal
+		return m.executeRequest()
 	}
 	return nil
 }

@@ -9,11 +9,12 @@ import (
 	"github.com/studiowebux/restcli/internal/cli"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/converter"
+	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/tui"
 )
 
 var (
-	version = "0.0.21"
+	version = "0.0.22"
 )
 
 func main() {
@@ -105,9 +106,6 @@ To load completions:
 Bash (Linux):
   $ restcli completion bash > /etc/bash_completion.d/restcli
 
-Bash (macOS with Homebrew):
-  $ restcli completion bash > $(brew --prefix)/etc/bash_completion.d/restcli
-
 Zsh (macOS/Linux):
   # Create completions directory
   $ mkdir -p ~/.zsh/completions
@@ -121,16 +119,6 @@ Zsh (macOS/Linux):
 
   # Reload shell
   $ source ~/.zshrc
-
-Zsh (Oh My Zsh):
-  $ mkdir -p ~/.oh-my-zsh/completions
-  $ restcli completion zsh > ~/.oh-my-zsh/completions/_restcli
-
-Fish:
-  $ restcli completion fish > ~/.config/fish/completions/restcli.fish
-
-PowerShell:
-  PS> restcli completion powershell | Out-String | Invoke-Expression
 `,
 	DisableFlagsInUseLine: true,
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
@@ -208,6 +196,32 @@ func init() {
 	openapi2httpCmd.Flags().StringVarP(&openapiOutputDir, "output", "o", "requests", "Output directory")
 	openapi2httpCmd.Flags().StringVar(&openapiOrganizeBy, "organize-by", "tags", "Organization strategy (tags/paths/flat)")
 	openapi2httpCmd.Flags().StringVarP(&openapiFormat, "format", "f", "http", "Output format (http/json/yaml)")
+
+	// Register autocomplete for --profile flag
+	profileCompletionFunc := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Initialize config to get proper paths
+		if err := config.Initialize(); err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Load profiles
+		mgr := session.NewManager()
+		if err := mgr.LoadProfiles(); err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Extract profile names
+		profiles := mgr.GetProfiles()
+		names := make([]string, len(profiles))
+		for i, p := range profiles {
+			names[i] = p.Name
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	// Register for both root and run commands
+	rootCmd.RegisterFlagCompletionFunc("profile", profileCompletionFunc)
+	runCmd.RegisterFlagCompletionFunc("profile", profileCompletionFunc)
 
 	// Add subcommands
 	rootCmd.AddCommand(runCmd)

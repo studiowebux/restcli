@@ -65,15 +65,31 @@ GET https://api.example.com/users
 
 ### Special Directives
 
-| Directive                   | Purpose                            |
-| --------------------------- | ---------------------------------- |
-| `# @filter`                 | JMESPath filter or bash command    |
-| `# @query`                  | JMESPath query or bash command     |
-| `# @parsing`                | Parsing mode for response body     |
-| `# @tls.certFile`           | Client certificate path            |
-| `# @tls.keyFile`            | Private key path                   |
-| `# @tls.caFile`             | CA certificate path                |
-| `# @tls.insecureSkipVerify` | Skip TLS verification (true/false) |
+| Directive                   | Purpose                                      |
+| --------------------------- | -------------------------------------------- |
+| `# @filter`                 | JMESPath filter or bash command              |
+| `# @query`                  | JMESPath query or bash command               |
+| `# @parsing`                | Parse escape sequences (true/false)          |
+| `# @streaming`              | Enable streaming mode (true/false)           |
+| `# @confirmation`           | Require confirmation before execution (true) |
+| `# @protocol`               | Protocol type (http/graphql)                 |
+| `# @tls.certFile`           | Client certificate path (supports variables) |
+| `# @tls.keyFile`            | Private key path (supports variables)        |
+| `# @tls.caFile`             | CA certificate path (supports variables)     |
+| `# @tls.insecureSkipVerify` | Skip TLS verification (true/false)           |
+
+#### Confirmation Example
+
+For critical operations like deletions or destructive actions:
+
+```text
+### Delete User Account
+# @confirmation true
+DELETE https://api.example.com/users/{{userId}}
+Authorization: Bearer {{token}}
+```
+
+When executed, a confirmation modal will appear requiring you to press 'y' to confirm or 'n'/ESC to cancel.
 
 ## YAML Format (.yaml)
 

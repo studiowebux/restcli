@@ -23,18 +23,19 @@ func New(mgr *session.Manager) (Model, error) {
 	}
 
 	m := Model{
-		sessionMgr:   mgr,
-		mode:         ModeNormal,
-		files:        files,
-		fileIndex:    0,
-		fileOffset:   0,
-		showHeaders:  false,
-		showBody:     true,
-		fullscreen:   false,
-		focusedPanel: "sidebar", // Start with sidebar focused
-		docCollapsed: make(map[int]bool),
-		responseView: viewport.New(80, 20),
-		modalView:    viewport.New(80, 20), // For scrollable modals
+		sessionMgr:            mgr,
+		mode:                  ModeNormal,
+		files:                 files,
+		fileIndex:             0,
+		fileOffset:            0,
+		showHeaders:           false,
+		showBody:              true,
+		fullscreen:            false,
+		focusedPanel:          "sidebar", // Start with sidebar focused
+		docCollapsed:          make(map[int]bool),
+		responseView:          viewport.New(80, 20),
+		modalView:             viewport.New(80, 20), // For scrollable modals
+		historyPreviewVisible: true,                 // Show preview by default
 	}
 
 	// Load requests from first file

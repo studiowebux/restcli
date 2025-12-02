@@ -1,0 +1,6 @@
+### Conversation
+# @confirmation true
+# @tls.certFile {{certsPath}}/client.crt
+# @tls.keyFile {{certsPath}}/client.key
+# @tls.caFile {{caPath}}/ca.crt
+GET https://jsonplaceholder.typicode.com/posts/3

@@ -1,10 +1,18 @@
 // deno run -A streaming.ts
 import { Hono } from "npm:hono";
+import { logger } from "npm:hono/logger";
 import { stream, streamSSE, streamText } from "npm:hono/streaming";
 
 const app = new Hono();
 
+app.use(logger());
+
 app.get("/", (c) => c.text("Hello Deno!"));
+
+app.get("/slow", async (c) => {
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  return c.text("ZZZzzz");
+});
 
 let id = 0;
 

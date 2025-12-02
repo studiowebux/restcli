@@ -33,17 +33,19 @@ Array of profile objects:
 
 ### Optional Fields
 
-| Field           | Type        | Description                       |
-| --------------- | ----------- | --------------------------------- |
-| `headers`       | object      | Default headers                   |
-| `variables`     | object      | Variables (simple or multi-value) |
-| `workdir`       | string      | Working directory                 |
-| `editor`        | string      | External editor command           |
-| `output`        | string      | Default output format             |
-| `oauth`         | OAuthConfig | OAuth configuration               |
-| `defaultFilter` | string      | Default JMESPath filter           |
-| `defaultQuery`  | string      | Default query                     |
-| `tls`           | TLSConfig   | Default TLS configuration         |
+| Field            | Type        | Description                              |
+| ---------------- | ----------- | ---------------------------------------- |
+| `headers`        | object      | Default headers                          |
+| `variables`      | object      | Variables (simple or multi-value)        |
+| `workdir`        | string      | Working directory                        |
+| `editor`         | string      | External editor command                  |
+| `output`         | string      | Default output format                    |
+| `oauth`          | OAuthConfig | OAuth configuration                      |
+| `defaultFilter`  | string      | Default JMESPath filter                  |
+| `defaultQuery`   | string      | Default query                            |
+| `tls`            | TLSConfig   | Default TLS configuration                |
+| `historyEnabled` | boolean     | Enable/disable history (overrides global) |
+| `messageTimeout` | number      | Auto-clear footer messages (seconds)     |
 
 ## name (required)
 
@@ -270,6 +272,56 @@ Default TLS/mTLS configuration.
   }
 }
 ```
+
+With variables:
+
+```json
+{
+  "variables": {
+    "certsPath": "/etc/ssl/certs"
+  },
+  "tls": {
+    "certFile": "{{certsPath}}/client.crt",
+    "keyFile": "{{certsPath}}/client.key"
+  }
+}
+```
+
+## historyEnabled (optional)
+
+Enable or disable request history for this profile.
+
+```json
+{
+  "historyEnabled": false
+}
+```
+
+- `true`: Enable history (save all request/response pairs)
+- `false`: Disable history (ephemeral, nothing saved)
+- Omitted/`null`: Use global default (enabled)
+
+Useful for sensitive environments where you don't want to persist request data.
+
+## messageTimeout (optional)
+
+Auto-clear footer messages after specified seconds.
+
+```json
+{
+  "messageTimeout": 5
+}
+```
+
+- Number (e.g., `5`): Clear messages after N seconds
+- `null` or omitted: Messages persist until manually cleared with ESC
+
+**Default**: Messages are permanent and require ESC to clear.
+
+**Use cases**:
+- `3`: Quick clear for frequent operations
+- `10`: Longer persistence for important messages
+- `null`: Manual control (default behavior)
 
 ## Multi-Value Variable Schema
 

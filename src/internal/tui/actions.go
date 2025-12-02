@@ -52,11 +52,22 @@ func (m *Model) navigateFiles(delta int) {
 
 // executeRequest executes the current request
 func (m *Model) executeRequest() tea.Cmd {
+	// Prevent concurrent requests
+	if m.loading {
+		return func() tea.Msg {
+			return errorMsg("Request already in progress")
+		}
+	}
+
 	if m.currentRequest == nil {
 		return func() tea.Msg {
 			return errorMsg("No request selected")
 		}
 	}
+
+	// IMMEDIATELY mark as loading to prevent concurrent execution
+	// Clear it if we need to prompt for interactive vars or confirmation
+	m.loading = true
 
 	profile := m.sessionMgr.GetActiveProfile()
 
@@ -64,12 +75,35 @@ func (m *Model) executeRequest() tea.Cmd {
 	if m.interactiveVarValues == nil {
 		interactiveVars := m.getInteractiveVariables()
 		if len(interactiveVars) > 0 {
+			// Clear loading flag since we're not executing yet (waiting for user input)
+			m.loading = false
 			// Trigger interactive prompt mode
 			return func() tea.Msg {
 				return promptInteractiveVarsMsg{varNames: interactiveVars}
 			}
 		}
 	}
+
+	// Check if request requires confirmation (and hasn't been confirmed yet)
+	if m.currentRequest.RequiresConfirmation && !m.confirmationGiven {
+		// Clear loading flag since we're not executing yet (waiting for confirmation)
+		m.loading = false
+		// Show confirmation modal
+		m.mode = ModeConfirmExecution
+		m.statusMsg = fmt.Sprintf("Confirm execution of: %s", m.currentRequest.Name)
+		return nil
+	}
+
+	// Clear confirmation flag for next execution
+	m.confirmationGiven = false
+
+	// Clear any previous error and status messages
+	m.errorMsg = ""
+	m.fullErrorMsg = ""
+	m.statusMsg = "Executing request..."
+
+	// Update response view to show loading indicator
+	m.updateResponseView()
 
 	// Create a copy of the request to avoid mutation
 	requestCopy := *m.currentRequest
@@ -89,6 +123,8 @@ func (m *Model) executeRequest() tea.Cmd {
 	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, cliVars, parser.LoadSystemEnv())
 	resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 	if err != nil {
+		m.loading = false // Clear loading flag on error
+		m.updateResponseView() // Update view to remove loading indicator
 		return func() tea.Msg {
 			return errorMsg(fmt.Sprintf("Failed to resolve variables: %v", err))
 		}
@@ -118,60 +154,85 @@ func (m *Model) executeRequest() tea.Cmd {
 	return m.executeRegularRequest(resolvedRequest, tlsConfig, warnings, shellErrs, profile)
 }
 
-// executeRegularRequest executes a standard (non-streaming) HTTP request
+// executeRegularRequest executes a standard (non-streaming) HTTP request with cancellation support
 func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsConfig *types.TLSConfig, warnings, shellErrs []string, profile *types.Profile) tea.Cmd {
+	// Create a cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	m.requestCancelFunc = cancel
+
 	return func() tea.Msg {
-		// Execute request normally
-		result, err := executor.Execute(resolvedRequest, tlsConfig)
-		if err != nil {
-			return errorMsg(fmt.Sprintf("Failed to execute request: %v", err))
+		// Create a channel for the result
+		type result struct {
+			data *types.RequestResult
+			err  error
 		}
+		resultChan := make(chan result, 1)
 
-		// Apply filter and query
-		filterExpr := resolvedRequest.Filter
-		if filterExpr == "" {
-			filterExpr = profile.DefaultFilter
-		}
-		queryExpr := resolvedRequest.Query
-		if queryExpr == "" {
-			queryExpr = profile.DefaultQuery
-		}
+		// Execute request in goroutine
+		go func() {
+			res, err := executor.Execute(resolvedRequest, tlsConfig)
+			resultChan <- result{data: res, err: err}
+		}()
 
-		if filterExpr != "" || queryExpr != "" {
-			filteredBody, err := filter.Apply(result.Body, filterExpr, queryExpr)
-			if err != nil {
-				_ = err
-			} else {
-				result.Body = filteredBody
+		// Wait for either result or cancellation
+		select {
+		case <-ctx.Done():
+			// Request was cancelled
+			return errorMsg("Request cancelled by user")
+		case res := <-resultChan:
+			// Request completed
+			if res.err != nil {
+				return errorMsg(fmt.Sprintf("Failed to execute request: %v", res.err))
 			}
-		}
 
-		// Parse escape sequences
-		if resolvedRequest.ParseEscapes {
-			result.Body = executor.ParseEscapeSequences(result.Body)
-		}
+			result := res.data
 
-		// Save to history
-		shouldSaveHistory := m.sessionMgr.IsHistoryEnabled()
-		if profile != nil && profile.HistoryEnabled != nil {
-			shouldSaveHistory = *profile.HistoryEnabled
-		}
-		if shouldSaveHistory && len(m.files) > 0 {
-			filePath := m.files[m.fileIndex].Path
-			history.Save(filePath, resolvedRequest, result)
-		}
-
-		// Auto-extract tokens
-		if result.Status >= 200 && result.Status < 300 {
-			if token, err := parser.ExtractJSONToken(result.Body, "access_token"); err == nil {
-				m.sessionMgr.SetSessionVariable("token", token)
+			// Apply filter and query
+			filterExpr := resolvedRequest.Filter
+			if filterExpr == "" {
+				filterExpr = profile.DefaultFilter
 			}
-			if token, err := parser.ExtractJSONToken(result.Body, "token"); err == nil {
-				m.sessionMgr.SetSessionVariable("token", token)
+			queryExpr := resolvedRequest.Query
+			if queryExpr == "" {
+				queryExpr = profile.DefaultQuery
 			}
-		}
 
-		return requestExecutedMsg{result: result, warnings: warnings, shellErrors: shellErrs}
+			if filterExpr != "" || queryExpr != "" {
+				filteredBody, err := filter.Apply(result.Body, filterExpr, queryExpr)
+				if err != nil {
+					_ = err
+				} else {
+					result.Body = filteredBody
+				}
+			}
+
+			// Parse escape sequences
+			if resolvedRequest.ParseEscapes {
+				result.Body = executor.ParseEscapeSequences(result.Body)
+			}
+
+			// Save to history
+			shouldSaveHistory := m.sessionMgr.IsHistoryEnabled()
+			if profile != nil && profile.HistoryEnabled != nil {
+				shouldSaveHistory = *profile.HistoryEnabled
+			}
+			if shouldSaveHistory && len(m.files) > 0 {
+				filePath := m.files[m.fileIndex].Path
+				history.Save(filePath, resolvedRequest, result)
+			}
+
+			// Auto-extract tokens
+			if result.Status >= 200 && result.Status < 300 {
+				if token, err := parser.ExtractJSONToken(result.Body, "access_token"); err == nil {
+					m.sessionMgr.SetSessionVariable("token", token)
+				}
+				if token, err := parser.ExtractJSONToken(result.Body, "token"); err == nil {
+					m.sessionMgr.SetSessionVariable("token", token)
+				}
+			}
+
+			return requestExecutedMsg{result: result, warnings: warnings, shellErrors: shellErrs}
+		}
 	}
 }
 

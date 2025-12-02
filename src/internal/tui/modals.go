@@ -79,27 +79,70 @@ func min(a, b int) int {
 	return b
 }
 
-// renderHistory renders the history viewer modal
+// renderHistory renders the history viewer modal with split view (Telescope-style)
 func (m *Model) renderHistory() string {
-	// Render viewport with scrolling support (like help modal)
 	// Use nearly full screen but leave small margin
 	modalWidth := m.width - 6
 	modalHeight := m.height - 3
+	paneHeight := modalHeight - 4 // Account for borders and padding
 
-	historyView := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorBlue).
-		Width(modalWidth).
-		Height(modalHeight).
-		Padding(1, 2).
-		Render(styleTitle.Render("History") + "\n\n" + m.modalView.View())
+	var mainView string
+
+	if m.historyPreviewVisible {
+		// Split view mode: show both list and preview
+		listWidth := (modalWidth - 3) / 2 // Left pane: history list
+		previewWidth := modalWidth - listWidth - 3 // Right pane: response preview
+
+		// Left pane: History list
+		leftPane := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBlue).
+			Width(listWidth).
+			Height(paneHeight).
+			Padding(0, 1).
+			Render(styleTitle.Render("History") + "\n" + m.modalView.View())
+
+		// Right pane: Response preview (content populated by updateHistoryView)
+		rightPane := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorGreen).
+			Width(previewWidth).
+			Height(paneHeight).
+			Padding(0, 1).
+			Render(styleTitle.Render("Response Preview") + "\n" + m.historyPreviewView.View())
+
+		// Join panes horizontally (Telescope-style split)
+		mainView = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			leftPane,
+			rightPane,
+		)
+	} else {
+		// Preview hidden: expand list to full width
+		mainView = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBlue).
+			Width(modalWidth).
+			Height(paneHeight).
+			Padding(0, 1).
+			Render(styleTitle.Render("History") + "\n" + m.modalView.View())
+	}
+
+	// Add footer with instructions (include 'p' key)
+	footer := styleSubtle.Render("↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close")
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		mainView,
+		"\n"+footer,
+	)
 
 	return lipgloss.Place(
 		m.width,
 		m.height,
 		lipgloss.Center,
 		lipgloss.Center,
-		historyView,
+		content,
 	)
 }
 
@@ -244,4 +287,23 @@ func (m *Model) renderShellErrorsModal() string {
 // updateShellErrorsView is a no-op since renderModalWithFooter handles content
 func (m *Model) updateShellErrorsView() {
 	// Content is built in renderShellErrorsModal, no need to update modalView separately
+}
+
+func (m *Model) renderErrorDetailModal() string {
+	// Wrap error message for better readability
+	width := m.width - 6
+	height := m.height - 4
+	if width < 50 {
+		width = 50
+	}
+	if height < 10 {
+		height = 10
+	}
+
+	// Wrap the error text to fit the modal width
+	contentWidth := width - 4 // Account for modal padding/borders
+	wrappedError := wrapText(m.fullErrorMsg, contentWidth)
+	content := styleError.Render(wrappedError)
+
+	return m.renderModalWithFooter("Error Details", content, "j/k: scroll | g/G: top/bottom | ESC: close", width, height)
 }

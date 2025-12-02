@@ -76,6 +76,11 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 				currentRequest.Streaming = value == "true"
 				continue
 			}
+			if strings.HasPrefix(trimmed, "@confirmation ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@confirmation"))
+				currentRequest.RequiresConfirmation = value == "true"
+				continue
+			}
 			// Check for @tls.* annotations
 			if strings.HasPrefix(trimmed, "@tls.") {
 				if currentRequest.TLS == nil {

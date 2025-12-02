@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -48,6 +49,8 @@ const (
 	ModeCreateFile
 	ModeMRU
 	ModeDiff
+	ModeConfirmExecution
+	ModeErrorDetail
 )
 
 // Model represents the TUI state
@@ -74,6 +77,7 @@ type Model struct {
 	responseContent       string // Full formatted response content for searching
 	helpView              viewport.Model
 	modalView             viewport.Model // For scrollable modal content
+	historyPreviewView    viewport.Model // For history response preview in split view
 
 	// Streaming state
 	streamingActive       bool                  // True when streaming is in progress
@@ -81,11 +85,15 @@ type Model struct {
 	streamChannel         chan streamChunkMsg   // Channel for receiving stream chunks
 	streamCancelFunc      context.CancelFunc    // Function to cancel the streaming request
 
+	// Request cancellation (for regular non-streaming requests)
+	requestCancelFunc     context.CancelFunc    // Function to cancel the current request
+
 	// UI state
 	width        int
 	height       int
 	statusMsg    string
-	errorMsg     string
+	errorMsg     string      // Truncated error for footer
+	fullErrorMsg string      // Full error message for detail modal
 	focusedPanel string // "sidebar" or "response"
 
 	// Variable editor state
@@ -135,8 +143,9 @@ type Model struct {
 	docChildrenCache  map[int]map[string]bool // Cached hasChildren results per response index
 
 	// History state
-	historyEntries []types.HistoryEntry
-	historyIndex   int
+	historyEntries        []types.HistoryEntry
+	historyIndex          int
+	historyPreviewVisible bool // Toggle for showing/hiding response preview pane
 
 	// Rename state
 	renameInput  string
@@ -151,11 +160,12 @@ type Model struct {
 	inputCursor int
 
 	// Flags
-	showHeaders bool
-	showBody    bool
-	fullscreen  bool
-	loading     bool
-	gPressed    bool // Track if 'g' was pressed for 'gg' vim motion
+	showHeaders       bool
+	showBody          bool
+	fullscreen        bool
+	loading           bool
+	gPressed          bool // Track if 'g' was pressed for 'gg' vim motion
+	confirmationGiven bool // Track if user confirmed critical operation
 
 	// Help search state
 	helpSearchQuery  string
@@ -223,7 +233,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadRequestsFromCurrentFile()
 
 	case requestExecutedMsg:
+		m.loading = false // Clear loading flag
+		m.requestCancelFunc = nil // Clear cancel function
 		m.currentResponse = msg.result
+		// Clear any previous errors since request completed successfully
+		m.errorMsg = ""
+		m.fullErrorMsg = ""
 		if len(msg.warnings) > 0 {
 			m.statusMsg = fmt.Sprintf("Request completed (unresolved: %s)", strings.Join(msg.warnings, ", "))
 		} else {
@@ -264,9 +279,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Stream complete
+		m.loading = false // Clear loading flag
 		m.streamingActive = false
 		m.streamChannel = nil
 		m.streamCancelFunc = nil
+		// Clear any previous errors since stream completed successfully
+		m.errorMsg = ""
+		m.fullErrorMsg = ""
 		m.statusMsg = "Stream completed"
 
 	case oauthSuccessMsg:
@@ -288,8 +307,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.interactiveVarCursor = 0
 		m.mode = ModeVariablePromptInteractive
 
+	case clearStatusMsg:
+		m.statusMsg = ""
+
+	case clearErrorMsg:
+		m.errorMsg = ""
+		m.fullErrorMsg = ""
+
 	case errorMsg:
-		m.errorMsg = string(msg)
+		m.loading = false // Clear loading flag on error
+		fullMsg := string(msg)
+		m.fullErrorMsg = fullMsg
+		// Truncate for footer display (max 100 chars)
+		if len(fullMsg) > 100 {
+			m.errorMsg = fullMsg[:97] + "..."
+		} else {
+			m.errorMsg = fullMsg
+		}
+		// Update response view to remove loading indicator
+		m.updateResponseView()
+		// Schedule auto-clear if configured
+		profile := m.sessionMgr.GetActiveProfile()
+		if profile != nil && profile.MessageTimeout != nil && *profile.MessageTimeout > 0 {
+			timeout := time.Duration(*profile.MessageTimeout) * time.Second
+			cmd = tea.Tick(timeout, func(time.Time) tea.Msg {
+				return clearErrorMsg{}
+			})
+		}
 	}
 
 	// Update viewports based on current mode (only if no command was set)
@@ -348,6 +392,10 @@ func (m Model) View() string {
 		return m.renderConfigView()
 	case ModeDelete:
 		return m.renderDeleteModal()
+	case ModeConfirmExecution:
+		return m.renderConfirmExecutionModal()
+	case ModeErrorDetail:
+		return m.renderErrorDetailModal()
 	case ModeShellErrors:
 		return m.renderShellErrorsModal()
 	case ModeCreateFile:
@@ -391,4 +439,43 @@ type streamChunkMsg struct {
 	done  bool
 }
 
+type clearStatusMsg struct{}
+type clearErrorMsg struct{}
+
 type errorMsg string
+
+// Helper methods for setting messages with optional timeout
+func (m *Model) setStatusMessage(msg string) tea.Cmd {
+	m.statusMsg = msg
+
+	// Check if profile has message timeout configured
+	profile := m.sessionMgr.GetActiveProfile()
+	if profile != nil && profile.MessageTimeout != nil && *profile.MessageTimeout > 0 {
+		timeout := time.Duration(*profile.MessageTimeout) * time.Second
+		return tea.Tick(timeout, func(time.Time) tea.Msg {
+			return clearStatusMsg{}
+		})
+	}
+	return nil
+}
+
+func (m *Model) setErrorMessage(msg string) tea.Cmd {
+	fullMsg := msg
+	m.fullErrorMsg = fullMsg
+	// Truncate for footer display (max 100 chars)
+	if len(fullMsg) > 100 {
+		m.errorMsg = fullMsg[:97] + "..."
+	} else {
+		m.errorMsg = fullMsg
+	}
+
+	// Check if profile has message timeout configured
+	profile := m.sessionMgr.GetActiveProfile()
+	if profile != nil && profile.MessageTimeout != nil && *profile.MessageTimeout > 0 {
+		timeout := time.Duration(*profile.MessageTimeout) * time.Second
+		return tea.Tick(timeout, func(time.Time) tea.Msg {
+			return clearErrorMsg{}
+		})
+	}
+	return nil
+}

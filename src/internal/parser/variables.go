@@ -123,6 +123,19 @@ func ExtractRequestVariables(req *types.HttpRequest) []string {
 	// Extract from body
 	addNames(ExtractVariableNames(req.Body))
 
+	// Extract from TLS paths
+	if req.TLS != nil {
+		if req.TLS.CertFile != "" {
+			addNames(ExtractVariableNames(req.TLS.CertFile))
+		}
+		if req.TLS.KeyFile != "" {
+			addNames(ExtractVariableNames(req.TLS.KeyFile))
+		}
+		if req.TLS.CAFile != "" {
+			addNames(ExtractVariableNames(req.TLS.CAFile))
+		}
+	}
+
 	return names
 }
 
@@ -224,6 +237,35 @@ func (vr *VariableResolver) ResolveRequest(req *types.HttpRequest) (*types.HttpR
 			return nil, fmt.Errorf("failed to resolve body: %w", err)
 		}
 		resolved.Body = body
+	}
+
+	// Resolve TLS paths
+	if req.TLS != nil {
+		resolvedTLS := &types.TLSConfig{
+			InsecureSkipVerify: req.TLS.InsecureSkipVerify,
+		}
+		if req.TLS.CertFile != "" {
+			certFile, err := vr.Resolve(req.TLS.CertFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve TLS cert file: %w", err)
+			}
+			resolvedTLS.CertFile = certFile
+		}
+		if req.TLS.KeyFile != "" {
+			keyFile, err := vr.Resolve(req.TLS.KeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve TLS key file: %w", err)
+			}
+			resolvedTLS.KeyFile = keyFile
+		}
+		if req.TLS.CAFile != "" {
+			caFile, err := vr.Resolve(req.TLS.CAFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve TLS CA file: %w", err)
+			}
+			resolvedTLS.CAFile = caFile
+		}
+		resolved.TLS = resolvedTLS
 	}
 
 	return resolved, nil

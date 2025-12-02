@@ -55,6 +55,7 @@ Example: `:1A` jumps to line 26.
 | Key      | Action                   |
 | -------- | ------------------------ |
 | `Enter`  | Execute request          |
+| `Esc`    | Cancel running request   |
 | `i`      | Inspect request          |
 | `x`      | Edit in external editor  |
 | `X`      | Edit in inline editor    |
@@ -64,6 +65,8 @@ Example: `:1A` jumps to line 26.
 | `R`      | Rename file              |
 | `r`      | Refresh file list        |
 | `Ctrl+P` | MRU (most recently used) |
+
+**Request Cancellation**: Press `Esc` while a request is in progress to cancel it. Works for both regular and streaming requests.
 
 ### Creating Files
 
@@ -87,7 +90,13 @@ Search is context-aware:
 1. Sidebar focused: searches filenames
 2. Response focused: searches response body
 
-Supports regex patterns.
+**Search behavior:**
+
+- Text search is **case-insensitive**
+- Regex patterns are **case-sensitive** by default
+- Use `(?i)pattern` for case-insensitive regex matching
+
+Example: `(?i)error` matches "Error", "ERROR", "error"
 
 ## Response Operations
 
@@ -154,7 +163,18 @@ Tree navigation:
 
 Press `H` to view request history.
 
-Press `r` on an entry to replay.
+- Left pane: List of all history entries with timestamps, methods, URLs, and status codes
+- Right pane: Live preview of the selected entry's response
+
+Navigate with `j`/`k` keys - the preview updates automatically as you move through the list.
+
+Actions:
+- `Enter`: Load selected response into the main view
+- `r`: Replay the request (re-execute)
+- `p`: Toggle preview pane visibility (hide sensitive data)
+- `C`: Clear all history
+
+**Privacy**: Use `p` to hide the response preview pane when viewing sensitive data or secrets.
 
 History persists across sessions.
 
@@ -197,6 +217,17 @@ In modal text inputs:
 | `Ctrl+V` | Paste from clipboard |
 | `Ctrl+K` | Clear input          |
 
+## Error Details
+
+When an error occurs, a truncated message appears in the footer.
+
+Press `e` to view the full error message in a scrollable modal.
+
+The error modal supports:
+- Text wrapping for long error messages
+- `j`/`k` scrolling
+- `g`/`G` for top/bottom navigation
+
 ## Shortcuts
 
 Press `?` for complete list.
@@ -206,5 +237,3 @@ Search within help: `/` to search, `n`/`N` to navigate.
 ## Exit
 
 Press `q` to quit.
-
-Unsaved responses are lost.
