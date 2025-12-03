@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/studiowebux/restcli/internal/cli"
@@ -14,7 +16,7 @@ import (
 )
 
 var (
-	version = "0.0.22"
+	version = "0.0.23"
 )
 
 func main() {
@@ -124,14 +126,39 @@ Zsh (macOS/Linux):
 	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var buf bytes.Buffer
+		var err error
+
 		switch args[0] {
 		case "bash":
-			return rootCmd.GenBashCompletion(os.Stdout)
+			err = rootCmd.GenBashCompletion(&buf)
+			if err != nil {
+				return err
+			}
+			// Wrap with conditional check
+			fmt.Println("if type restcli &>/dev/null; then")
+			fmt.Print(buf.String())
+			fmt.Println("fi")
 		case "zsh":
-			return rootCmd.GenZshCompletion(os.Stdout)
+			err = rootCmd.GenZshCompletion(&buf)
+			if err != nil {
+				return err
+			}
+			// Wrap with conditional check
+			fmt.Println("if (( $+commands[restcli] )); then")
+			fmt.Print(buf.String())
+			fmt.Println("fi")
 		case "fish":
-			return rootCmd.GenFishCompletion(os.Stdout, true)
+			err = rootCmd.GenFishCompletion(&buf, true)
+			if err != nil {
+				return err
+			}
+			// Wrap with conditional check
+			fmt.Println("if type -q restcli")
+			fmt.Print(buf.String())
+			fmt.Println("end")
 		case "powershell":
+			// PowerShell doesn't need wrapping
 			return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
 		}
 		return nil
@@ -197,6 +224,32 @@ func init() {
 	openapi2httpCmd.Flags().StringVar(&openapiOrganizeBy, "organize-by", "tags", "Organization strategy (tags/paths/flat)")
 	openapi2httpCmd.Flags().StringVarP(&openapiFormat, "format", "f", "http", "Output format (http/json/yaml)")
 
+	// Helper function to get .http files in a directory
+	getHttpFilesInDir := func(dir string) []string {
+		var httpFiles []string
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			return httpFiles
+		}
+
+		for _, file := range files {
+			if !file.IsDir() {
+				name := file.Name()
+				// Support .http, .yaml, .json, .jsonc files
+				if strings.HasSuffix(name, ".http") {
+					// Return filename without .http extension (since it's optional)
+					httpFiles = append(httpFiles, strings.TrimSuffix(name, ".http"))
+				} else if strings.HasSuffix(name, ".yaml") ||
+					strings.HasSuffix(name, ".json") ||
+					strings.HasSuffix(name, ".jsonc") {
+					// Return these with extension
+					httpFiles = append(httpFiles, name)
+				}
+			}
+		}
+		return httpFiles
+	}
+
 	// Register autocomplete for --profile flag
 	profileCompletionFunc := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		// Initialize config to get proper paths
@@ -219,9 +272,105 @@ func init() {
 		return names, cobra.ShellCompDirectiveNoFileComp
 	}
 
+	// Register autocomplete for file argument (scans profile workdir)
+	fileCompletionFunc := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Don't complete if already have an argument
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// If user is typing a path (starts with . / or ~), use default file completion
+		if strings.HasPrefix(toComplete, "./") ||
+		   strings.HasPrefix(toComplete, "../") ||
+		   strings.HasPrefix(toComplete, "/") ||
+		   strings.HasPrefix(toComplete, "~/") {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+
+		// Initialize config to get proper paths
+		if err := config.Initialize(); err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Get profile from persistent/inherited flags (since --profile is on root command)
+		var profileName string
+		// First try inherited flags (from parent commands)
+		if pf := cmd.InheritedFlags().Lookup("profile"); pf != nil && pf.Changed {
+			profileName = pf.Value.String()
+		}
+		// Fallback to local flags
+		if profileName == "" {
+			if cmd.Flags().Changed("profile") {
+				profileName, _ = cmd.Flags().GetString("profile")
+			}
+		}
+
+		// Load session manager
+		mgr := session.NewManager()
+		if err := mgr.LoadProfiles(); err != nil {
+			// Fallback to current directory if profiles can't be loaded
+			files := getHttpFilesInDir(".")
+			if len(files) == 0 {
+				return []string{"(no request files in current directory)"}, cobra.ShellCompDirectiveNoFileComp
+			}
+			return files, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Determine workdir to scan
+		var workdir string
+		if profileName != "" {
+			// Find profile by name
+			profiles := mgr.GetProfiles()
+			for _, p := range profiles {
+				if p.Name == profileName && p.Workdir != "" {
+					workdir = p.Workdir
+					break
+				}
+			}
+		}
+
+		// If no profile workdir, use current directory
+		if workdir == "" {
+			workdir = "."
+		}
+
+		// Expand home directory if workdir starts with ~
+		if strings.HasPrefix(workdir, "~/") {
+			home, err := os.UserHomeDir()
+			if err == nil {
+				workdir = strings.Replace(workdir, "~", home, 1)
+			}
+		}
+
+		// Get .http files from workdir
+		httpFiles := getHttpFilesInDir(workdir)
+
+		// Show helpful message if no files found
+		if len(httpFiles) == 0 {
+			return []string{"(no request files found in: " + workdir + ")"}, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Filter based on what user has typed
+		var filtered []string
+		for _, f := range httpFiles {
+			if toComplete == "" || strings.HasPrefix(f, toComplete) {
+				filtered = append(filtered, f)
+			}
+		}
+
+		// Show helpful message if filtered list is empty
+		if len(filtered) == 0 {
+			return []string{"(no matches for '" + toComplete + "' in: " + workdir + ")"}, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		return filtered, cobra.ShellCompDirectiveNoFileComp
+	}
+
 	// Register for both root and run commands
 	rootCmd.RegisterFlagCompletionFunc("profile", profileCompletionFunc)
 	runCmd.RegisterFlagCompletionFunc("profile", profileCompletionFunc)
+	rootCmd.ValidArgsFunction = fileCompletionFunc
+	runCmd.ValidArgsFunction = fileCompletionFunc
 
 	// Add subcommands
 	rootCmd.AddCommand(runCmd)

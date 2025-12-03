@@ -57,7 +57,7 @@ func Initialize() error {
 
 	// Create empty profiles file if it doesn't exist
 	if _, err := os.Stat(ProfilesFile); os.IsNotExist(err) {
-		defaultProfiles := []byte(`[{"name":"Default","workdir":"requests","headers":{},"variables":{}}]`)
+		defaultProfiles := []byte(`[{"name":"Default","workdir":".restcli/requests","headers":{},"variables":{}}]`)
 		if err := os.WriteFile(ProfilesFile, defaultProfiles, 0644); err != nil {
 			return fmt.Errorf("failed to create profiles file: %w", err)
 		}

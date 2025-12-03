@@ -62,7 +62,7 @@ Green border indicates focused panel.
 | `d`      | Duplicate file                |
 | `D`      | Delete file                   |
 | `F`      | Create new file               |
-| `R`      | Rename file                   |
+| `R`      | Rename file (supports paths)  |
 | `r`      | Refresh file list             |
 | `Ctrl+P` | Open MRU (most recently used) |
 
@@ -122,9 +122,8 @@ Search is context-aware based on focused panel and supports Regexes.
 | --- | --------------------------- |
 | `?` | Show help and shortcuts     |
 | `e` | Show full error details     |
+| `I` | Show full status message    |
 | `q` | Quit application            |
-
-**Note**: Press `e` when an error is displayed in the footer to view the complete error message with text wrapping.
 
 ## Modal Operations
 
@@ -148,15 +147,16 @@ Search is context-aware based on focused panel and supports Regexes.
 
 ## Variable Editor
 
-| Key | Action                           |
-| --- | -------------------------------- |
-| `m` | Modify selected variable         |
-| `s` | Set active option (multi-value)  |
-| `a` | Add new variable                 |
-| `e` | Edit variable                    |
-| `d` | Delete variable                  |
-| `l` | List all values (multi-value)    |
-| `L` | Set value by alias (multi-value) |
+| Key     | Action                           |
+| ------- | -------------------------------- |
+| `m`     | Modify selected variable         |
+| `s`     | Set active option (multi-value)  |
+| `a`     | Add new variable                 |
+| `e`     | Edit variable                    |
+| `d`     | Delete variable                  |
+| `l`     | List all values (multi-value)    |
+| `L`     | Set value by alias (multi-value) |
+| `1`-`9` | Quick select option (in selector)|
 
 ## Profile Switcher
 
@@ -164,7 +164,8 @@ Search is context-aware based on focused panel and supports Regexes.
 | ------- | -------------------------- |
 | `Enter` | Switch to selected profile |
 | `e`     | Edit selected profile      |
-| `d`     | Delete profile             |
+| `d`     | Duplicate selected profile |
+| `D`     | Delete selected profile    |
 | `n`     | Create new profile         |
 
 ## Documentation Viewer

@@ -242,6 +242,10 @@ Select profile from list.
 
 Press `e` to edit profile configuration.
 
+Press `d` to duplicate the selected profile (copies all settings including workdir, headers, variables, and OAuth).
+
+Press `D` to delete the selected profile (requires confirmation; cannot delete active or last profile).
+
 ## Sessions
 
 Session data in `.session.json` tracks ephemeral state.

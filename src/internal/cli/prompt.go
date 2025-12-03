@@ -79,6 +79,20 @@ func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.choice = "!CUSTOM!"
 			m.quitting = true
 			return m, tea.Quit
+
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			// Quick select by number
+			num := int(msg.String()[0] - '0') // Convert '1'-'9' to 1-9
+			index := num - 1                   // Convert to 0-based index
+			if index < len(m.list.Items()) {
+				m.list.Select(index)
+				i, ok := m.list.SelectedItem().(item)
+				if ok {
+					m.choice = i.value
+				}
+				m.quitting = true
+				return m, tea.Quit
+			}
 		}
 	}
 

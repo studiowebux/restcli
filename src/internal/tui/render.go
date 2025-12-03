@@ -16,14 +16,15 @@ import (
 	"github.com/studiowebux/restcli/internal/parser"
 )
 
-// Adaptive color definitions for light/dark terminal support
+// Color definitions using terminal's native color palette with adaptive brightness
+// Light mode uses regular colors (0-7), dark mode uses bright colors (8-15) for better contrast
 var (
-	colorGreen  = lipgloss.AdaptiveColor{Light: "#006400", Dark: "#00ff00"} // Dark green / Bright green
-	colorRed    = lipgloss.AdaptiveColor{Light: "#8b0000", Dark: "#ff0000"} // Dark red / Bright red
-	colorYellow = lipgloss.AdaptiveColor{Light: "#b8860b", Dark: "#ffff00"} // Dark goldenrod / Yellow
-	colorBlue   = lipgloss.AdaptiveColor{Light: "#00008b", Dark: "#0000ff"} // Dark blue / Blue
-	colorGray   = lipgloss.AdaptiveColor{Light: "#555555", Dark: "#888888"} // Dark gray / Light gray
-	colorCyan   = lipgloss.AdaptiveColor{Light: "#008b8b", Dark: "#00ffff"} // Dark cyan / Cyan
+	colorGreen  = lipgloss.AdaptiveColor{Light: "2", Dark: "10"} // Green / Bright green
+	colorRed    = lipgloss.AdaptiveColor{Light: "1", Dark: "9"}  // Red / Bright red
+	colorYellow = lipgloss.AdaptiveColor{Light: "3", Dark: "11"} // Yellow / Bright yellow
+	colorBlue   = lipgloss.AdaptiveColor{Light: "4", Dark: "12"} // Blue / Bright blue
+	colorGray   = lipgloss.AdaptiveColor{Light: "8", Dark: "8"}  // Bright black (gray) for both
+	colorCyan   = lipgloss.AdaptiveColor{Light: "6", Dark: "14"} // Cyan / Bright cyan
 )
 
 // Style definitions
@@ -32,9 +33,16 @@ var (
 			Bold(true).
 			Foreground(colorCyan)
 
+	styleTitleFocused = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorCyan)
+
+	styleTitleUnfocused = lipgloss.NewStyle().
+				Foreground(colorGray)
+
 	styleSelected = lipgloss.NewStyle().
-			Background(lipgloss.AdaptiveColor{Light: "#d3d3d3", Dark: "#3a3a3a"}).
-			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
+			Background(lipgloss.AdaptiveColor{Light: "7", Dark: "8"}). // Bright white / Bright black
+			Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"}) // Black / White
 
 	styleSuccess = lipgloss.NewStyle().
 			Foreground(colorGreen)
@@ -49,17 +57,17 @@ var (
 			Foreground(colorGray)
 
 	styleSearchHighlight = lipgloss.NewStyle().
-				Background(lipgloss.AdaptiveColor{Light: "#ffff00", Dark: "#444400"}). // Yellow background, dark yellow for dark mode
-				Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})  // Black text on light, white on dark
+				Background(colorYellow).                                  // Adaptive yellow background
+				Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "0"}) // Black text for both modes
 
 	// Diff background styles for split view highlighting
 	styleDiffRemoved = lipgloss.NewStyle().
-				Background(lipgloss.AdaptiveColor{Light: "#ffe0e0", Dark: "#4a2020"}). // Light red / Dark red
-				Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
+				Background(lipgloss.AdaptiveColor{Light: "1", Dark: "9"}). // Red / Bright red
+				Foreground(lipgloss.AdaptiveColor{Light: "15", Dark: "0"}) // White / Black
 
 	styleDiffAdded = lipgloss.NewStyle().
-			Background(lipgloss.AdaptiveColor{Light: "#e0ffe0", Dark: "#204a20"}). // Light green / Dark green
-			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#ffffff"})
+			Background(lipgloss.AdaptiveColor{Light: "2", Dark: "10"}). // Green / Bright green
+			Foreground(lipgloss.AdaptiveColor{Light: "15", Dark: "0"})  // White / Black
 
 	styleDiffNeutral = lipgloss.NewStyle().
 				Foreground(colorGray)
@@ -107,12 +115,14 @@ func (m Model) renderMain() string {
 
 	// Fullscreen mode - show only response
 	if m.fullscreen {
-		response := m.renderResponse(m.width-4, m.height-3)
+		response := m.renderResponse(m.width-4, m.height-5)
 		responseBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorGreen). // Always green in fullscreen
+			Border(lipgloss.ThickBorder()).
+			BorderForeground(colorCyan). // Cyan for focused (fullscreen) panel
 			Width(m.width - 2).
-			Height(m.height - 1). // Leave 1 line for status bar
+			Height(m.height - 3). // Leave room for status bar + top border visibility
+			Padding(0).           // No padding inside box border
+			AlignVertical(lipgloss.Top).
 			Render(response)
 
 		statusBar := m.renderStatusBar()
@@ -133,30 +143,34 @@ func (m Model) renderMain() string {
 	responseWidth := m.width - sidebarWidth - 4 // Account for borders
 
 	// Render components with borders
-	sidebar := m.renderSidebar(sidebarWidth-2, m.height-3) // -3 = -1 (status) -2 (borders)
-	response := m.renderResponse(responseWidth-2, m.height-3)
+	sidebar := m.renderSidebar(sidebarWidth-2, m.height-5) // -5 = -1 (status) -2 (borders) -2 (top visibility)
+	response := m.renderResponse(responseWidth-2, m.height-5)
 
-	// Add borders - highlight the focused panel
+	// Add borders - highlight the focused panel with cyan, unfocused with gray
 	sidebarBorderColor := colorGray
 	responseBorderColor := colorGray
 	if m.focusedPanel == "sidebar" {
-		sidebarBorderColor = colorGreen
+		sidebarBorderColor = colorCyan
 	} else if m.focusedPanel == "response" {
-		responseBorderColor = colorGreen
+		responseBorderColor = colorCyan
 	}
 
 	sidebarBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.ThickBorder()).
 		BorderForeground(sidebarBorderColor).
 		Width(sidebarWidth).
-		Height(m.height - 1). // Leave 1 line for status bar
+		Height(m.height - 3). // Leave room for status bar + top border visibility
+		Padding(0).           // No padding inside box border
+		AlignVertical(lipgloss.Top).
 		Render(sidebar)
 
 	responseBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.ThickBorder()).
 		BorderForeground(responseBorderColor).
 		Width(responseWidth).
-		Height(m.height - 1). // Leave 1 line for status bar
+		Height(m.height - 3). // Leave room for status bar + top border visibility
+		Padding(0).           // No padding inside box border
+		AlignVertical(lipgloss.Top).
 		Render(response)
 
 	// Combine sidebar and response
@@ -188,8 +202,12 @@ func max(a, b int) int {
 func (m Model) renderSidebar(width, height int) string {
 	var lines []string
 
-	// Title
-	title := styleTitle.Render("Files")
+	// Title - bold if focused
+	titleStyle := styleTitleUnfocused
+	if m.focusedPanel == "sidebar" {
+		titleStyle = styleTitleFocused
+	}
+	title := titleStyle.Render("Files")
 	lines = append(lines, title)
 	lines = append(lines, "")
 
@@ -257,49 +275,113 @@ func (m Model) renderSidebar(width, height int) string {
 	content := strings.Join(lines, "\n")
 	style := lipgloss.NewStyle().
 		Width(width).
-		Height(height - 5).
-		Padding(1)
+		Height(height).
+		Padding(0, 1) // No vertical padding, only horizontal
 
 	return style.Render(content)
 }
 
+// getScrollIndicator returns a scroll position indicator for the response viewport
+func (m Model) getScrollIndicator() string {
+	// Only show indicator when body is visible and content is scrollable
+	if !m.showBody || m.currentResponse == nil {
+		return ""
+	}
+
+	// Count total lines in viewport content
+	totalLines := strings.Count(m.responseContent, "\n") + 1
+	visibleLines := m.responseView.Height
+
+	// No scroll indicator if all content fits in viewport
+	if totalLines <= visibleLines {
+		return ""
+	}
+
+	// Calculate scroll percentage
+	currentLine := m.responseView.YOffset
+	scrollableLines := totalLines - visibleLines
+
+	var percentage int
+	if scrollableLines > 0 {
+		percentage = (currentLine * 100) / scrollableLines
+	}
+
+	// Clamp percentage to 0-100 range
+	if percentage < 0 {
+		percentage = 0
+	} else if percentage > 100 {
+		percentage = 100
+	}
+
+	// Format indicator with position info
+	return fmt.Sprintf("[%d%%] %d/%d", percentage, currentLine+visibleLines, totalLines)
+}
+
 // renderResponse renders the response panel
 func (m Model) renderResponse(width, height int) string {
+	// Add title at the top - bold if focused
+	titleStyle := styleTitleUnfocused
+	if m.focusedPanel == "response" {
+		titleStyle = styleTitleFocused
+	}
+	title := titleStyle.Render("Response")
+
+	// Add scroll indicator if viewport has scrollable content
+	scrollIndicator := m.getScrollIndicator()
+	if scrollIndicator != "" {
+		// Add scroll indicator on the same line as title
+		titleWithScroll := lipgloss.JoinHorizontal(lipgloss.Top, title, "  ", styleSubtle.Render(scrollIndicator))
+		title = titleWithScroll
+	}
+
 	if m.currentResponse == nil {
 		// If loading, show viewport content (which has the loading indicator)
 		if m.loading {
+			var content strings.Builder
+			content.WriteString(title + "\n\n")
 			viewportContent := m.responseView.View()
-			// Add padding manually
-			paddedLines := []string{""}
-			for _, line := range strings.Split(viewportContent, "\n") {
-				paddedLines = append(paddedLines, " "+line)
-			}
-			return strings.Join(paddedLines, "\n")
+			// Add viewport content
+			content.WriteString(viewportContent)
+
+			// Apply style with height constraint (like sidebar does)
+			style := lipgloss.NewStyle().
+				Width(width).
+				Height(height).
+				Padding(0, 1) // No vertical padding, only horizontal
+			return style.Render(content.String())
 		}
 		// Otherwise show empty state message
 		noResponse := styleSubtle.Render("No response yet\n\nPress Enter to execute request\n\nPress 'b' to toggle body visibility")
-		return lipgloss.NewStyle().
-			MaxWidth(width).
+		contentStr := title + "\n\n" + noResponse
+
+		// Apply style with height constraint
+		style := lipgloss.NewStyle().
+			Width(width).
 			Height(height).
-			Padding(1).
-			AlignHorizontal(lipgloss.Left).
-			Render(noResponse)
+			Padding(0, 1) // No vertical padding, only horizontal
+		return style.Render(contentStr)
 	}
 
 	// If body is shown, use viewport for scrolling
 	if m.showBody {
-		// Return viewport directly with padding applied to container
+		// Return viewport content with title
+		var content strings.Builder
+		content.WriteString(title + "\n\n")
 		viewportContent := m.responseView.View()
-		// Add padding manually
-		paddedLines := []string{""}
-		for _, line := range strings.Split(viewportContent, "\n") {
-			paddedLines = append(paddedLines, " "+line)
-		}
-		return strings.Join(paddedLines, "\n")
+		content.WriteString(viewportContent)
+
+		// Apply style with height constraint (like sidebar does)
+		style := lipgloss.NewStyle().
+			Width(width).
+			Height(height).
+			Padding(0, 1) // No vertical padding, only horizontal
+		return style.Render(content.String())
 	}
 
 	// Otherwise show just status and headers (no scrolling needed)
 	var lines []string
+	lines = append(lines, title)
+	lines = append(lines, "")
 
 	// Status line
 	statusStyle := styleSuccess
@@ -337,7 +419,7 @@ func (m Model) renderResponse(width, height int) string {
 	return lipgloss.NewStyle().
 		MaxWidth(width).
 		Height(height).
-		Padding(1).
+		Padding(0, 1). // No vertical padding, only horizontal
 		AlignHorizontal(lipgloss.Left).
 		Render(content)
 }
@@ -380,6 +462,10 @@ func (m Model) renderStatusBar() string {
 			} else {
 				right += m.statusMsg
 			}
+			// Add hint if status message is truncated
+			if len(m.fullStatusMsg) > 100 {
+				right += styleSubtle.Render(" [press 'I' for full message]")
+			}
 		} else if len(m.searchMatches) == 0 {
 			right += styleSubtle.Render("Press / to search | ? for help | q to quit")
 		}
@@ -396,7 +482,10 @@ func (m Model) renderStatusBar() string {
 
 // getFileListHeight calculates the height available for the file list
 func (m Model) getFileListHeight() int {
-	return m.height - 7 // Account for title, footer, status bar
+	// Must match the actual pageSize calculation in renderSidebar
+	// renderSidebar receives: m.height - 5 (from renderMain line 146)
+	// pageSize = height - 4 = (m.height - 5) - 4 = m.height - 9
+	return m.height - 9
 }
 
 // updateViewport updates the response viewport
@@ -416,13 +505,29 @@ func (m *Model) updateViewport() {
 		responseWidth = m.width - sidebarWidth - 4 // Account for borders
 	}
 
-	// Viewport width = renderResponse width - 2 (padding)
-	m.responseView.Width = responseWidth - 4 // -2 for renderResponse param, -2 for padding
-	m.responseView.Height = m.height - 5     // -5 = -1 (status) -2 (borders) -2 (padding)
+	// Viewport width = renderResponse width - content padding
+	m.responseView.Width = responseWidth - 4 // -2 for renderResponse param, -2 for " " prefix padding in content
+	// Viewport height calculation:
+	// renderResponse gets: m.height - 5
+	// Applies Height(height): m.height - 5
+	// Content has: title (1) + blank (1) + viewport
+	// So viewport = m.height - 5 - 2 = m.height - 7
+	m.responseView.Height = m.height - 7
 
 	// Initialize help viewport
-	m.helpView.Width = m.width - 4
-	m.helpView.Height = m.height - 4
+	// Modal width: m.width - 10, Padding: 2 horizontal each side = 4, Border: included
+	// So viewport width = (m.width - 10) - 4 (horizontal padding) = m.width - 14
+	m.helpView.Width = m.width - 14
+	if m.helpView.Width < 10 {
+		m.helpView.Width = 10
+	}
+	// Modal height: m.height - 4, Padding: 1 vertical each side = 2
+	// Content: title (1) + blank (1) + viewport + blank (1) + footer (1) = viewport + 4
+	// So viewport height = (m.height - 4) - 2 (padding) - 4 (non-viewport lines) = m.height - 10
+	m.helpView.Height = m.height - 10
+	if m.helpView.Height < 5 {
+		m.helpView.Height = 5
+	}
 }
 
 // updateResponseView updates the response viewport content
@@ -696,7 +801,7 @@ RESPONSE
 CONFIGURATION
   v            Variable editor
   h            Header editor
-  p            Switch profile (press [e] to edit profile)
+  p            Switch profile (press [e] to edit, [d] duplicate, [D] delete)
   n            Create new profile (when no search active)
   C            View current configuration
   P            Edit .profiles.json
@@ -747,9 +852,7 @@ CLI MODE
   restcli <file>           Execute without profile (prompts for vars)
   restcli <file> -p <name> Execute with profile (no prompts)
   restcli <file> -e k=v    Provide variable (won't be prompted)
-  --env-file <path>        Load environment variables from file
-
-Use ↑/↓ or j/k to scroll, / to search, ESC or ? to close`
+  --env-file <path>        Load environment variables from file`
 
 	// Apply search filter if active
 	if m.helpSearchQuery != "" {
@@ -1213,20 +1316,29 @@ func (m *Model) updateInspectView() {
 
 // updateHistoryView updates the history viewport content for split view (Telescope-style)
 func (m *Model) updateHistoryView() {
-	// Calculate dimensions for split view
+	// Calculate dimensions
 	modalWidth := m.width - 6
 	modalHeight := m.height - 3
-	listWidth := (modalWidth - 3) / 2          // Left pane width
-	previewWidth := modalWidth - listWidth - 3 // Right pane width
-	paneHeight := modalHeight - 4              // Account for borders and padding
+	paneHeight := modalHeight - 4 // Account for borders and padding
 
-	// Set viewport dimensions for left pane (history list)
-	m.modalView.Width = listWidth - 4   // Account for padding and borders
-	m.modalView.Height = paneHeight - 2 // Account for title
+	// Adjust viewport widths based on preview visibility
+	if m.historyPreviewVisible {
+		// Split view mode: calculate widths for both panes
+		listWidth := (modalWidth - 3) / 2          // Left pane width
+		previewWidth := modalWidth - listWidth - 3 // Right pane width
 
-	// Set viewport dimensions for right pane (response preview)
-	m.historyPreviewView.Width = previewWidth - 4
-	m.historyPreviewView.Height = paneHeight - 2
+		// Set viewport dimensions for left pane (history list)
+		m.modalView.Width = listWidth - 4   // Account for padding and borders
+		m.modalView.Height = paneHeight - 2 // Account for title
+
+		// Set viewport dimensions for right pane (response preview)
+		m.historyPreviewView.Width = previewWidth - 4
+		m.historyPreviewView.Height = paneHeight - 2
+	} else {
+		// Preview hidden: expand list to full width
+		m.modalView.Width = modalWidth - 4  // Account for padding and borders
+		m.modalView.Height = paneHeight - 2 // Account for title
+	}
 
 	// Build content for left pane (history list)
 	var listContent strings.Builder

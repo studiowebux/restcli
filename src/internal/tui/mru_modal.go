@@ -44,6 +44,27 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.gPressed = false
 
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		// Quick select by number (1-9)
+		num := int(msg.String()[0] - '0') // Convert '1'-'9' to 1-9
+		index := num - 1                   // Convert to 0-based index
+		if index < len(recentFiles) {
+			m.mruIndex = index
+			// Immediately select the file (simulate enter key)
+			msg.Type = tea.KeyEnter
+			return m.handleMRUKeys(tea.KeyMsg{Type: tea.KeyEnter})
+		}
+
+	case "0":
+		// Quick select 10th item (0 = 10)
+		index := 9
+		if index < len(recentFiles) {
+			m.mruIndex = index
+			// Immediately select the file (simulate enter key)
+			msg.Type = tea.KeyEnter
+			return m.handleMRUKeys(tea.KeyMsg{Type: tea.KeyEnter})
+		}
+
 	case "enter":
 		if len(recentFiles) == 0 {
 			m.errorMsg = "No recent files"
@@ -117,29 +138,8 @@ func (m *Model) renderMRUModal() string {
 		workdir = profile.Workdir
 	}
 
-	maxVisible := 15 // Maximum files to show at once
-	startIdx := 0
-	endIdx := len(existingFiles)
-
-	// Adjust scroll window if needed
-	if len(existingFiles) > maxVisible {
-		// Center selected item in view
-		startIdx = m.mruIndex - maxVisible/2
-		if startIdx < 0 {
-			startIdx = 0
-		}
-		endIdx = startIdx + maxVisible
-		if endIdx > len(existingFiles) {
-			endIdx = len(existingFiles)
-			startIdx = endIdx - maxVisible
-			if startIdx < 0 {
-				startIdx = 0
-			}
-		}
-	}
-
-	for i := startIdx; i < endIdx; i++ {
-		filePath := existingFiles[i]
+	// Render all files - let the modal viewport handle scrolling
+	for i, filePath := range existingFiles {
 		displayPath := filePath
 
 		// Show relative path if in workdir
@@ -151,16 +151,21 @@ func (m *Model) renderMRUModal() string {
 			}
 		}
 
-		if i == m.mruIndex {
-			content.WriteString(fmt.Sprintf("→ %s\n", displayPath))
+		// Add number prefix for first 10 items (1-9, 0 for 10th)
+		var prefix string
+		if i < 9 {
+			prefix = fmt.Sprintf("%d. ", i+1)
+		} else if i == 9 {
+			prefix = "0. "
 		} else {
-			content.WriteString(fmt.Sprintf("  %s\n", displayPath))
+			prefix = "   "
 		}
-	}
 
-	// Show scroll indicator if needed
-	if len(existingFiles) > maxVisible {
-		content.WriteString(fmt.Sprintf("\n[%d-%d of %d files]", startIdx+1, endIdx, len(existingFiles)))
+		if i == m.mruIndex {
+			content.WriteString(styleSelected.Render(fmt.Sprintf("%s%s", prefix, displayPath)) + "\n")
+		} else {
+			content.WriteString(fmt.Sprintf("  %s%s\n", prefix, displayPath))
+		}
 	}
 
 	// Show error if present
@@ -169,7 +174,8 @@ func (m *Model) renderMRUModal() string {
 		content.WriteString(styleError.Render(m.errorMsg))
 	}
 
-	footer := "[↑/↓ j/k] navigate [enter] open [esc] close"
+	footer := "[↑/↓ j/k] navigate [1-9,0] quick select [enter] open [esc] close"
 
-	return m.renderModalWithFooter("Recent Files (MRU)", content.String(), footer, 70, 20)
+	// Use auto-scroll to keep selected file visible
+	return m.renderModalWithFooterAndScroll("Recent Files (MRU)", content.String(), footer, 70, 18, m.mruIndex)
 }

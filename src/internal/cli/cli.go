@@ -106,6 +106,21 @@ func Run(opts RunOptions) error {
 	// Use first request (TODO: support selecting specific request by name)
 	request := requests[0]
 
+	// Check if confirmation is required
+	if request.RequiresConfirmation {
+		fmt.Printf("Request '%s' requires confirmation.\n", request.Name)
+		fmt.Printf("Method: %s\n", request.Method)
+		fmt.Printf("URL: %s\n", request.URL)
+		fmt.Print("\nProceed? [y/N]: ")
+
+		var response string
+		fmt.Scanln(&response)
+		response = strings.ToLower(strings.TrimSpace(response))
+		if response != "y" && response != "yes" {
+			return fmt.Errorf("execution cancelled by user")
+		}
+	}
+
 	// Check if stdin is being piped (for body override)
 	stdinPiped := false
 	if opts.BodyOverride != "" {

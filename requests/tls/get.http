@@ -1,6 +1,5 @@
 ### Conversation
 # @confirmation true
-# @tls.certFile {{certsPath}}/client.crt
-# @tls.keyFile {{certsPath}}/client.key
-# @tls.caFile {{caPath}}/ca.crt
+# @tls.certFile /Users/tgingras/Documents/Projects/@studiowebux/restcli/requests/tls/cert.pem
+# @tls.keyFile /Users/tgingras/Documents/Projects/@studiowebux/restcli/requests/tls/key.pem
 GET https://jsonplaceholder.typicode.com/posts/3

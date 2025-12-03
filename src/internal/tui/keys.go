@@ -40,7 +40,7 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleInteractiveVariablePromptKeys(msg)
 	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
 		return m.handleHeaderEditorKeys(msg)
-	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit:
+	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit, ModeProfileDuplicate, ModeProfileDeleteConfirm:
 		return m.handleProfileKeys(msg)
 	case ModeDocumentation:
 		return m.handleDocumentationKeys(msg)
@@ -70,6 +70,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleShellErrorsKeys(msg)
 	case ModeErrorDetail:
 		return m.handleErrorDetailKeys(msg)
+	case ModeStatusDetail:
+		return m.handleStatusDetailKeys(msg)
 	case ModeCreateFile:
 		return m.handleCreateFileKeys(msg)
 	case ModeMRU:
@@ -112,6 +114,15 @@ func (m *Model) handleErrorDetailKeys(msg tea.KeyMsg) tea.Cmd {
 		m.modalView.GotoTop()
 	case "G":
 		m.modalView.GotoBottom()
+	}
+	return nil
+}
+
+// handleStatusDetailKeys handles keyboard input in status detail modal
+func (m *Model) handleStatusDetailKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q", "enter":
+		m.mode = ModeNormal
 	}
 	return nil
 }
@@ -387,6 +398,11 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		// Open error detail modal if there's an error
 		if m.fullErrorMsg != "" {
 			m.mode = ModeErrorDetail
+		}
+	case "I":
+		// Open status detail modal if there's a status message
+		if m.fullStatusMsg != "" {
+			m.mode = ModeStatusDetail
 		}
 	case "p":
 		m.mode = ModeProfileSwitch
@@ -807,12 +823,32 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.helpView.ScrollDown(halfPage)
 
+	case "g":
+		// Vim-style 'gg' to go to top
+		if m.gPressed {
+			m.gPressed = false
+			m.helpView.GotoTop()
+		} else {
+			m.gPressed = true
+		}
+		return nil // Don't reset gPressed
+
+	case "G":
+		// Vim-style 'G' to go to bottom
+		m.helpView.GotoBottom()
+
 	case "home":
 		m.helpView.GotoTop()
 
 	case "end":
 		m.helpView.GotoBottom()
 	}
+
+	// Reset gPressed on any key except 'g'
+	if msg.String() != "g" {
+		m.gPressed = false
+	}
+
 	return nil
 }
 

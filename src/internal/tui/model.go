@@ -44,6 +44,8 @@ const (
 	ModeConfigView
 	ModeDelete
 	ModeProfileEdit
+	ModeProfileDuplicate
+	ModeProfileDeleteConfirm
 	ModeVariableAlias
 	ModeShellErrors
 	ModeCreateFile
@@ -51,6 +53,7 @@ const (
 	ModeDiff
 	ModeConfirmExecution
 	ModeErrorDetail
+	ModeStatusDetail
 )
 
 // Model represents the TUI state
@@ -93,8 +96,9 @@ type Model struct {
 	height       int
 	statusMsg    string
 	errorMsg     string      // Truncated error for footer
-	fullErrorMsg string      // Full error message for detail modal
-	focusedPanel string // "sidebar" or "response"
+	fullErrorMsg   string // Full error message for detail modal
+	fullStatusMsg  string // Full status message for detail modal
+	focusedPanel   string // "sidebar" or "response"
 
 	// Variable editor state
 	varEditIndex     int
@@ -240,9 +244,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errorMsg = ""
 		m.fullErrorMsg = ""
 		if len(msg.warnings) > 0 {
-			m.statusMsg = fmt.Sprintf("Request completed (unresolved: %s)", strings.Join(msg.warnings, ", "))
+			statusText := fmt.Sprintf("Request completed (unresolved: %s)", strings.Join(msg.warnings, ", "))
+			m.fullStatusMsg = statusText
+			if len(statusText) > 100 {
+				m.statusMsg = statusText[:97] + "..."
+			} else {
+				m.statusMsg = statusText
+			}
 		} else {
 			m.statusMsg = "Request completed"
+			m.fullStatusMsg = "Request completed"
 		}
 		m.updateResponseView()
 		// Auto-switch focus to response panel so user can immediately scroll
@@ -370,7 +381,7 @@ func (m Model) View() string {
 		return m.renderInteractiveVariablePrompt()
 	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
 		return m.renderHeaderEditor()
-	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit:
+	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit, ModeProfileDuplicate, ModeProfileDeleteConfirm:
 		return m.renderProfileModal()
 	case ModeDocumentation:
 		return m.renderDocumentation()
@@ -396,6 +407,8 @@ func (m Model) View() string {
 		return m.renderConfirmExecutionModal()
 	case ModeErrorDetail:
 		return m.renderErrorDetailModal()
+	case ModeStatusDetail:
+		return m.renderStatusDetailModal()
 	case ModeShellErrors:
 		return m.renderShellErrorsModal()
 	case ModeCreateFile:
@@ -446,7 +459,14 @@ type errorMsg string
 
 // Helper methods for setting messages with optional timeout
 func (m *Model) setStatusMessage(msg string) tea.Cmd {
-	m.statusMsg = msg
+	fullMsg := msg
+	m.fullStatusMsg = fullMsg
+	// Truncate for footer display (max 100 chars)
+	if len(fullMsg) > 100 {
+		m.statusMsg = fullMsg[:97] + "..."
+	} else {
+		m.statusMsg = fullMsg
+	}
 
 	// Check if profile has message timeout configured
 	profile := m.sessionMgr.GetActiveProfile()

@@ -2,8 +2,53 @@
 import { Hono } from "npm:hono";
 import { logger } from "npm:hono/logger";
 import { stream, streamSSE, streamText } from "npm:hono/streaming";
+import { createRoute, OpenAPIHono } from "npm:@hono/zod-openapi";
+import { z } from "npm:zod";
 
-const app = new Hono();
+// const app = new Hono();
+
+export const app = new OpenAPIHono();
+
+// ../bin/restcli openapi2http -f json -o ./tmp http://localhost:8000/doc
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/health",
+    tags: ["Admin"],
+    request: {},
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                status: z.string(),
+              }).openapi("ServerHealthStatus"),
+          },
+        },
+        description: "Server Health Status",
+      },
+    },
+  }),
+  async (c) => {
+    return c.json({
+      status: "Ok",
+    });
+  },
+);
+app.doc("/doc", (c) => ({
+  openapi: "3.0.0",
+  info: {
+    version: "1.0.0",
+    title: "Rest CLI Server",
+  },
+  servers: [
+    {
+      url: new URL(c.req.url).origin,
+      description: "Current environment",
+    },
+  ],
+}));
 
 app.use(logger());
 

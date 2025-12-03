@@ -234,3 +234,76 @@ Full output with headers:
 ```bash
 restcli -f auth.http
 ```
+
+## Confirmation Prompts
+
+Requests with `@confirmation` directive require confirmation in CLI mode:
+
+```http
+### Delete User
+# @confirmation
+DELETE https://api.example.com/users/{{userId}}
+```
+
+When executed in CLI:
+
+```bash
+restcli delete-user.http -p prod
+# Prompts: Request 'Delete User' requires confirmation.
+# Method: DELETE
+# URL: https://api.example.com/users/123
+#
+# Proceed? [y/N]:
+```
+
+Prevents accidental execution of critical endpoints.
+
+## Shell Completion
+
+Generate completions for your shell:
+
+### Bash
+
+```bash
+# Generate completion script
+restcli completion bash > /etc/bash_completion.d/restcli
+
+# Or add to ~/.bashrc
+source <(restcli completion bash)
+```
+
+### Zsh
+
+```bash
+# Create completions directory
+mkdir -p ~/.zsh/completions
+
+# Add to ~/.zshrc (if not already present)
+if type restcli &>/dev/null; then
+    echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+    echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+fi
+
+# Generate completions
+restcli completion zsh > ~/.zsh/completions/_restcli
+
+# Reload shell
+source ~/.zshrc
+```
+
+### Features
+
+Completion provides:
+- **Profile names** for `--profile` flag (from `.profiles.json`)
+- **Request files** for file argument (from profile's workdir or current directory)
+- **Flag names** and options
+
+Example:
+
+```bash
+restcli run <TAB>          # Shows .http files
+restcli -p <TAB>           # Shows profile names
+restcli run api -p <TAB>   # Shows profiles
+```
+
+**Note**: File completion is profile-aware. With `--profile dev`, it scans the `dev` profile's workdir for valid files.

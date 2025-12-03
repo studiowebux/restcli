@@ -135,12 +135,29 @@ func (m *Model) executeRequest() tea.Cmd {
 	shellErrs := resolver.GetShellErrors()
 
 	// Merge TLS config: request-level overrides profile-level
+	// Resolve profile TLS config if present
 	var tlsConfig *types.TLSConfig
 	if profile.TLS != nil {
-		tlsConfig = profile.TLS
+		resolvedProfileTLS := &types.TLSConfig{
+			InsecureSkipVerify: profile.TLS.InsecureSkipVerify,
+		}
+		if profile.TLS.CertFile != "" {
+			certFile, _ := resolver.Resolve(profile.TLS.CertFile)
+			resolvedProfileTLS.CertFile = certFile
+		}
+		if profile.TLS.KeyFile != "" {
+			keyFile, _ := resolver.Resolve(profile.TLS.KeyFile)
+			resolvedProfileTLS.KeyFile = keyFile
+		}
+		if profile.TLS.CAFile != "" {
+			caFile, _ := resolver.Resolve(profile.TLS.CAFile)
+			resolvedProfileTLS.CAFile = caFile
+		}
+		tlsConfig = resolvedProfileTLS
 	}
-	if m.currentRequest.TLS != nil {
-		tlsConfig = m.currentRequest.TLS
+	// Request-level TLS overrides profile-level (already resolved in resolvedRequest)
+	if resolvedRequest.TLS != nil {
+		tlsConfig = resolvedRequest.TLS
 	}
 
 	// Check if this is a streaming request
@@ -505,9 +522,8 @@ func (m *Model) copyToClipboard() tea.Cmd {
 		}
 
 		// Return success message (will be rendered green by status bar)
-		m.statusMsg = "Response copied to clipboard"
 		m.errorMsg = ""
-		return nil
+		return m.setStatusMessage("Response copied to clipboard")
 	}
 }
 

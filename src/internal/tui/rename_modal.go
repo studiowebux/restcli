@@ -127,7 +127,7 @@ func (m *Model) renderRenameModal() string {
 		content += "\n\n" + styleError.Render(wrappedError)
 	}
 
-	content += "\n\nEnter new name, then press Enter to rename, ESC to cancel"
+	content += "\n\nEnter new name or path (relative/absolute supported)\nPress Enter to rename, ESC to cancel"
 
 	return m.renderModal("Rename File", content, 60, 15)
 }

@@ -285,9 +285,9 @@ func (m *Manager) SetHistoryEnabled(enabled bool) error {
 
 // AddRecentFile adds a file to the MRU (Most Recently Used) list
 // The file is added to the front of the list, and duplicates are removed
-// The list is limited to maxRecentFiles (20) entries
+// The list is limited to maxRecentFiles (10) entries
 func (m *Manager) AddRecentFile(filePath string) error {
-	const maxRecentFiles = 20
+	const maxRecentFiles = 10
 
 	// Initialize if nil
 	if m.session.RecentFiles == nil {

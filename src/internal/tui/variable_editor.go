@@ -11,7 +11,6 @@ import (
 // renderVariableEditor renders the variable editor in its various modes
 func (m *Model) renderVariableEditor() string {
 	profile := m.sessionMgr.GetActiveProfile()
-	session := m.sessionMgr.GetSession()
 
 	var content strings.Builder
 
@@ -54,15 +53,6 @@ func (m *Model) renderVariableEditor() string {
 					line = styleSelected.Render(line)
 				}
 				content.WriteString(line + "\n")
-			}
-		}
-
-		content.WriteString("\nSession Variables:\n")
-		if len(session.Variables) == 0 {
-			content.WriteString("  (none)\n")
-		} else {
-			for name, value := range session.Variables {
-				content.WriteString(fmt.Sprintf("  %s = %s\n", name, truncate(value, 50)))
 			}
 		}
 

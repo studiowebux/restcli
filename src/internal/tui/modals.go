@@ -8,28 +8,30 @@ import (
 
 // renderHelp renders the help screen
 func (m Model) renderHelp() string {
-	// Build content with viewport and optional search bar
-	content := m.helpView.View()
+	// Build title
+	title := styleTitle.Render("Keyboard Shortcuts")
 
-	// Add search bar if active or query exists
-	if m.helpSearchActive || m.helpSearchQuery != "" {
-		searchBar := "\n\n"
-		if m.helpSearchActive {
-			searchBar += styleWarning.Render("Search: " + m.helpSearchQuery + "█")
-		} else {
-			searchBar += styleSubtle.Render("Search: " + m.helpSearchQuery + " (press / to search, ESC to clear)")
-		}
-		content += searchBar
+	// Build footer with search info if active
+	var footer string
+	if m.helpSearchActive {
+		footer = styleWarning.Render("Search: "+m.helpSearchQuery+"█") + " | ESC: cancel"
+	} else if m.helpSearchQuery != "" {
+		footer = styleSubtle.Render("Search: "+m.helpSearchQuery) + " | /: search | ESC: clear"
+	} else {
+		footer = "↑/↓ j/k: scroll | /: search | ESC/?: close"
 	}
 
-	// Render viewport with scrolling support
+	// Combine title, viewport, and footer (footer is OUTSIDE viewport so it stays visible)
+	fullContent := title + "\n\n" + m.helpView.View() + "\n\n" + styleSubtle.Render(footer)
+
+	// Render modal with scrolling viewport
 	helpView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorBlue).
 		Width(m.width - 10).
 		Height(m.height - 4).
 		Padding(1, 2).
-		Render(content)
+		Render(fullContent)
 
 	// Center the help box
 	return lipgloss.Place(
@@ -90,7 +92,7 @@ func (m *Model) renderHistory() string {
 
 	if m.historyPreviewVisible {
 		// Split view mode: show both list and preview
-		listWidth := (modalWidth - 3) / 2 // Left pane: history list
+		listWidth := (modalWidth - 3) / 2          // Left pane: history list
 		previewWidth := modalWidth - listWidth - 3 // Right pane: response preview
 
 		// Left pane: History list
@@ -160,7 +162,7 @@ func (m *Model) renderModalWithFooter(title, content, footer string, width, heig
 // Pass selectedLine=-1 to preserve existing scroll position
 func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, width, height, selectedLine int) string {
 	// For small terminals, use almost full screen
-	maxWidth := m.width - 4  // Leave minimal margin
+	maxWidth := m.width - 4   // Leave minimal margin
 	maxHeight := m.height - 2 // Leave minimal margin
 
 	// Adjust requested dimensions to fit screen
@@ -195,7 +197,7 @@ func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, wi
 		}
 	}
 
-	m.modalView.Width = width - 4  // Account for horizontal padding (1 left + 1 right) * 2 for border
+	m.modalView.Width = width - 4 // Account for horizontal padding (1 left + 1 right) * 2 for border
 	if m.modalView.Width < 10 {
 		m.modalView.Width = 10
 	}
@@ -306,4 +308,23 @@ func (m *Model) renderErrorDetailModal() string {
 	content := styleError.Render(wrappedError)
 
 	return m.renderModalWithFooter("Error Details", content, "j/k: scroll | g/G: top/bottom | ESC: close", width, height)
+}
+
+func (m *Model) renderStatusDetailModal() string {
+	// Wrap status message for better readability
+	width := m.width - 6
+	height := m.height - 2
+	if width < 50 {
+		width = 50
+	}
+	if height < 10 {
+		height = 10
+	}
+
+	// Wrap the status text to fit the modal width
+	contentWidth := width - 4 // Account for modal padding/borders
+	wrappedStatus := wrapText(m.fullStatusMsg, contentWidth)
+	content := wrappedStatus
+
+	return m.renderModalWithFooter("Status Message", content, "ESC: close", width, height)
 }

@@ -17,6 +17,10 @@ func (m *Model) handleProfileKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.handleProfileCreateKeys(msg)
 	case ModeProfileEdit:
 		return m.handleProfileEditKeys(msg)
+	case ModeProfileDuplicate:
+		return m.handleProfileDuplicateKeys(msg)
+	case ModeProfileDeleteConfirm:
+		return m.handleProfileDeleteConfirmKeys(msg)
 	}
 	return nil
 }
@@ -66,6 +70,29 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 			m.profileEditEditorPos = len(profile.Editor)
 			m.profileEditOutputPos = len(profile.Output)
 		}
+
+	case "d":
+		// Duplicate the selected profile
+		if m.profileIndex < len(profiles) {
+			m.mode = ModeProfileDuplicate
+			m.profileName = ""
+			m.profileNamePos = 0
+			m.errorMsg = ""
+		}
+
+	case "D":
+		// Delete the selected profile (show confirmation)
+		if m.profileIndex < len(profiles) {
+			m.mode = ModeProfileDeleteConfirm
+			m.errorMsg = ""
+		}
+
+	case "n":
+		// Create new profile
+		m.mode = ModeProfileCreate
+		m.profileName = ""
+		m.profileNamePos = 0
+		m.errorMsg = ""
 	}
 
 	return nil
@@ -86,7 +113,7 @@ func (m *Model) handleProfileCreateKeys(msg tea.KeyMsg) tea.Cmd {
 		// Create new profile
 		newProfile := types.Profile{
 			Name:      m.profileName,
-			Workdir:   "requests",
+			Workdir:   ".restcli/requests",
 			Headers:   make(map[string]string),
 			Variables: make(map[string]types.VariableValue),
 		}
@@ -113,6 +140,134 @@ func (m *Model) handleProfileCreateKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(msg.String()) == 1 {
 			m.profileName += msg.String()
 		}
+	}
+
+	return nil
+}
+
+// handleProfileDuplicateKeys handles profile duplication
+func (m *Model) handleProfileDuplicateKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		m.mode = ModeProfileSwitch
+
+	case "enter":
+		if m.profileName == "" {
+			m.errorMsg = "Profile name cannot be empty"
+			return nil
+		}
+
+		// Get the source profile to duplicate
+		profiles := m.sessionMgr.GetProfiles()
+		if m.profileIndex >= len(profiles) {
+			m.errorMsg = "Invalid profile selection"
+			return nil
+		}
+
+		sourceProfile := profiles[m.profileIndex]
+
+		// Create new profile with all settings from source
+		newProfile := types.Profile{
+			Name:           m.profileName,
+			Workdir:        sourceProfile.Workdir,
+			Editor:         sourceProfile.Editor,
+			Output:         sourceProfile.Output,
+			HistoryEnabled: sourceProfile.HistoryEnabled,
+			Headers:        make(map[string]string),
+			Variables:      make(map[string]types.VariableValue),
+		}
+
+		// Deep copy headers
+		for k, v := range sourceProfile.Headers {
+			newProfile.Headers[k] = v
+		}
+
+		// Deep copy variables
+		for k, v := range sourceProfile.Variables {
+			newProfile.Variables[k] = v
+		}
+
+		// Copy OAuth settings if present
+		if sourceProfile.OAuth != nil {
+			oauthCopy := *sourceProfile.OAuth
+			newProfile.OAuth = &oauthCopy
+		}
+
+		if err := m.sessionMgr.AddProfile(newProfile); err != nil {
+			m.errorMsg = fmt.Sprintf("Failed to duplicate profile: %v", err)
+			return nil
+		}
+
+		// Switch to the new profile
+		m.sessionMgr.SetActiveProfile(m.profileName)
+		m.mode = ModeNormal
+		m.statusMsg = fmt.Sprintf("Duplicated profile '%s' as '%s'", sourceProfile.Name, m.profileName)
+
+		// Reload files
+		return m.refreshFiles()
+
+	default:
+		// Handle text input with cursor support
+		if _, shouldContinue := handleTextInputWithCursor(&m.profileName, &m.profileNamePos, msg); shouldContinue {
+			return nil
+		}
+		// Insert character at cursor position
+		if len(msg.String()) == 1 {
+			m.profileName = m.profileName[:m.profileNamePos] + msg.String() + m.profileName[m.profileNamePos:]
+			m.profileNamePos++
+		}
+	}
+
+	return nil
+}
+
+// handleProfileDeleteConfirmKeys handles profile deletion confirmation
+func (m *Model) handleProfileDeleteConfirmKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "n", "N":
+		m.mode = ModeProfileSwitch
+		m.errorMsg = ""
+
+	case "y", "Y":
+		profiles := m.sessionMgr.GetProfiles()
+		if m.profileIndex >= len(profiles) {
+			m.errorMsg = "Invalid profile selection"
+			m.mode = ModeProfileSwitch
+			return nil
+		}
+
+		profileToDelete := profiles[m.profileIndex]
+		activeProfile := m.sessionMgr.GetActiveProfile()
+
+		// Prevent deleting the last profile
+		if len(profiles) <= 1 {
+			m.errorMsg = "Cannot delete the last profile"
+			m.mode = ModeProfileSwitch
+			return nil
+		}
+
+		// Prevent deleting the active profile
+		if profileToDelete.Name == activeProfile.Name {
+			m.errorMsg = "Cannot delete active profile. Switch to another profile first."
+			m.mode = ModeProfileSwitch
+			return nil
+		}
+
+		// Delete the profile
+		if err := m.sessionMgr.DeleteProfile(profileToDelete.Name); err != nil {
+			m.errorMsg = fmt.Sprintf("Failed to delete profile: %v", err)
+			m.mode = ModeProfileSwitch
+			return nil
+		}
+
+		// Adjust profileIndex if needed
+		if m.profileIndex >= len(profiles)-1 {
+			m.profileIndex = len(profiles) - 2
+		}
+
+		m.mode = ModeNormal
+		m.statusMsg = fmt.Sprintf("Deleted profile: %s", profileToDelete.Name)
+		return nil
 	}
 
 	return nil
@@ -220,7 +375,6 @@ func (m *Model) renderProfileModal() string {
 	var content strings.Builder
 
 	if m.mode == ModeProfileSwitch {
-		content.WriteString("Switch Profile\n\n")
 		profiles := m.sessionMgr.GetProfiles()
 		activeProfile := m.sessionMgr.GetActiveProfile()
 
@@ -234,11 +388,11 @@ func (m *Model) renderProfileModal() string {
 			}
 			content.WriteString(line + "\n")
 		}
-		content.WriteString("\n↑/↓ select [Enter] switch [e]dit [ESC] cancel")
-		return m.renderModal("Profile", content.String(), 50, 15)
+		footer := "↑/↓ select [Enter] switch [e]dit [d]uplicate [D]elete | [n]ew [ESC] cancel"
+		// Use auto-scroll to keep selected profile visible
+		return m.renderModalWithFooterAndScroll("Switch Profile", content.String(), footer, 70, 15, m.profileIndex)
 
 	} else if m.mode == ModeProfileEdit {
-		content.WriteString("Edit Profile\n\n")
 
 		// Modal width for field display (account for border, padding, label)
 		fieldWidth := 50
@@ -368,13 +522,56 @@ func (m *Model) renderProfileModal() string {
 
 		content.WriteString("\nOutput: json, yaml, or text")
 		content.WriteString("\nHistory: default (uses global), enabled, or disabled")
-		content.WriteString("\n\n[TAB] next [SPACE] toggle [Enter] save [ESC] cancel")
-		return m.renderModal("Profile", content.String(), 70, 20)
+		footer := "[TAB] next [SPACE] toggle [Enter] save [ESC] cancel"
+		return m.renderModalWithFooter("Edit Profile", content.String(), footer, 70, 20)
+
+	} else if m.mode == ModeProfileDuplicate {
+		profiles := m.sessionMgr.GetProfiles()
+		if m.profileIndex < len(profiles) {
+			sourceProfile := profiles[m.profileIndex]
+			content.WriteString(fmt.Sprintf("Duplicating: %s\n\n", styleSuccess.Render(sourceProfile.Name)))
+
+			// Show cursor in input
+			inputWithCursor := m.profileName[:m.profileNamePos] + "█" + m.profileName[m.profileNamePos:]
+			content.WriteString("New name: " + inputWithCursor + "\n")
+
+			if m.errorMsg != "" {
+				content.WriteString("\n" + styleError.Render(m.errorMsg))
+			}
+
+			content.WriteString("\n\nAll settings will be copied:")
+			content.WriteString("\n• Workdir, editor, output")
+			content.WriteString("\n• Headers and variables")
+			content.WriteString("\n• OAuth configuration")
+			footer := "[Enter] duplicate [ESC] cancel"
+			return m.renderModalWithFooter("Duplicate Profile", content.String(), footer, 60, 18)
+		}
+		// Fallback if invalid selection
+		content.WriteString("Invalid profile selection")
+		return m.renderModal("Profile", content.String(), 50, 10)
+
+	} else if m.mode == ModeProfileDeleteConfirm {
+		profiles := m.sessionMgr.GetProfiles()
+		if m.profileIndex < len(profiles) {
+			profileToDelete := profiles[m.profileIndex]
+			content.WriteString(fmt.Sprintf("Delete profile: %s?\n\n", styleError.Render(profileToDelete.Name)))
+			content.WriteString("This action cannot be undone.\n")
+			content.WriteString("All settings will be permanently removed.")
+
+			if m.errorMsg != "" {
+				content.WriteString("\n\n" + styleError.Render(m.errorMsg))
+			}
+
+			footer := "[y]es [n]o / ESC"
+			return m.renderModalWithFooter("Delete Profile", content.String(), footer, 60, 14)
+		}
+		// Fallback if invalid selection
+		content.WriteString("Invalid profile selection")
+		return m.renderModal("Error", content.String(), 50, 10)
 
 	} else {
-		content.WriteString("Create Profile\n\n")
 		content.WriteString("Name: " + addCursor(m.profileName) + "\n")
-		content.WriteString("\n[Enter] create [ESC] cancel")
-		return m.renderModal("Profile", content.String(), 50, 15)
+		footer := "[Enter] create [ESC] cancel"
+		return m.renderModalWithFooter("Create Profile", content.String(), footer, 50, 12)
 	}
 }

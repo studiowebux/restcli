@@ -13,6 +13,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// HttpRequestJSON is a wrapper for HttpRequest with Body as interface{} for JSON/YAML output
+// This prevents double-stringification of JSON bodies
+type HttpRequestJSON struct {
+	Name                 string                 `json:"name,omitempty" yaml:"name,omitempty"`
+	Protocol             string                 `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	Method               string                 `json:"method" yaml:"method"`
+	URL                  string                 `json:"url" yaml:"url"`
+	Headers              map[string]string      `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Body                 interface{}            `json:"body,omitempty" yaml:"body,omitempty"` // interface{} to preserve JSON structure
+	Filter               string                 `json:"filter,omitempty" yaml:"filter,omitempty"`
+	Query                string                 `json:"query,omitempty" yaml:"query,omitempty"`
+	ParseEscapes         bool                   `json:"parseEscapes,omitempty" yaml:"parseEscapes,omitempty"`
+	Streaming            bool                   `json:"streaming,omitempty" yaml:"streaming,omitempty"`
+	RequiresConfirmation bool                   `json:"requiresConfirmation,omitempty" yaml:"requiresConfirmation,omitempty"`
+	TLS                  *types.TLSConfig       `json:"tls,omitempty" yaml:"tls,omitempty"`
+	Documentation        *types.Documentation   `json:"documentation,omitempty" yaml:"documentation,omitempty"`
+}
+
 // OpenAPI2HttpOptions contains options for openapi2http conversion
 type OpenAPI2HttpOptions struct {
 	SpecPath   string
@@ -211,15 +229,31 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy, format string) 
 			// Generate content based on format
 			var content string
 			if format == "json" || format == "yaml" {
-				httpReq := OperationToHttpRequest(method, path, operation, baseURL, spec)
+				httpReq, bodyExample := OperationToHttpRequestWithExample(method, path, operation, baseURL, spec)
+				// Convert to HttpRequestJSON for proper JSON/YAML marshaling
+				httpReqJSON := HttpRequestJSON{
+					Name:                 httpReq.Name,
+					Protocol:             httpReq.Protocol,
+					Method:               httpReq.Method,
+					URL:                  httpReq.URL,
+					Headers:              httpReq.Headers,
+					Body:                 bodyExample, // Use raw object instead of stringified JSON
+					Filter:               httpReq.Filter,
+					Query:                httpReq.Query,
+					ParseEscapes:         httpReq.ParseEscapes,
+					Streaming:            httpReq.Streaming,
+					RequiresConfirmation: httpReq.RequiresConfirmation,
+					TLS:                  httpReq.TLS,
+					Documentation:        httpReq.Documentation,
+				}
 				if format == "json" {
-					data, err := json.MarshalIndent(httpReq, "", "  ")
+					data, err := json.MarshalIndent(httpReqJSON, "", "  ")
 					if err != nil {
 						return count, err
 					}
 					content = string(data)
 				} else {
-					data, err := yaml.Marshal(httpReq)
+					data, err := yaml.Marshal(httpReqJSON)
 					if err != nil {
 						return count, err
 					}
@@ -239,6 +273,175 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy, format string) 
 	}
 
 	return count, nil
+}
+
+// OperationToHttpRequestWithExample converts an OpenAPI operation to types.HttpRequest
+// and also returns the raw body example (interface{}) for JSON/YAML output
+func OperationToHttpRequestWithExample(method, path string, operation *OpenAPIOperation, baseURL string, spec *OpenAPISpec) (types.HttpRequest, interface{}) {
+	// Build URL with path parameters
+	url := baseURL + path
+
+	// First, convert explicitly defined path parameters
+	for _, param := range operation.Parameters {
+		if param.In == "path" {
+			url = strings.Replace(url, "{"+param.Name+"}", "{{"+param.Name+"}}", 1)
+		}
+	}
+
+	// Also convert any remaining {param} patterns in the path that weren't explicitly defined
+	// This handles cases where path parameters are in the URL but not in the parameters array
+	// Only convert single braces {param}, not already converted {{param}}
+	result := ""
+	remaining := url
+	for {
+		start := strings.Index(remaining, "{")
+		if start == -1 {
+			result += remaining
+			break
+		}
+
+		// Check if it's already a double brace
+		if start+1 < len(remaining) && remaining[start+1] == '{' {
+			// Skip over {{
+			end := strings.Index(remaining[start+2:], "}}")
+			if end == -1 {
+				result += remaining
+				break
+			}
+			result += remaining[:start+2+end+2]
+			remaining = remaining[start+2+end+2:]
+			continue
+		}
+
+		// Find closing single brace
+		end := strings.Index(remaining[start:], "}")
+		if end == -1 {
+			result += remaining
+			break
+		}
+
+		paramName := remaining[start+1 : start+end]
+		result += remaining[:start] + "{{" + paramName + "}}"
+		remaining = remaining[start+end+1:]
+	}
+	url = result
+
+	// Build headers
+	headers := make(map[string]string)
+	for _, param := range operation.Parameters {
+		if param.In == "header" {
+			headers[param.Name] = "{{" + param.Name + "}}"
+		}
+	}
+
+	// Add Content-Type if there's a body
+	var body string
+	var bodyExample interface{} // Raw body example for JSON/YAML output
+	if operation.RequestBody != nil {
+		for contentType, mediaType := range operation.RequestBody.Content {
+			headers["Content-Type"] = contentType
+			if mediaType.Example != nil {
+				bodyExample = mediaType.Example // Store raw example
+				if exampleJSON, err := json.MarshalIndent(mediaType.Example, "", "  "); err == nil {
+					body = string(exampleJSON)
+				}
+			} else if mediaType.Schema != nil {
+				// Resolve $ref before generating example
+				resolvedSchema := resolveSchema(mediaType.Schema, spec)
+				example := generateExampleFromSchema(resolvedSchema)
+				bodyExample = example // Store raw example
+				if exampleJSON, err := json.MarshalIndent(example, "", "  "); err == nil {
+					body = string(exampleJSON)
+				}
+			}
+			break
+		}
+	}
+
+	// Build documentation
+	var doc *types.Documentation
+	if operation.Summary != "" || operation.Description != "" || len(operation.Tags) > 0 || len(operation.Parameters) > 0 || len(operation.Responses) > 0 {
+		doc = &types.Documentation{
+			Description: operation.Summary,
+			Tags:        operation.Tags,
+		}
+		if operation.Description != "" && operation.Description != operation.Summary {
+			doc.Description = operation.Description
+		}
+
+		// Add parameters
+		if len(operation.Parameters) > 0 {
+			doc.Parameters = make([]types.Parameter, 0, len(operation.Parameters))
+			for _, param := range operation.Parameters {
+				docParam := types.Parameter{
+					Name:        param.Name,
+					Required:    param.Required,
+					Description: param.Description,
+				}
+				// Extract type from schema
+				if param.Schema != nil {
+					if paramType, ok := param.Schema["type"].(string); ok {
+						docParam.Type = paramType
+					}
+				}
+				doc.Parameters = append(doc.Parameters, docParam)
+			}
+		}
+
+		// Add responses
+		if len(operation.Responses) > 0 {
+			doc.Responses = make([]types.Response, 0, len(operation.Responses))
+			for code, resp := range operation.Responses {
+				docResp := types.Response{
+					Code:        code,
+					Description: resp.Description,
+				}
+
+				// Extract content type and fields from response schema
+				for contentType, mediaType := range resp.Content {
+					docResp.ContentType = contentType
+
+					// Try to extract fields from schema
+					if mediaType.Schema != nil {
+						if props, ok := mediaType.Schema["properties"].(map[string]interface{}); ok {
+							docResp.Fields = make([]types.ResponseField, 0)
+							for fieldName, fieldSchema := range props {
+								if fieldMap, ok := fieldSchema.(map[string]interface{}); ok {
+									field := types.ResponseField{
+										Name: fieldName,
+									}
+									if fieldType, ok := fieldMap["type"].(string); ok {
+										field.Type = fieldType
+									}
+									if fieldDesc, ok := fieldMap["description"].(string); ok {
+										field.Description = fieldDesc
+									}
+									docResp.Fields = append(docResp.Fields, field)
+								}
+							}
+						}
+					}
+					break // Only use first content type
+				}
+
+				doc.Responses = append(doc.Responses, docResp)
+			}
+		}
+	}
+
+	name := operation.Summary
+	if name == "" {
+		name = method + " " + path
+	}
+
+	return types.HttpRequest{
+		Name:          name,
+		Method:        method,
+		URL:           url,
+		Headers:       headers,
+		Body:          body,
+		Documentation: doc,
+	}, bodyExample
 }
 
 // OperationToHttpRequest converts an OpenAPI operation to types.HttpRequest
@@ -309,7 +512,9 @@ func OperationToHttpRequest(method, path string, operation *OpenAPIOperation, ba
 					body = string(exampleJSON)
 				}
 			} else if mediaType.Schema != nil {
-				example := generateExampleFromSchema(mediaType.Schema)
+				// Resolve $ref before generating example
+				resolvedSchema := resolveSchema(mediaType.Schema, spec)
+				example := generateExampleFromSchema(resolvedSchema)
 				if exampleJSON, err := json.MarshalIndent(example, "", "  "); err == nil {
 					body = string(exampleJSON)
 				}
@@ -626,7 +831,7 @@ func generateOperationHttpFile(method, path string, operation *OpenAPIOperation,
 func generateExampleFromSchema(schema map[string]interface{}) interface{} {
 	schemaType, ok := schema["type"].(string)
 	if !ok {
-		return "{}"
+		return map[string]interface{}{}
 	}
 
 	switch schemaType {
