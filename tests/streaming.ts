@@ -1,11 +1,8 @@
 // deno run -A streaming.ts
-import { Hono } from "npm:hono";
 import { logger } from "npm:hono/logger";
 import { stream, streamSSE, streamText } from "npm:hono/streaming";
 import { createRoute, OpenAPIHono } from "npm:@hono/zod-openapi";
 import { z } from "npm:zod";
-
-// const app = new Hono();
 
 export const app = new OpenAPIHono();
 
@@ -56,6 +53,13 @@ app.get("/", (c) => c.text("Hello Deno!"));
 
 app.get("/slow", async (c) => {
   await new Promise((resolve) => setTimeout(resolve, 5000));
+  return c.text("ZZZzzz");
+});
+
+app.get("/random", async (c) => {
+  await new Promise((resolve) =>
+    setTimeout(resolve, (Math.floor(Math.random() * 5000) + 1) * Math.random())
+  );
   return c.text("ZZZzzz");
 });
 

@@ -13,6 +13,7 @@ import (
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/session"
+	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -24,15 +25,17 @@ func New(mgr *session.Manager) (Model, error) {
 		return Model{}, err
 	}
 
-	// Initialize analytics and history managers using the same database file
-	// (ignore errors, both are optional)
+	// Initialize analytics, history, and stress test managers using the same database file
+	// (ignore errors, all are optional)
 	analyticsManager, _ := analytics.NewManager(config.DatabasePath)
 	historyManager, _ := history.NewManager(config.DatabasePath)
+	stressTestManager, _ := stresstest.NewManager(config.DatabasePath)
 
 	m := Model{
 		sessionMgr:            mgr,
 		analyticsManager:      analyticsManager,
 		historyManager:        historyManager,
+		stressTestManager:     stressTestManager,
 		mode:                  ModeNormal,
 		files:                 files,
 		fileIndex:             0,
@@ -47,9 +50,12 @@ func New(mgr *session.Manager) (Model, error) {
 		historyPreviewView:      viewport.New(80, 20),
 		analyticsListView:       viewport.New(80, 20),
 		analyticsDetailView:     viewport.New(80, 20),
+		stressTestListView:      viewport.New(80, 20),
+		stressTestDetailView:    viewport.New(80, 20),
 		historyPreviewVisible:   true, // Show preview by default
 		analyticsPreviewVisible: true, // Show preview by default
 		analyticsFocusedPane:    "list", // Start with list focused
+		stressTestFocusedPane:  "list", // Start with list focused
 	}
 
 	// Load requests from first file

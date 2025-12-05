@@ -347,13 +347,19 @@ func (m *Model) loadAnalytics() tea.Cmd {
 			return analyticsLoadedMsg{stats: []analytics.Stats{}}
 		}
 
+		// Get active profile name
+		profileName := ""
+		if profile := m.sessionMgr.GetActiveProfile(); profile != nil {
+			profileName = profile.Name
+		}
+
 		var stats []analytics.Stats
 		var err error
 
 		if m.analyticsGroupByPath {
-			stats, err = m.analyticsManager.GetStatsPerNormalizedPath()
+			stats, err = m.analyticsManager.GetStatsPerNormalizedPath(profileName)
 		} else {
-			stats, err = m.analyticsManager.GetStatsPerFile()
+			stats, err = m.analyticsManager.GetStatsPerFile(profileName)
 		}
 
 		if err != nil {

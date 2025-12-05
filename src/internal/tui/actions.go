@@ -218,6 +218,7 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 						DurationMs:     0,
 						ErrorMessage:   res.err.Error(),
 						Timestamp:      time.Now(),
+						ProfileName:    profile.Name,
 					}
 
 					_ = m.analyticsManager.Save(entry)
@@ -259,7 +260,7 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 			}
 			if shouldSaveHistory && len(m.files) > 0 && m.historyManager != nil {
 				filePath := m.files[m.fileIndex].Path
-				_ = m.historyManager.Save(filePath, resolvedRequest, result)
+				_ = m.historyManager.Save(filePath, profile.Name, resolvedRequest, result)
 			}
 
 			// Save to analytics
@@ -280,6 +281,7 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 					ResponseSize:   int64(len(result.Body)),
 					DurationMs:     result.Duration,
 					Timestamp:      time.Now(),
+					ProfileName:    profile.Name,
 				}
 
 				_ = m.analyticsManager.Save(entry) // Ignore errors to not interrupt the flow
@@ -798,7 +800,12 @@ func (m *Model) loadHistory() tea.Cmd {
 		if m.historyManager == nil {
 			return historyLoadedMsg{entries: []types.HistoryEntry{}}
 		}
-		entries, err := m.historyManager.Load()
+		// Get active profile name
+		profileName := ""
+		if profile := m.sessionMgr.GetActiveProfile(); profile != nil {
+			profileName = profile.Name
+		}
+		entries, err := m.historyManager.Load(profileName)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to load history: %v", err))
 		}

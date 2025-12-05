@@ -6,6 +6,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/stresstest"
 )
 
 // handleKeyPress routes key presses based on current mode
@@ -51,6 +52,14 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleAnalyticsKeys(msg)
 	case ModeAnalyticsClearConfirm:
 		return m.handleAnalyticsClearConfirmKeys(msg)
+	case ModeStressTestConfig:
+		return m.handleStressTestConfigKeys(msg)
+	case ModeStressTestLoadConfig:
+		return m.handleStressTestLoadConfigKeys(msg)
+	case ModeStressTestProgress:
+		return m.handleStressTestProgressKeys(msg)
+	case ModeStressTestResults:
+		return m.handleStressTestResultsKeys(msg)
 	case ModeHelp:
 		return m.handleHelpKeys(msg)
 	case ModeInspect:
@@ -482,6 +491,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.analyticsPreviewVisible = true
 		m.analyticsGroupByPath = false
 		return m.loadAnalytics()
+	case "S":
+		m.mode = ModeStressTestResults
+		m.stressTestFocusedPane = "list"
+		return m.loadStressTestRuns()
 	case "?":
 		m.mode = ModeHelp
 		m.updateHelpView()
@@ -524,7 +537,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	// External config editors
 	case "P":
 		return m.openProfilesInEditor()
-	case "S":
+	case "ctrl+x":
 		return m.openSessionInEditor()
 
 	// Escape - cancel request, exit fullscreen, clear search, or clear errors/messages
@@ -1616,5 +1629,389 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 	}
+	return nil
+}
+
+// handleStressTestConfigKeys handles key events in stress test config mode
+func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		// Cancel modal
+		m.mode = ModeNormal
+		m.stressTestConfigEdit = nil
+		m.stressTestConfigInput = ""
+		m.stressTestFilePickerActive = false
+		m.statusMsg = "Stress test configuration cancelled"
+
+	case "ctrl+l":
+		// Load saved config
+		return m.loadStressTestConfigs()
+
+	case "up":
+		// If on file field with picker active, ONLY navigate picker (locked)
+		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
+			if m.stressTestFilePickerIndex > 0 {
+				m.stressTestFilePickerIndex--
+			}
+			return nil
+		}
+		// If on file field but no file selected yet, block navigation
+		if m.stressTestConfigField == 1 && m.stressTestConfigInput == "" {
+			m.errorMsg = "Please select a file first (press Enter to confirm)"
+			return nil
+		}
+		// Otherwise navigate to previous field
+		if err := m.applyStressTestConfigInput(); err != nil {
+			m.errorMsg = err.Error()
+			return nil
+		}
+		if m.stressTestConfigField > 0 {
+			m.stressTestConfigField--
+			m.updateStressTestConfigInput()
+			// Activate picker if moving TO field 1
+			if m.stressTestConfigField == 1 {
+				m.loadStressTestFilePicker()
+				m.stressTestFilePickerActive = true
+			}
+		}
+
+	case "down":
+		// If on file field with picker active, ONLY navigate picker (locked)
+		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
+			if m.stressTestFilePickerIndex < len(m.stressTestFilePickerFiles)-1 {
+				m.stressTestFilePickerIndex++
+			}
+			return nil
+		}
+		// If on file field but no file selected yet, block navigation
+		if m.stressTestConfigField == 1 && m.stressTestConfigInput == "" {
+			m.errorMsg = "Please select a file first (press Enter to confirm)"
+			return nil
+		}
+		// Otherwise navigate to next field
+		if err := m.applyStressTestConfigInput(); err != nil {
+			m.errorMsg = err.Error()
+			return nil
+		}
+		if m.stressTestConfigField < 5 {
+			m.stressTestConfigField++
+			m.updateStressTestConfigInput()
+			// Activate picker if moving TO field 1
+			if m.stressTestConfigField == 1 {
+				m.loadStressTestFilePicker()
+				m.stressTestFilePickerActive = true
+			}
+		}
+
+	case "enter":
+		// If on file field with picker, select file and close picker
+		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
+			if len(m.stressTestFilePickerFiles) > 0 && m.stressTestFilePickerIndex < len(m.stressTestFilePickerFiles) {
+				selectedFile := m.stressTestFilePickerFiles[m.stressTestFilePickerIndex]
+				m.stressTestConfigInput = selectedFile.Path
+				m.stressTestConfigCursor = len(m.stressTestConfigInput)
+				m.stressTestFilePickerActive = false // Close picker after selection
+				if err := m.applyStressTestConfigInput(); err != nil {
+					m.errorMsg = err.Error()
+				} else {
+					m.statusMsg = "File selected - use arrows to navigate to next field"
+				}
+			} else {
+				m.errorMsg = "No files available to select"
+			}
+			return nil
+		}
+		// For other fields, just apply
+		if err := m.applyStressTestConfigInput(); err != nil {
+			m.errorMsg = err.Error()
+		}
+
+	case "ctrl+s":
+		// Save and start test
+		if err := m.applyStressTestConfigInput(); err != nil {
+			m.errorMsg = err.Error()
+			return nil
+		}
+
+		// Validate and save config
+		if err := m.stressTestConfigEdit.Validate(); err != nil {
+			m.errorMsg = fmt.Sprintf("Invalid configuration: %v", err)
+			return nil
+		}
+
+		// Save config if it has a name
+		if m.stressTestConfigEdit.Name != "" {
+			if err := m.stressTestManager.SaveConfig(m.stressTestConfigEdit); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to save config: %v", err)
+				return nil
+			}
+		}
+
+		// Start the stress test
+		return m.startStressTest()
+
+	case "backspace":
+		// Don't allow editing file field via backspace - use picker
+		if m.stressTestConfigField == 1 {
+			return nil
+		}
+		if m.stressTestConfigCursor > 0 {
+			input := m.stressTestConfigInput
+			m.stressTestConfigInput = input[:m.stressTestConfigCursor-1] + input[m.stressTestConfigCursor:]
+			m.stressTestConfigCursor--
+		}
+
+	case "delete":
+		// Don't allow editing file field via delete - use picker
+		if m.stressTestConfigField == 1 {
+			return nil
+		}
+		input := m.stressTestConfigInput
+		if m.stressTestConfigCursor < len(input) {
+			m.stressTestConfigInput = input[:m.stressTestConfigCursor] + input[m.stressTestConfigCursor+1:]
+		}
+
+	case "left":
+		// Don't allow cursor movement in file field - use picker
+		if m.stressTestConfigField == 1 {
+			return nil
+		}
+		if m.stressTestConfigCursor > 0 {
+			m.stressTestConfigCursor--
+		}
+
+	case "right":
+		// Don't allow cursor movement in file field - use picker
+		if m.stressTestConfigField == 1 {
+			return nil
+		}
+		if m.stressTestConfigCursor < len(m.stressTestConfigInput) {
+			m.stressTestConfigCursor++
+		}
+
+	case "home":
+		if m.stressTestConfigField != 1 && m.stressTestConfigCursor > 0 {
+			m.stressTestConfigCursor = 0
+		}
+
+	case "end":
+		if m.stressTestConfigField != 1 {
+			m.stressTestConfigCursor = len(m.stressTestConfigInput)
+		}
+
+	// Character input for the current field (except file field - use picker)
+	default:
+		if len(msg.String()) == 1 && m.stressTestConfigField != 1 {
+			// Insert character at cursor position
+			input := m.stressTestConfigInput
+			m.stressTestConfigInput = input[:m.stressTestConfigCursor] + msg.String() + input[m.stressTestConfigCursor:]
+			m.stressTestConfigCursor++
+		}
+	}
+
+	return nil
+}
+
+// handleStressTestProgressKeys handles key events in stress test progress mode
+func (m *Model) handleStressTestProgressKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q":
+		// Set stopping flag to show feedback
+		if !m.stressTestStopping && m.stressTestExecutor != nil {
+			m.stressTestStopping = true
+			m.statusMsg = "Stopping stress test..."
+
+			// Stop in goroutine to keep UI responsive
+			return func() tea.Msg {
+				m.stressTestExecutor.Stop()
+				return stressTestStoppedMsg{}
+			}
+		}
+	}
+
+	return nil
+}
+
+// stressTestStoppedMsg indicates the stress test has finished stopping
+type stressTestStoppedMsg struct{}
+
+// handleStressTestLoadConfigKeys handles key events in load config mode
+func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q":
+		m.mode = ModeStressTestConfig
+		// Reset picker state when returning to config
+		m.stressTestFilePickerActive = false
+		m.stressTestFilePickerFiles = nil
+		m.stressTestFilePickerIndex = 0
+		m.statusMsg = "Load cancelled"
+
+	case "up", "k":
+		if m.stressTestConfigIndex > 0 {
+			m.stressTestConfigIndex--
+		}
+
+	case "down", "j":
+		if m.stressTestConfigIndex < len(m.stressTestConfigs)-1 {
+			m.stressTestConfigIndex++
+		}
+
+	case "enter":
+		// Load selected config
+		if len(m.stressTestConfigs) > 0 && m.stressTestConfigIndex < len(m.stressTestConfigs) {
+			config := m.stressTestConfigs[m.stressTestConfigIndex]
+			m.stressTestConfigEdit = config
+			m.mode = ModeStressTestConfig
+			// Reset picker state when loading config
+			m.stressTestFilePickerActive = false
+			m.stressTestFilePickerFiles = nil
+			m.stressTestFilePickerIndex = 0
+			m.stressTestConfigField = 0
+			m.updateStressTestConfigInput()
+			m.statusMsg = fmt.Sprintf("Loaded config: %s", config.Name)
+		}
+
+	case "d":
+		// Delete selected config
+		if len(m.stressTestConfigs) > 0 && m.stressTestConfigIndex < len(m.stressTestConfigs) {
+			config := m.stressTestConfigs[m.stressTestConfigIndex]
+			if err := m.stressTestManager.DeleteConfig(config.ID); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to delete config: %v", err)
+			} else {
+				m.statusMsg = "Configuration deleted"
+				return m.loadStressTestConfigs()
+			}
+		}
+	}
+
+	return nil
+}
+
+// handleStressTestResultsKeys handles key events in stress test results mode
+func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "S", "q":
+		m.mode = ModeNormal
+
+	case "tab":
+		// Toggle focus between list and details
+		if m.stressTestFocusedPane == "list" {
+			m.stressTestFocusedPane = "details"
+			m.statusMsg = "Focus: Details panel (use TAB to switch back)"
+		} else {
+			m.stressTestFocusedPane = "list"
+			m.statusMsg = "Focus: List panel (use TAB to switch)"
+		}
+
+	case "up", "k":
+		if m.stressTestFocusedPane == "details" {
+			m.stressTestDetailView.LineUp(1)
+		} else if m.stressTestFocusedPane == "list" {
+			if m.stressTestRunIndex > 0 {
+				m.stressTestRunIndex--
+				m.updateStressTestListView()
+				m.stressTestDetailView.GotoTop() // Reset scroll when switching runs
+			}
+		}
+
+	case "down", "j":
+		if m.stressTestFocusedPane == "details" {
+			m.stressTestDetailView.LineDown(1)
+		} else if m.stressTestFocusedPane == "list" {
+			if m.stressTestRunIndex < len(m.stressTestRuns)-1 {
+				m.stressTestRunIndex++
+				m.updateStressTestListView()
+				m.stressTestDetailView.GotoTop() // Reset scroll when switching runs
+			}
+		}
+
+	case "pgup":
+		if m.stressTestFocusedPane == "details" {
+			m.stressTestDetailView.ViewUp()
+		}
+
+	case "pgdown":
+		if m.stressTestFocusedPane == "details" {
+			m.stressTestDetailView.ViewDown()
+		}
+
+	case "g":
+		if m.stressTestFocusedPane == "details" {
+			m.stressTestDetailView.GotoTop()
+		}
+
+	case "G":
+		if m.stressTestFocusedPane == "details" {
+			m.stressTestDetailView.GotoBottom()
+		}
+
+	case "d":
+		// Delete selected run
+		if len(m.stressTestRuns) > 0 && m.stressTestRunIndex < len(m.stressTestRuns) {
+			run := m.stressTestRuns[m.stressTestRunIndex]
+			if err := m.stressTestManager.DeleteRun(run.ID); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to delete run: %v", err)
+			} else {
+				m.statusMsg = "Stress test run deleted"
+				return m.loadStressTestRuns()
+			}
+		}
+
+	case "l":
+		// Load saved config
+		return m.loadStressTestConfigs()
+
+	case "r":
+		// Re-run selected test
+		if len(m.stressTestRuns) > 0 && m.stressTestRunIndex < len(m.stressTestRuns) {
+			run := m.stressTestRuns[m.stressTestRunIndex]
+
+			// Check if this run has a saved config
+			if run.ConfigID == nil {
+				m.errorMsg = "Cannot re-run: this test was not saved with a configuration"
+				return nil
+			}
+
+			// Load the config
+			config, err := m.stressTestManager.GetConfig(*run.ConfigID)
+			if err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to load config: %v", err)
+				return nil
+			}
+
+			// Load the config into edit mode and start immediately
+			m.stressTestConfigEdit = config
+			m.statusMsg = fmt.Sprintf("Re-running test: %s", config.Name)
+			return m.startStressTest()
+		}
+
+	case "n":
+		// New stress test
+		m.mode = ModeStressTestConfig
+
+		// Initialize new config
+		m.stressTestConfigEdit = &stresstest.Config{
+			Name:              "",
+			RequestFile:       "",
+			ConcurrentConns:   10,
+			TotalRequests:     100,
+			RampUpDurationSec: 0,
+			TestDurationSec:   0,
+		}
+
+		// Pre-fill with current file if available
+		if len(m.files) > 0 && m.fileIndex < len(m.files) {
+			m.stressTestConfigEdit.RequestFile = m.files[m.fileIndex].Path
+		}
+
+		// Reset picker state
+		m.stressTestFilePickerActive = false
+		m.stressTestFilePickerFiles = nil
+		m.stressTestFilePickerIndex = 0
+
+		m.stressTestConfigField = 0
+		m.updateStressTestConfigInput()
+	}
+
 	return nil
 }

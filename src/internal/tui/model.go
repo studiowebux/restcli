@@ -11,6 +11,7 @@ import (
 	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/session"
+	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -39,6 +40,11 @@ const (
 	ModeHistoryClearConfirm
 	ModeAnalytics
 	ModeAnalyticsClearConfirm
+	ModeStressTest
+	ModeStressTestConfig
+	ModeStressTestLoadConfig
+	ModeStressTestProgress
+	ModeStressTestResults
 	ModeHelp
 	ModeInspect
 	ModeRename
@@ -166,6 +172,27 @@ type Model struct {
 	analyticsPreviewVisible bool // Toggle for showing/hiding stats detail pane
 	analyticsGroupByPath  bool // Toggle between per-file and normalized-path grouping
 	analyticsFocusedPane  string // "list" or "details" - which pane has focus in split view
+
+	// Stress test state
+	stressTestManager       *stresstest.Manager
+	stressTestExecutor      *stresstest.Executor
+	stressTestActiveRequest *types.HttpRequest // The request currently being tested
+	stressTestConfigs       []*stresstest.Config
+	stressTestConfigIndex   int
+	stressTestRuns          []*stresstest.Run
+	stressTestRunIndex      int
+	stressTestListView      viewport.Model
+	stressTestDetailView    viewport.Model
+	stressTestFocusedPane   string // "list" or "details"
+	stressTestConfigEdit          *stresstest.Config // Config being edited
+	stressTestConfigField         int // Which field is being edited
+	stressTestConfigInput         string // Input buffer for config fields
+	stressTestConfigCursor        int // Cursor position in input
+	stressTestConfigInsertMode    bool // True when actively typing (disables vim navigation)
+	stressTestFilePickerActive    bool // True when file picker dropdown is shown
+	stressTestFilePickerFiles     []types.FileInfo // Available files for selection
+	stressTestFilePickerIndex     int // Selected index in file picker
+	stressTestStopping            bool // True when test is being canceled/stopped
 
 	// Rename state
 	renameInput  string
@@ -334,6 +361,50 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.updateAnalyticsView() // Update viewport content with loaded analytics
 
+	case stressTestRunsLoadedMsg:
+		m.stressTestRuns = msg.runs
+		m.stressTestRunIndex = 0
+		if len(msg.runs) > 0 {
+			m.statusMsg = fmt.Sprintf("Loaded %d stress test runs", len(msg.runs))
+		}
+		m.updateStressTestListView()
+		m.stressTestDetailView.GotoTop() // Reset scroll position for new load
+
+	case stressTestConfigsLoadedMsg:
+		m.stressTestConfigs = msg.configs
+		m.stressTestConfigIndex = 0
+		m.mode = ModeStressTestLoadConfig
+		if len(msg.configs) > 0 {
+			m.statusMsg = fmt.Sprintf("Loaded %d stress test configurations", len(msg.configs))
+		} else {
+			m.statusMsg = "No saved configurations found"
+		}
+
+	case stressTestProgressMsg:
+		// Continue polling for progress
+		return m, m.pollStressTestProgress()
+
+	case stressTestCompletedMsg:
+		// Stress test completed
+		if m.stressTestExecutor != nil {
+			m.stressTestExecutor.Wait()
+			m.stressTestExecutor = nil
+		}
+		m.stressTestActiveRequest = nil
+		m.stressTestStopping = false
+		m.statusMsg = "Stress test completed"
+		m.mode = ModeStressTestResults
+		return m, m.loadStressTestRuns()
+
+	case stressTestStoppedMsg:
+		// Stress test stopped by user
+		m.stressTestExecutor = nil
+		m.stressTestActiveRequest = nil
+		m.stressTestStopping = false
+		m.statusMsg = "Stress test cancelled"
+		m.mode = ModeStressTestResults
+		return m, m.loadStressTestRuns()
+
 	case promptInteractiveVarsMsg:
 		// Initialize interactive variable prompting
 		m.interactiveVarNames = msg.varNames
@@ -417,6 +488,14 @@ func (m Model) View() string {
 		return m.renderAnalytics()
 	case ModeAnalyticsClearConfirm:
 		return m.renderAnalyticsClearConfirmation()
+	case ModeStressTestConfig:
+		return m.renderStressTestConfig()
+	case ModeStressTestLoadConfig:
+		return m.renderStressTestLoadConfig()
+	case ModeStressTestProgress:
+		return m.renderStressTestProgress()
+	case ModeStressTestResults:
+		return m.renderStressTestResults()
 	case ModeInspect:
 		return m.renderInspect()
 	case ModeOAuthConfig:

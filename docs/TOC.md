@@ -16,6 +16,8 @@
   - [Streaming](guides/streaming.md)
   - [GraphQL](guides/graphql.md)
   - [History](guides/history.md)
+  - [Analytics](guides/analytics.md)
+  - [Stress Testing](guides/stress-testing.md)
   - [CLI](guides/cli-mode.md)
   - [TUI](guides/tui-mode.md)
 - Reference

@@ -34,11 +34,20 @@ No more merge conflicts. No more outdated collections. Each endpoint is a file. 
 15. **Response pinning and diff** for regression testing
 16. **Error detail modals** with full stack traces
 17. **Embedded documentation** viewer with collapsible trees
+18. **Analytics tracking** with per-endpoint stats and aggregated metrics
+19. **Request history** with persistent storage and search
+
+### Performance Testing
+20. **Stress testing** with configurable concurrency and load
+21. **Ramp-up control** for gradual load increase
+22. **Real-time metrics** (latency, RPS, percentiles P50/P95/P99)
+23. **Test result persistence** with historical comparison
+24. **One-click re-run** for saved test configurations
 
 ### Automation
-18. **CLI mode** for scripting (JSON/YAML output)
-19. **cURL converter** (convert cURL to request files)
-20. **OpenAPI converter** (generate requests from specs)
+25. **CLI mode** for scripting (JSON/YAML output)
+26. **cURL converter** (convert cURL to request files)
+27. **OpenAPI converter** (generate requests from specs)
 
 ## Installation
 
@@ -108,6 +117,41 @@ Run with profile:
 restcli -p dev
 ```
 
+## Analytics & Performance Testing
+
+### View Analytics
+
+Press `A` in the TUI to view request analytics:
+- Per-endpoint statistics (count, avg/min/max latency, error rate)
+- Aggregated metrics across all requests
+- Historical tracking with timestamps
+- Grouped by file or normalized path
+
+### Run Stress Tests
+
+Press `S` (Shift+s) to access stress testing:
+
+1. **Create a new test** - Press `n` to configure:
+   - Request file and endpoint to test
+   - Concurrent connections (workers)
+   - Total requests to send
+   - Ramp-up duration (gradual load increase)
+   - Test duration limit
+
+2. **Run the test** - Ctrl+S to save config and start
+   - Real-time progress with live metrics
+   - Latency percentiles (P50, P95, P99)
+   - Requests per second (RPS)
+   - Success/error counts
+
+3. **View results** - Automatic on completion:
+   - Historical test runs with comparison
+   - Detailed statistics and metrics
+   - Press `r` on any run to re-execute
+   - Press `l` to load saved configurations
+
+See [docs/guides/stress-testing.md](docs/guides/stress-testing.md) for detailed usage.
+
 ## Key Shortcuts
 
 Full reference: Press `?` in-app or see [docs/reference/keyboard-shortcuts.md](docs/reference/keyboard-shortcuts.md)
@@ -125,7 +169,9 @@ Complete documentation at [docs/](docs/)
 7. [Profiles](docs/guides/profiles.md)
 8. [Authentication](docs/guides/authentication.md)
 9. [Filtering & Querying](docs/guides/filtering.md)
-10. [Examples](docs/examples.md)
+10. [Analytics](docs/guides/analytics.md)
+11. [Stress Testing](docs/guides/stress-testing.md)
+12. [Examples](docs/examples.md)
 
 ## License
 

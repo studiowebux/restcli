@@ -10,6 +10,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/studiowebux/restcli/internal/config"
+	"github.com/studiowebux/restcli/internal/migrations"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -35,6 +36,11 @@ func NewManager(dbPath string) (*Manager, error) {
 	m := &Manager{db: db}
 	if err := m.initSchema(); err != nil {
 		return nil, err
+	}
+
+	// Run database migrations
+	if err := migrations.Run(db); err != nil {
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	// Auto-migrate from JSON files if database is empty
@@ -81,7 +87,7 @@ func (m *Manager) initSchema() error {
 	return nil
 }
 
-func (m *Manager) Save(requestFile string, req *types.HttpRequest, result *types.RequestResult) error {
+func (m *Manager) Save(requestFile string, profileName string, req *types.HttpRequest, result *types.RequestResult) error {
 	// Serialize headers to JSON
 	headersJSON, err := json.Marshal(req.Headers)
 	if err != nil {
@@ -98,8 +104,8 @@ func (m *Manager) Save(requestFile string, req *types.HttpRequest, result *types
 		INSERT INTO history (
 			timestamp, request_file, request_name, method, url, headers, body,
 			response_status, response_status_text, response_headers, response_body,
-			duration_ms, request_size, response_size, error
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			duration_ms, request_size, response_size, error, profile_name
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	// Format timestamp for SQLite in local time
@@ -121,6 +127,7 @@ func (m *Manager) Save(requestFile string, req *types.HttpRequest, result *types
 		result.RequestSize,
 		result.ResponseSize,
 		result.Error,
+		profileName,
 	)
 
 	if err != nil {
@@ -130,16 +137,17 @@ func (m *Manager) Save(requestFile string, req *types.HttpRequest, result *types
 	return nil
 }
 
-func (m *Manager) Load() ([]types.HistoryEntry, error) {
+func (m *Manager) Load(profileName string) ([]types.HistoryEntry, error) {
 	query := `
 		SELECT id, timestamp, request_file, request_name, method, url, headers, body,
 		       response_status, response_status_text, response_headers, response_body,
-		       duration_ms, request_size, response_size, error
+		       duration_ms, request_size, response_size, error, COALESCE(profile_name, '')
 		FROM history
+		WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
 		ORDER BY timestamp DESC
 	`
 
-	rows, err := m.db.Query(query)
+	rows, err := m.db.Query(query, profileName, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load history: %w", err)
 	}
@@ -194,6 +202,7 @@ func (m *Manager) scanEntries(rows *sql.Rows) ([]types.HistoryEntry, error) {
 		var requestSize sql.NullInt64
 		var responseSize sql.NullInt64
 		var errorMsg sql.NullString
+		var profileName string
 
 		err := rows.Scan(
 			&id,
@@ -212,6 +221,7 @@ func (m *Manager) scanEntries(rows *sql.Rows) ([]types.HistoryEntry, error) {
 			&requestSize,
 			&responseSize,
 			&errorMsg,
+			&profileName,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan history entry: %w", err)

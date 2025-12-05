@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/studiowebux/restcli/internal/migrations"
 )
 
 type Entry struct {
@@ -21,6 +22,7 @@ type Entry struct {
 	DurationMs     int64
 	ErrorMessage   string
 	Timestamp      time.Time
+	ProfileName    string
 }
 
 type Stats struct {
@@ -64,6 +66,11 @@ func NewManager(dbPath string) (*Manager, error) {
 		return nil, err
 	}
 
+	// Run database migrations
+	if err := migrations.Run(db); err != nil {
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
 	return m, nil
 }
 
@@ -99,8 +106,8 @@ func (m *Manager) initSchema() error {
 
 func (m *Manager) Save(entry Entry) error {
 	query := `
-		INSERT INTO analytics (file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO analytics (file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp, profile_name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	// Format timestamp for SQLite in local time (YYYY-MM-DD HH:MM:SS)
@@ -116,6 +123,7 @@ func (m *Manager) Save(entry Entry) error {
 		entry.DurationMs,
 		entry.ErrorMessage,
 		timestampStr,
+		entry.ProfileName,
 	)
 
 	if err != nil {
@@ -125,16 +133,16 @@ func (m *Manager) Save(entry Entry) error {
 	return nil
 }
 
-func (m *Manager) LoadForFile(filePath string, limit int) ([]Entry, error) {
+func (m *Manager) LoadForFile(filePath string, profileName string, limit int) ([]Entry, error) {
 	query := `
-		SELECT id, file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp
+		SELECT id, file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp, COALESCE(profile_name, '')
 		FROM analytics
-		WHERE file_path = ?
+		WHERE file_path = ? AND (profile_name = ? OR (profile_name IS NULL AND ? = ''))
 		ORDER BY timestamp DESC
 		LIMIT ?
 	`
 
-	rows, err := m.db.Query(query, filePath, limit)
+	rows, err := m.db.Query(query, filePath, profileName, profileName, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load analytics for file: %w", err)
 	}
@@ -143,16 +151,16 @@ func (m *Manager) LoadForFile(filePath string, limit int) ([]Entry, error) {
 	return m.scanEntries(rows)
 }
 
-func (m *Manager) LoadForNormalizedPath(normalizedPath string, limit int) ([]Entry, error) {
+func (m *Manager) LoadForNormalizedPath(normalizedPath string, profileName string, limit int) ([]Entry, error) {
 	query := `
-		SELECT id, file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp
+		SELECT id, file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp, COALESCE(profile_name, '')
 		FROM analytics
-		WHERE normalized_path = ?
+		WHERE normalized_path = ? AND (profile_name = ? OR (profile_name IS NULL AND ? = ''))
 		ORDER BY timestamp DESC
 		LIMIT ?
 	`
 
-	rows, err := m.db.Query(query, normalizedPath, limit)
+	rows, err := m.db.Query(query, normalizedPath, profileName, profileName, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load analytics for normalized path: %w", err)
 	}
@@ -161,15 +169,16 @@ func (m *Manager) LoadForNormalizedPath(normalizedPath string, limit int) ([]Ent
 	return m.scanEntries(rows)
 }
 
-func (m *Manager) LoadAll(limit int) ([]Entry, error) {
+func (m *Manager) LoadAll(profileName string, limit int) ([]Entry, error) {
 	query := `
-		SELECT id, file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp
+		SELECT id, file_path, normalized_path, method, status_code, request_size, response_size, duration_ms, error_message, timestamp, COALESCE(profile_name, '')
 		FROM analytics
+		WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
 		ORDER BY timestamp DESC
 		LIMIT ?
 	`
 
-	rows, err := m.db.Query(query, limit)
+	rows, err := m.db.Query(query, profileName, profileName, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load all analytics: %w", err)
 	}
@@ -197,6 +206,7 @@ func (m *Manager) scanEntries(rows *sql.Rows) ([]Entry, error) {
 			&e.DurationMs,
 			&errorMsg,
 			&timestamp,
+			&e.ProfileName,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan analytics entry: %w", err)
@@ -223,7 +233,7 @@ func (m *Manager) scanEntries(rows *sql.Rows) ([]Entry, error) {
 	return entries, rows.Err()
 }
 
-func (m *Manager) GetStatsPerFile() ([]Stats, error) {
+func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
 	query := `
 		SELECT
 			file_path,
@@ -240,11 +250,12 @@ func (m *Manager) GetStatsPerFile() ([]Stats, error) {
 			SUM(response_size) as total_resp_size,
 			MAX(timestamp) as last_called
 		FROM analytics
+		WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
 		GROUP BY file_path, normalized_path, method
 		ORDER BY last_called DESC
 	`
 
-	rows, err := m.db.Query(query)
+	rows, err := m.db.Query(query, profileName, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats per file: %w", err)
 	}
@@ -291,7 +302,7 @@ func (m *Manager) GetStatsPerFile() ([]Stats, error) {
 			s.LastCalled = time.Now()
 		}
 
-		s.StatusCodes, err = m.getStatusCodesForFile(s.FilePath)
+		s.StatusCodes, err = m.getStatusCodesForFile(s.FilePath, profileName)
 		if err != nil {
 			return nil, err
 		}
@@ -302,7 +313,7 @@ func (m *Manager) GetStatsPerFile() ([]Stats, error) {
 	return statsList, rows.Err()
 }
 
-func (m *Manager) GetStatsPerNormalizedPath() ([]Stats, error) {
+func (m *Manager) GetStatsPerNormalizedPath(profileName string) ([]Stats, error) {
 	query := `
 		SELECT
 			normalized_path,
@@ -318,11 +329,12 @@ func (m *Manager) GetStatsPerNormalizedPath() ([]Stats, error) {
 			SUM(response_size) as total_resp_size,
 			MAX(timestamp) as last_called
 		FROM analytics
+		WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
 		GROUP BY normalized_path, method
 		ORDER BY last_called DESC
 	`
 
-	rows, err := m.db.Query(query)
+	rows, err := m.db.Query(query, profileName, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats per normalized path: %w", err)
 	}
@@ -368,7 +380,7 @@ func (m *Manager) GetStatsPerNormalizedPath() ([]Stats, error) {
 			s.LastCalled = time.Now()
 		}
 
-		s.StatusCodes, err = m.getStatusCodesForNormalizedPath(s.NormalizedPath)
+		s.StatusCodes, err = m.getStatusCodesForNormalizedPath(s.NormalizedPath, profileName)
 		if err != nil {
 			return nil, err
 		}
@@ -379,15 +391,15 @@ func (m *Manager) GetStatsPerNormalizedPath() ([]Stats, error) {
 	return statsList, rows.Err()
 }
 
-func (m *Manager) getStatusCodesForFile(filePath string) (map[int]int, error) {
+func (m *Manager) getStatusCodesForFile(filePath string, profileName string) (map[int]int, error) {
 	query := `
 		SELECT status_code, COUNT(*) as count
 		FROM analytics
-		WHERE file_path = ?
+		WHERE file_path = ? AND (profile_name = ? OR (profile_name IS NULL AND ? = ''))
 		GROUP BY status_code
 	`
 
-	rows, err := m.db.Query(query, filePath)
+	rows, err := m.db.Query(query, filePath, profileName, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status codes: %w", err)
 	}
@@ -405,15 +417,15 @@ func (m *Manager) getStatusCodesForFile(filePath string) (map[int]int, error) {
 	return statusCodes, rows.Err()
 }
 
-func (m *Manager) getStatusCodesForNormalizedPath(normalizedPath string) (map[int]int, error) {
+func (m *Manager) getStatusCodesForNormalizedPath(normalizedPath string, profileName string) (map[int]int, error) {
 	query := `
 		SELECT status_code, COUNT(*) as count
 		FROM analytics
-		WHERE normalized_path = ?
+		WHERE normalized_path = ? AND (profile_name = ? OR (profile_name IS NULL AND ? = ''))
 		GROUP BY status_code
 	`
 
-	rows, err := m.db.Query(query, normalizedPath)
+	rows, err := m.db.Query(query, normalizedPath, profileName, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status codes: %w", err)
 	}
