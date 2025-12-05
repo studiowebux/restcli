@@ -70,13 +70,19 @@ Press `H` to open history viewer.
 **History List:**
 | Key | Action |
 | --- | ------ |
-| `↑/k` | Navigate up |
-| `↓/j` | Navigate down |
-| `Enter` | View details |
+| `↑/↓` or `j/k` | Navigate entries (left pane) |
+| `Shift+↑/↓` or `J/K` | Scroll preview pane (right pane) |
+| `gg` | Go to first entry |
+| `G` | Go to last entry |
+| `PgUp/PgDn` | Page up/down |
+| `Ctrl+u/d` | Half page up/down |
+| `Enter` | Load entry into main view |
 | `r` | Replay request |
-| `d` | Delete entry |
-| `D` | Clear all history (with confirmation) |
-| `ESC` | Close viewer |
+| `p` | Toggle preview pane visibility |
+| `C` | Clear all history (with confirmation) |
+| `ESC` or `H` or `q` | Close viewer |
+
+Footer shows scroll position: `[current/total] (percentage%)`
 
 **Details View:**
 
@@ -86,9 +92,7 @@ Press `H` to open history viewer.
 
 ### File Location
 
-History stored in: `~/.restcli/history/`
-
-Files organized by date
+History stored in: `~/.restcli/restcli.db` (SQLite database, `history` table)
 
 ## Clearing History
 

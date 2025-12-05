@@ -8,6 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/analytics"
+	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/types"
 )
@@ -35,6 +37,8 @@ const (
 	ModeDocumentation
 	ModeHistory
 	ModeHistoryClearConfirm
+	ModeAnalytics
+	ModeAnalyticsClearConfirm
 	ModeHelp
 	ModeInspect
 	ModeRename
@@ -59,8 +63,10 @@ const (
 // Model represents the TUI state
 type Model struct {
 	// Core state
-	sessionMgr *session.Manager
-	mode       Mode
+	sessionMgr       *session.Manager
+	analyticsManager *analytics.Manager
+	historyManager   *history.Manager
+	mode             Mode
 
 	// File list
 	files         []types.FileInfo
@@ -81,6 +87,8 @@ type Model struct {
 	helpView              viewport.Model
 	modalView             viewport.Model // For scrollable modal content
 	historyPreviewView    viewport.Model // For history response preview in split view
+	analyticsListView     viewport.Model // For analytics list in split view
+	analyticsDetailView   viewport.Model // For analytics detail in split view
 
 	// Streaming state
 	streamingActive       bool                  // True when streaming is in progress
@@ -128,16 +136,17 @@ type Model struct {
 	profileNamePos int // Cursor position in profile name
 
 	// Profile edit state
-	profileEditField         int    // 0=name, 1=workdir, 2=editor, 3=output, 4=history
-	profileEditName          string
-	profileEditWorkdir       string
-	profileEditEditor        string
-	profileEditOutput        string
-	profileEditHistoryEnabled *bool  // nil=default, true/false=override
-	profileEditNamePos       int
-	profileEditWorkdirPos    int
-	profileEditEditorPos     int
-	profileEditOutputPos     int
+	profileEditField            int    // 0=name, 1=workdir, 2=editor, 3=output, 4=history, 5=analytics
+	profileEditName             string
+	profileEditWorkdir          string
+	profileEditEditor           string
+	profileEditOutput           string
+	profileEditHistoryEnabled   *bool  // nil=default, true/false=override
+	profileEditAnalyticsEnabled *bool  // nil=default (false), true/false=override
+	profileEditNamePos          int
+	profileEditWorkdirPos       int
+	profileEditEditorPos        int
+	profileEditOutputPos        int
 
 	// Documentation viewer state
 	docCollapsed      map[int]bool
@@ -150,6 +159,13 @@ type Model struct {
 	historyEntries        []types.HistoryEntry
 	historyIndex          int
 	historyPreviewVisible bool // Toggle for showing/hiding response preview pane
+
+	// Analytics state
+	analyticsStats        []analytics.Stats
+	analyticsIndex        int
+	analyticsPreviewVisible bool // Toggle for showing/hiding stats detail pane
+	analyticsGroupByPath  bool // Toggle between per-file and normalized-path grouping
+	analyticsFocusedPane  string // "list" or "details" - which pane has focus in split view
 
 	// Rename state
 	renameInput  string
@@ -310,6 +326,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.updateHistoryView() // Update viewport content with loaded history
 
+	case analyticsLoadedMsg:
+		m.analyticsStats = msg.stats
+		m.analyticsIndex = 0
+		if len(msg.stats) > 0 {
+			m.statusMsg = fmt.Sprintf("Loaded %d analytics entries", len(msg.stats))
+		}
+		m.updateAnalyticsView() // Update viewport content with loaded analytics
+
 	case promptInteractiveVarsMsg:
 		// Initialize interactive variable prompting
 		m.interactiveVarNames = msg.varNames
@@ -389,6 +413,10 @@ func (m Model) View() string {
 		return m.renderHistory()
 	case ModeHistoryClearConfirm:
 		return m.renderHistoryClearConfirmation()
+	case ModeAnalytics:
+		return m.renderAnalytics()
+	case ModeAnalyticsClearConfirm:
+		return m.renderAnalyticsClearConfirmation()
 	case ModeInspect:
 		return m.renderInspect()
 	case ModeOAuthConfig:
@@ -441,6 +469,10 @@ type oauthSuccessMsg struct {
 
 type historyLoadedMsg struct {
 	entries []types.HistoryEntry
+}
+
+type analyticsLoadedMsg struct {
+	stats []analytics.Stats
 }
 
 type promptInteractiveVarsMsg struct {

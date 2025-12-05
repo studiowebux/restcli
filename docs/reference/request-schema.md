@@ -4,7 +4,6 @@ tags:
   - reference
 ---
 
-
 # Request Schema Reference
 
 Complete schema for request files (`.yaml`, `.json`, `.jsonc` formats).
@@ -82,11 +81,14 @@ HTTP headers as key-value pairs.
 
 ### body (optional)
 
-Request body for `POST`, `PUT`, `PATCH`.
+Request body for `POST`, `PUT`, `PATCH`. The body field uses stringified JSON with escaped quotes.
 
 ```json
 {
-  "body": "{\"name\": \"John\", \"email\": \"john@example.com\"}"
+  "body": {
+    "name": "John",
+    "email": "john@example.com"
+  }
 }
 ```
 
@@ -202,7 +204,7 @@ Embedded API documentation. See Documentation below.
             "description": "User ID"
           }
         ],
-        "example": "{\"id\": 1, \"name\": \"John Doe\"}"
+        "example": { "id": 1, "name": "John Doe" }
       }
     ]
   }
@@ -282,7 +284,7 @@ Response documentation.
       "description": "User's name"
     }
   ],
-  "example": "{\"id\": 1, \"name\": \"John\"}"
+  "example": { "id": 1, "name": "John" }
 }
 ```
 
@@ -368,7 +370,7 @@ Dot notation for nested fields:
     "Content-Type": "application/json",
     "Authorization": "Bearer {{token}}"
   },
-  "body": "{\"name\": \"{{name}}\", \"email\": \"{{email}}\"}",
+  "body": { "name": "{{name}}", "email": "{{email}}" },
   "filter": "user",
   "query": "{id: id, name: name, created: createdAt}",
   "tls": {
@@ -425,13 +427,18 @@ Dot notation for nested fields:
             "description": "ISO timestamp"
           }
         ],
-        "example": "{\"id\": 1, \"name\": \"John Doe\", \"email\": \"john@example.com\", \"createdAt\": \"2025-01-01T00:00:00Z\"}"
+        "example": {
+          "id": 1,
+          "name": "John Doe",
+          "email": "john@example.com",
+          "createdAt": "2025-01-01T00:00:00Z"
+        }
       },
       {
         "code": "400",
         "description": "Invalid input",
         "contentType": "application/json",
-        "example": "{\"error\": \"Email already exists\"}"
+        "example": { "error": "Email already exists" }
       }
     ]
   }

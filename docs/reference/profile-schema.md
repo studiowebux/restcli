@@ -33,19 +33,20 @@ Array of profile objects:
 
 ### Optional Fields
 
-| Field            | Type        | Description                              |
-| ---------------- | ----------- | ---------------------------------------- |
-| `headers`        | object      | Default headers                          |
-| `variables`      | object      | Variables (simple or multi-value)        |
-| `workdir`        | string      | Working directory                        |
-| `editor`         | string      | External editor command                  |
-| `output`         | string      | Default output format                    |
-| `oauth`          | OAuthConfig | OAuth configuration                      |
-| `defaultFilter`  | string      | Default JMESPath filter                  |
-| `defaultQuery`   | string      | Default query                            |
-| `tls`            | TLSConfig   | Default TLS configuration                |
-| `historyEnabled` | boolean     | Enable/disable history (overrides global) |
-| `messageTimeout` | number      | Auto-clear footer messages (seconds)     |
+| Field              | Type        | Description                                        |
+| ------------------ | ----------- | -------------------------------------------------- |
+| `headers`          | object      | Default headers                                    |
+| `variables`        | object      | Variables (simple or multi-value)                  |
+| `workdir`          | string      | Working directory                                  |
+| `editor`           | string      | External editor command                            |
+| `output`           | string      | Default output format                              |
+| `oauth`            | OAuthConfig | OAuth configuration                                |
+| `defaultFilter`    | string      | Default JMESPath filter                            |
+| `defaultQuery`     | string      | Default query                                      |
+| `tls`              | TLSConfig   | Default TLS configuration                          |
+| `historyEnabled`   | boolean     | Enable/disable history (overrides global)          |
+| `analyticsEnabled` | boolean     | Enable/disable analytics tracking (default: false) |
+| `messageTimeout`   | number      | Auto-clear footer messages (seconds)               |
 
 ## name (required)
 
@@ -303,6 +304,30 @@ Enable or disable request history for this profile.
 
 Useful for sensitive environments where you don't want to persist request data.
 
+## analyticsEnabled (optional)
+
+Enable or disable analytics tracking for this profile.
+
+```json
+{
+  "analyticsEnabled": true
+}
+```
+
+- `true`: Enable analytics (track request performance and statistics)
+- `false` or omitted: Disable analytics (default)
+
+Analytics tracks:
+
+- Request frequency and success rates
+- Response times (avg/min/max)
+- Status code distribution
+- Data transfer volumes
+
+Data stored locally in `~/.restcli/analytics.db`
+
+See [Analytics Guide](../guides/analytics.md) for details.
+
 ## messageTimeout (optional)
 
 Auto-clear footer messages after specified seconds.
@@ -319,6 +344,7 @@ Auto-clear footer messages after specified seconds.
 **Default**: Messages are permanent and require ESC to clear.
 
 **Use cases**:
+
 - `3`: Quick clear for frequent operations
 - `10`: Longer persistence for important messages
 - `null`: Manual control (default behavior)
@@ -370,6 +396,7 @@ Auto-clear footer messages after specified seconds.
   "workdir": "./requests",
   "editor": "vim",
   "output": "json",
+  "analyticsEnabled": true,
   "defaultFilter": "",
   "defaultQuery": ""
 }

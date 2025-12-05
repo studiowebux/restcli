@@ -14,10 +14,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/atotto/clipboard"
+	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
 	"github.com/studiowebux/restcli/internal/filter"
-	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/oauth"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/types"
@@ -199,6 +199,30 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 		case res := <-resultChan:
 			// Request completed
 			if res.err != nil {
+				// Track network errors in analytics
+				shouldSaveAnalytics := false
+				if profile != nil && profile.AnalyticsEnabled != nil {
+					shouldSaveAnalytics = *profile.AnalyticsEnabled
+				}
+				if shouldSaveAnalytics && len(m.files) > 0 && m.analyticsManager != nil {
+					filePath := m.files[m.fileIndex].Path
+					normalizedPath := normalizePath(resolvedRequest.URL)
+
+					entry := analytics.Entry{
+						FilePath:       filePath,
+						NormalizedPath: normalizedPath,
+						Method:         resolvedRequest.Method,
+						StatusCode:     0, // 0 indicates network error (no HTTP response)
+						RequestSize:    int64(len(resolvedRequest.Body)),
+						ResponseSize:   0,
+						DurationMs:     0,
+						ErrorMessage:   res.err.Error(),
+						Timestamp:      time.Now(),
+					}
+
+					_ = m.analyticsManager.Save(entry)
+				}
+
 				return errorMsg(fmt.Sprintf("Failed to execute request: %v", res.err))
 			}
 
@@ -233,9 +257,32 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 			if profile != nil && profile.HistoryEnabled != nil {
 				shouldSaveHistory = *profile.HistoryEnabled
 			}
-			if shouldSaveHistory && len(m.files) > 0 {
+			if shouldSaveHistory && len(m.files) > 0 && m.historyManager != nil {
 				filePath := m.files[m.fileIndex].Path
-				history.Save(filePath, resolvedRequest, result)
+				_ = m.historyManager.Save(filePath, resolvedRequest, result)
+			}
+
+			// Save to analytics
+			shouldSaveAnalytics := false
+			if profile != nil && profile.AnalyticsEnabled != nil {
+				shouldSaveAnalytics = *profile.AnalyticsEnabled
+			}
+			if shouldSaveAnalytics && len(m.files) > 0 && m.analyticsManager != nil {
+				filePath := m.files[m.fileIndex].Path
+				normalizedPath := normalizePath(resolvedRequest.URL)
+
+				entry := analytics.Entry{
+					FilePath:       filePath,
+					NormalizedPath: normalizedPath,
+					Method:         resolvedRequest.Method,
+					StatusCode:     result.Status,
+					RequestSize:    int64(len(resolvedRequest.Body)),
+					ResponseSize:   int64(len(result.Body)),
+					DurationMs:     result.Duration,
+					Timestamp:      time.Now(),
+				}
+
+				_ = m.analyticsManager.Save(entry) // Ignore errors to not interrupt the flow
 			}
 
 			// Auto-extract tokens
@@ -748,7 +795,10 @@ func (m *Model) performGoto() {
 // loadHistory loads request history
 func (m *Model) loadHistory() tea.Cmd {
 	return func() tea.Msg {
-		entries, err := history.Load()
+		if m.historyManager == nil {
+			return historyLoadedMsg{entries: []types.HistoryEntry{}}
+		}
+		entries, err := m.historyManager.Load()
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to load history: %v", err))
 		}
@@ -965,6 +1015,33 @@ func (m *Model) getInteractiveVariables() []string {
 func (m *Model) executeRequestWithInteractiveVars() tea.Cmd {
 	// Simply call executeRequest again, which will now have the values
 	return m.executeRequest()
+}
+
+// normalizePath extracts and normalizes the path from a URL
+// Removes query parameters and domain, keeping only the path
+// For analytics grouping purposes
+func normalizePath(rawURL string) string {
+	// Remove query parameters
+	if idx := strings.Index(rawURL, "?"); idx != -1 {
+		rawURL = rawURL[:idx]
+	}
+
+	// Remove fragment
+	if idx := strings.Index(rawURL, "#"); idx != -1 {
+		rawURL = rawURL[:idx]
+	}
+
+	// Extract path from URL
+	// Remove protocol and domain
+	re := regexp.MustCompile(`^https?://[^/]+`)
+	path := re.ReplaceAllString(rawURL, "")
+
+	// If no path, return root
+	if path == "" {
+		return "/"
+	}
+
+	return path
 }
 
 // renderHistoryClearConfirmation renders the confirmation modal for clearing all history

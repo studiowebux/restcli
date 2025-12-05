@@ -65,6 +65,7 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 			m.profileEditEditor = profile.Editor
 			m.profileEditOutput = profile.Output
 			m.profileEditHistoryEnabled = profile.HistoryEnabled
+			m.profileEditAnalyticsEnabled = profile.AnalyticsEnabled
 			m.profileEditNamePos = len(profile.Name)
 			m.profileEditWorkdirPos = len(profile.Workdir)
 			m.profileEditEditorPos = len(profile.Editor)
@@ -168,13 +169,14 @@ func (m *Model) handleProfileDuplicateKeys(msg tea.KeyMsg) tea.Cmd {
 
 		// Create new profile with all settings from source
 		newProfile := types.Profile{
-			Name:           m.profileName,
-			Workdir:        sourceProfile.Workdir,
-			Editor:         sourceProfile.Editor,
-			Output:         sourceProfile.Output,
-			HistoryEnabled: sourceProfile.HistoryEnabled,
-			Headers:        make(map[string]string),
-			Variables:      make(map[string]types.VariableValue),
+			Name:              m.profileName,
+			Workdir:           sourceProfile.Workdir,
+			Editor:            sourceProfile.Editor,
+			Output:            sourceProfile.Output,
+			HistoryEnabled:    sourceProfile.HistoryEnabled,
+			AnalyticsEnabled:  sourceProfile.AnalyticsEnabled,
+			Headers:           make(map[string]string),
+			Variables:         make(map[string]types.VariableValue),
 		}
 
 		// Deep copy headers
@@ -281,17 +283,17 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "tab":
 		// Move to next field
-		m.profileEditField = (m.profileEditField + 1) % 5
+		m.profileEditField = (m.profileEditField + 1) % 6
 
 	case "shift+tab":
 		// Move to previous field
 		m.profileEditField--
 		if m.profileEditField < 0 {
-			m.profileEditField = 4
+			m.profileEditField = 5
 		}
 
 	case " ":
-		// Toggle history setting (only on history field)
+		// Toggle history setting (field 4)
 		if m.profileEditField == 4 {
 			if m.profileEditHistoryEnabled == nil {
 				// nil -> true
@@ -304,6 +306,21 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 			} else {
 				// false -> nil (default)
 				m.profileEditHistoryEnabled = nil
+			}
+		}
+		// Toggle analytics setting (field 5)
+		if m.profileEditField == 5 {
+			if m.profileEditAnalyticsEnabled == nil {
+				// nil -> true
+				enabled := true
+				m.profileEditAnalyticsEnabled = &enabled
+			} else if *m.profileEditAnalyticsEnabled {
+				// true -> false
+				disabled := false
+				m.profileEditAnalyticsEnabled = &disabled
+			} else {
+				// false -> nil (default/false)
+				m.profileEditAnalyticsEnabled = nil
 			}
 		}
 
@@ -319,6 +336,7 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 			profile.Editor = m.profileEditEditor
 			profile.Output = m.profileEditOutput
 			profile.HistoryEnabled = m.profileEditHistoryEnabled
+			profile.AnalyticsEnabled = m.profileEditAnalyticsEnabled
 
 			m.sessionMgr.SaveProfiles()
 
@@ -504,7 +522,7 @@ func (m *Model) renderProfileModal() string {
 		}
 
 		// History field (toggle)
-		historyLabel := "History: "
+		historyLabel := "History:   "
 		historyValue := "default"
 		if m.profileEditHistoryEnabled != nil {
 			if *m.profileEditHistoryEnabled {
@@ -520,10 +538,28 @@ func (m *Model) renderProfileModal() string {
 			content.WriteString(historyLabel + historyValue + "\n")
 		}
 
+		// Analytics field (toggle)
+		analyticsLabel := "Analytics: "
+		analyticsValue := "disabled"
+		if m.profileEditAnalyticsEnabled != nil {
+			if *m.profileEditAnalyticsEnabled {
+				analyticsValue = "enabled"
+			} else {
+				analyticsValue = "disabled"
+			}
+		}
+		if m.profileEditField == 5 {
+			analyticsLabel = styleSelected.Render(analyticsLabel)
+			content.WriteString(analyticsLabel + styleSelected.Render(analyticsValue) + " [SPACE to toggle]\n")
+		} else {
+			content.WriteString(analyticsLabel + analyticsValue + "\n")
+		}
+
 		content.WriteString("\nOutput: json, yaml, or text")
 		content.WriteString("\nHistory: default (uses global), enabled, or disabled")
+		content.WriteString("\nAnalytics: disabled (default), or enabled")
 		footer := "[TAB] next [SPACE] toggle [Enter] save [ESC] cancel"
-		return m.renderModalWithFooter("Edit Profile", content.String(), footer, 70, 20)
+		return m.renderModalWithFooter("Edit Profile", content.String(), footer, 70, 22)
 
 	} else if m.mode == ModeProfileDuplicate {
 		profiles := m.sessionMgr.GetProfiles()

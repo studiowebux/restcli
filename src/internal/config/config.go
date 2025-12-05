@@ -14,8 +14,11 @@ var (
 	// RequestsDir is the default requests directory
 	RequestsDir string
 
-	// HistoryDir is the history storage directory
+	// HistoryDir is the history storage directory (legacy JSON files)
 	HistoryDir string
+
+	// DatabasePath is the SQLite database file for history and analytics
+	DatabasePath string
 
 	// SessionFile is the session state file
 	SessionFile string
@@ -36,6 +39,7 @@ func Initialize() error {
 	ConfigDir = filepath.Join(homeDir, ".restcli")
 	RequestsDir = filepath.Join(ConfigDir, "requests")
 	HistoryDir = filepath.Join(ConfigDir, "history")
+	DatabasePath = filepath.Join(ConfigDir, "restcli.db")
 	SessionFile = filepath.Join(ConfigDir, ".session.json")
 	ProfilesFile = filepath.Join(ConfigDir, ".profiles.json")
 

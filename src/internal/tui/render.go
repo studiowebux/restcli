@@ -816,12 +816,14 @@ VARIABLE EDITOR (multi-value)
   l            Set alias for option (e.g., 'u1', 'dev')
   L            Delete aliases from option
 
-DOCUMENTATION & HISTORY
+DOCUMENTATION, HISTORY & ANALYTICS
   m            View documentation
   H            View history
-  p            Toggle preview pane (when in history - hides secrets)
+  A            View analytics
+  p            Toggle preview pane (when in history/analytics)
+  t            Toggle grouping (when in analytics: per-file ↔ by path)
   r            Replay request (when in history modal)
-  C            Clear all history (when in history modal - with confirmation)
+  C            Clear all (when in history/analytics modal - with confirmation)
 
 MODAL NAVIGATION
   ↑/↓, j/k     Navigate items

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -130,8 +131,19 @@ func (m *Model) renderHistory() string {
 			Render(styleTitle.Render("History") + "\n" + m.modalView.View())
 	}
 
-	// Add footer with instructions (include 'p' key)
-	footer := styleSubtle.Render("↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close")
+	// Add footer with instructions and scroll position
+	footerText := "↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
+
+	// Add scroll indicator if there are entries
+	if len(m.historyEntries) > 0 {
+		current := m.historyIndex + 1
+		total := len(m.historyEntries)
+		percentage := int(float64(current) / float64(total) * 100)
+		scrollInfo := fmt.Sprintf(" [%d/%d] (%d%%)", current, total, percentage)
+		footerText += scrollInfo
+	}
+
+	footer := styleSubtle.Render(footerText)
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,

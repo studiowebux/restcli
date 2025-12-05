@@ -6,7 +6,6 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/studiowebux/restcli/internal/history"
 )
 
 // handleKeyPress routes key presses based on current mode
@@ -48,6 +47,10 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleHistoryKeys(msg)
 	case ModeHistoryClearConfirm:
 		return m.handleHistoryClearConfirmKeys(msg)
+	case ModeAnalytics:
+		return m.handleAnalyticsKeys(msg)
+	case ModeAnalyticsClearConfirm:
+		return m.handleAnalyticsClearConfirmKeys(msg)
 	case ModeHelp:
 		return m.handleHelpKeys(msg)
 	case ModeInspect:
@@ -474,6 +477,11 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case "H":
 		m.mode = ModeHistory
 		return m.loadHistory()
+	case "A":
+		m.mode = ModeAnalytics
+		m.analyticsPreviewVisible = true
+		m.analyticsGroupByPath = false
+		return m.loadAnalytics()
 	case "?":
 		m.mode = ModeHelp
 		m.updateHelpView()
@@ -1139,7 +1147,7 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	case "esc", "H", "q":
 		m.mode = ModeNormal
 
-	// Item selection
+	// Item selection (left pane)
 	case "up", "k":
 		if m.historyIndex > 0 {
 			m.historyIndex--
@@ -1150,6 +1158,17 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.historyIndex < len(m.historyEntries)-1 {
 			m.historyIndex++
 			m.updateHistoryView() // Regenerate to update highlight and preview
+		}
+
+	// Scroll preview pane (right pane) when preview is visible
+	case "shift+up", "K":
+		if m.historyPreviewVisible {
+			m.historyPreviewView.LineUp(1)
+		}
+
+	case "shift+down", "J":
+		if m.historyPreviewVisible {
+			m.historyPreviewView.LineDown(1)
 		}
 
 	// Load selected history entry
@@ -1318,15 +1337,283 @@ func (m *Model) handleHistoryClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "y", "Y":
 		// Clear all history
-		if err := history.Clear(); err != nil {
-			m.errorMsg = fmt.Sprintf("Failed to clear history: %v", err)
-			m.mode = ModeHistory
+		if m.historyManager != nil {
+			if err := m.historyManager.Clear(); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to clear history: %v", err)
+				m.mode = ModeHistory
+			} else {
+				m.historyEntries = nil
+				m.historyIndex = 0
+				m.mode = ModeHistory
+				m.statusMsg = "All history cleared"
+				m.updateHistoryView()
+			}
+		}
+	}
+	return nil
+}
+
+// handleAnalyticsKeys handles key events in analytics mode
+func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "A", "q":
+		m.mode = ModeNormal
+
+	// Focus switching
+	case "tab":
+		// Toggle focus between list and details
+		if m.analyticsFocusedPane == "list" {
+			m.analyticsFocusedPane = "details"
+			m.statusMsg = "Focus: Details panel (use TAB to switch back)"
 		} else {
-			m.historyEntries = nil
-			m.historyIndex = 0
-			m.mode = ModeHistory
-			m.statusMsg = "All history cleared"
-			m.updateHistoryView()
+			m.analyticsFocusedPane = "list"
+			m.statusMsg = "Focus: List panel (use TAB to switch)"
+		}
+
+	// Navigation - based on focused panel
+	case "up", "k":
+		if m.analyticsFocusedPane == "details" {
+			// Scroll details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.LineUp(1)
+			}
+		} else {
+			// Navigate list if focused on list
+			if m.analyticsIndex > 0 {
+				m.analyticsIndex--
+				m.updateAnalyticsView()
+			}
+		}
+
+	case "down", "j":
+		if m.analyticsFocusedPane == "details" {
+			// Scroll details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.LineDown(1)
+			}
+		} else {
+			// Navigate list if focused on list
+			if m.analyticsIndex < len(m.analyticsStats)-1 {
+				m.analyticsIndex++
+				m.updateAnalyticsView()
+			}
+		}
+
+	// Load selected request file
+	case "enter":
+		if len(m.analyticsStats) > 0 && m.analyticsIndex < len(m.analyticsStats) {
+			// Only works in per-file mode (not when grouping by normalized path)
+			if m.analyticsGroupByPath {
+				m.statusMsg = "Switch to per-file mode (press 't') to load a specific file"
+				return nil
+			}
+
+			stat := m.analyticsStats[m.analyticsIndex]
+			// Load the file associated with this stat
+			fileFound := false
+			for i, file := range m.files {
+				if file.Path == stat.FilePath {
+					m.fileIndex = i
+					m.mode = ModeNormal
+					m.loadRequestsFromCurrentFile()
+					fileFound = true
+					break
+				}
+			}
+
+			if !fileFound {
+				m.statusMsg = "File not found in current directory"
+			}
+		}
+
+	// Toggle preview pane visibility
+	case "p":
+		m.analyticsPreviewVisible = !m.analyticsPreviewVisible
+		if m.analyticsPreviewVisible {
+			m.statusMsg = "Preview pane shown"
+		} else {
+			m.statusMsg = "Preview pane hidden"
+		}
+		m.updateAnalyticsView()
+
+	// Toggle grouping mode
+	case "t":
+		m.analyticsGroupByPath = !m.analyticsGroupByPath
+		m.analyticsIndex = 0
+		if m.analyticsGroupByPath {
+			m.statusMsg = "Grouping by normalized path"
+		} else {
+			m.statusMsg = "Grouping by file"
+		}
+		return m.loadAnalytics()
+
+	// Clear all analytics with confirmation
+	case "C":
+		m.mode = ModeAnalyticsClearConfirm
+		m.statusMsg = "Confirm clear all analytics"
+
+	// Page navigation - based on focused panel
+	case "pgup":
+		if m.analyticsFocusedPane == "details" {
+			// Page up in details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.HalfViewUp()
+			}
+		} else {
+			// Page up in list if focused on list
+			pageSize := 10
+			m.analyticsIndex -= pageSize
+			if m.analyticsIndex < 0 {
+				m.analyticsIndex = 0
+			}
+			m.updateAnalyticsView()
+		}
+
+	case "pgdown":
+		if m.analyticsFocusedPane == "details" {
+			// Page down in details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.HalfViewDown()
+			}
+		} else {
+			// Page down in list if focused on list
+			pageSize := 10
+			m.analyticsIndex += pageSize
+			if m.analyticsIndex >= len(m.analyticsStats) {
+				m.analyticsIndex = len(m.analyticsStats) - 1
+			}
+			if m.analyticsIndex < 0 {
+				m.analyticsIndex = 0
+			}
+			m.updateAnalyticsView()
+		}
+
+	case "ctrl+u":
+		if m.analyticsFocusedPane == "details" {
+			// Half page up in details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.HalfViewUp()
+			}
+		} else {
+			// Half page up in list if focused on list
+			halfPage := 5
+			m.analyticsIndex -= halfPage
+			if m.analyticsIndex < 0 {
+				m.analyticsIndex = 0
+			}
+			m.updateAnalyticsView()
+		}
+
+	case "ctrl+d":
+		if m.analyticsFocusedPane == "details" {
+			// Half page down in details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.HalfViewDown()
+			}
+		} else {
+			// Half page down in list if focused on list
+			halfPage := 5
+			m.analyticsIndex += halfPage
+			if m.analyticsIndex >= len(m.analyticsStats) {
+				m.analyticsIndex = len(m.analyticsStats) - 1
+			}
+			if m.analyticsIndex < 0 {
+				m.analyticsIndex = 0
+			}
+			m.updateAnalyticsView()
+		}
+
+	// Vim-style navigation - based on focused panel
+	case "g":
+		// Vim-style 'gg' to go to top
+		if m.gPressed {
+			m.gPressed = false
+			if m.analyticsFocusedPane == "details" {
+				// Go to top of details pane if focused
+				if m.analyticsPreviewVisible {
+					m.analyticsDetailView.GotoTop()
+				}
+			} else {
+				// Go to top of list if focused on list
+				if len(m.analyticsStats) > 0 {
+					m.analyticsIndex = 0
+					m.updateAnalyticsView()
+				}
+			}
+		} else {
+			m.gPressed = true
+		}
+		return nil // Don't reset gPressed
+
+	case "G":
+		// Vim-style 'G' to go to bottom
+		if m.analyticsFocusedPane == "details" {
+			// Go to bottom of details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.GotoBottom()
+			}
+		} else {
+			// Go to bottom of list if focused on list
+			if len(m.analyticsStats) > 0 {
+				m.analyticsIndex = len(m.analyticsStats) - 1
+				m.updateAnalyticsView()
+			}
+		}
+
+	case "home":
+		if m.analyticsFocusedPane == "details" {
+			// Go to top of details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.GotoTop()
+			}
+		} else {
+			// Go to top of list if focused on list
+			m.analyticsIndex = 0
+			m.updateAnalyticsView()
+		}
+
+	case "end":
+		if m.analyticsFocusedPane == "details" {
+			// Go to bottom of details pane if focused
+			if m.analyticsPreviewVisible {
+				m.analyticsDetailView.GotoBottom()
+			}
+		} else {
+			// Go to bottom of list if focused on list
+			if len(m.analyticsStats) > 0 {
+				m.analyticsIndex = len(m.analyticsStats) - 1
+				m.updateAnalyticsView()
+			}
+		}
+	}
+
+	// Reset 'g' state on any key except 'g' itself
+	m.gPressed = false
+	return nil
+}
+
+// handleAnalyticsClearConfirmKeys handles keys in analytics clear confirmation mode
+func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "n", "N":
+		m.mode = ModeAnalytics
+		m.statusMsg = "Clear analytics cancelled"
+
+	case "y", "Y":
+		// Clear all analytics
+		if m.analyticsManager != nil {
+			if err := m.analyticsManager.Clear(); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to clear analytics: %v", err)
+				m.mode = ModeAnalytics
+			} else {
+				m.analyticsStats = nil
+				m.analyticsIndex = 0
+				m.analyticsFocusedPane = "list" // Reset focus to list
+				m.analyticsDetailView.SetContent("") // Clear details viewport
+				m.mode = ModeAnalytics
+				m.statusMsg = "All analytics cleared"
+				m.updateAnalyticsView() // Refresh the viewport content
+			}
 		}
 	}
 	return nil

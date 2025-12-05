@@ -159,7 +159,7 @@ Structured format with schema validation.
   "headers": {
     "Content-Type": "application/json"
   },
-  "body": "{\"name\": \"John\"}"
+  "body": { "name": "John" }
 }
 ```
 
@@ -187,12 +187,12 @@ JSON with comments support.
 
 ## OpenAPI Format
 
-REST CLI can use OpenAPI spec directly (per endpoint).
+REST CLI can use OpenAPI spec directly (per endpoint) without conversion.
 
 ### Example
 
 ```bash
-restcli api.yaml
+restcli /path/to/api.yaml
 ```
 
 See [OpenAPI converter](../converters/openapi2http.md) for conversion to request files.

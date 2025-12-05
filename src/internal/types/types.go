@@ -88,10 +88,11 @@ type Profile struct {
 	TLS           *TLSConfig                `json:"tls,omitempty"`           // TLS/mTLS configuration
 	Editor        string                    `json:"editor,omitempty"`
 	Output        string                    `json:"output,omitempty"`        // json, yaml, text
-	DefaultFilter  string `json:"defaultFilter,omitempty"`  // Global JMESPath filter for all responses
-	DefaultQuery   string `json:"defaultQuery,omitempty"`   // Global JMESPath query for all responses
-	HistoryEnabled *bool  `json:"historyEnabled,omitempty"` // Override global history setting (nil = use global)
-	MessageTimeout *int   `json:"messageTimeout,omitempty"` // Auto-clear footer messages after N seconds (nil = permanent/no auto-clear)
+	DefaultFilter    string `json:"defaultFilter,omitempty"`    // Global JMESPath filter for all responses
+	DefaultQuery     string `json:"defaultQuery,omitempty"`     // Global JMESPath query for all responses
+	HistoryEnabled   *bool  `json:"historyEnabled,omitempty"`   // Override global history setting (nil = use global)
+	AnalyticsEnabled *bool  `json:"analyticsEnabled,omitempty"` // Enable analytics tracking (default: false)
+	MessageTimeout   *int   `json:"messageTimeout,omitempty"`   // Auto-clear footer messages after N seconds (nil = permanent/no auto-clear)
 }
 
 // VariableValue can be a simple string or a multi-value variable

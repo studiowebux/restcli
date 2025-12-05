@@ -9,7 +9,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/config"
+	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/types"
 )
@@ -22,8 +24,15 @@ func New(mgr *session.Manager) (Model, error) {
 		return Model{}, err
 	}
 
+	// Initialize analytics and history managers using the same database file
+	// (ignore errors, both are optional)
+	analyticsManager, _ := analytics.NewManager(config.DatabasePath)
+	historyManager, _ := history.NewManager(config.DatabasePath)
+
 	m := Model{
 		sessionMgr:            mgr,
+		analyticsManager:      analyticsManager,
+		historyManager:        historyManager,
 		mode:                  ModeNormal,
 		files:                 files,
 		fileIndex:             0,
@@ -31,11 +40,16 @@ func New(mgr *session.Manager) (Model, error) {
 		showHeaders:           false,
 		showBody:              true,
 		fullscreen:            false,
-		focusedPanel:          "sidebar", // Start with sidebar focused
-		docCollapsed:          make(map[int]bool),
-		responseView:          viewport.New(80, 20),
-		modalView:             viewport.New(80, 20), // For scrollable modals
-		historyPreviewVisible: true,                 // Show preview by default
+		focusedPanel:            "sidebar", // Start with sidebar focused
+		docCollapsed:            make(map[int]bool),
+		responseView:            viewport.New(80, 20),
+		modalView:               viewport.New(80, 20), // For scrollable modals
+		historyPreviewView:      viewport.New(80, 20),
+		analyticsListView:       viewport.New(80, 20),
+		analyticsDetailView:     viewport.New(80, 20),
+		historyPreviewVisible:   true, // Show preview by default
+		analyticsPreviewVisible: true, // Show preview by default
+		analyticsFocusedPane:    "list", // Start with list focused
 	}
 
 	// Load requests from first file
