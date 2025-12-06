@@ -1,0 +1,4 @@
+### Random Speed Json
+# @expectedStatusCodes 200
+# @expectedBodyField message=ZZZzzz
+GET http://localhost:8000/json

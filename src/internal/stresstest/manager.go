@@ -227,11 +227,11 @@ func (m *Manager) UpdateRun(run *Run) error {
 	_, err := m.db.Exec(`
 		UPDATE stress_test_runs
 		SET completed_at = ?, status = ?, total_requests_sent = ?, total_requests_completed = ?,
-		    total_errors = ?, avg_duration_ms = ?, min_duration_ms = ?, max_duration_ms = ?,
+		    total_errors = ?, total_validation_errors = ?, avg_duration_ms = ?, min_duration_ms = ?, max_duration_ms = ?,
 		    p50_duration_ms = ?, p95_duration_ms = ?, p99_duration_ms = ?
 		WHERE id = ?
 	`, run.CompletedAt, run.Status, run.TotalRequestsSent, run.TotalRequestsCompleted,
-		run.TotalErrors, run.AvgDurationMs, run.MinDurationMs, run.MaxDurationMs,
+		run.TotalErrors, run.TotalValidationErrors, run.AvgDurationMs, run.MinDurationMs, run.MaxDurationMs,
 		run.P50DurationMs, run.P95DurationMs, run.P99DurationMs, run.ID)
 	return err
 }
@@ -244,13 +244,13 @@ func (m *Manager) GetRun(id int64) (*Run, error) {
 
 	err := m.db.QueryRow(`
 		SELECT id, config_id, config_name, request_file, COALESCE(profile_name, ''), started_at, completed_at, status,
-		       total_requests_sent, total_requests_completed, total_errors,
+		       total_requests_sent, total_requests_completed, total_errors, COALESCE(total_validation_errors, 0),
 		       COALESCE(avg_duration_ms, 0), COALESCE(min_duration_ms, 0), COALESCE(max_duration_ms, 0),
 		       COALESCE(p50_duration_ms, 0), COALESCE(p95_duration_ms, 0), COALESCE(p99_duration_ms, 0)
 		FROM stress_test_runs WHERE id = ?
 	`, id).Scan(&run.ID, &configID, &run.ConfigName, &run.RequestFile, &run.ProfileName,
 		&run.StartedAt, &completedAt, &run.Status, &run.TotalRequestsSent,
-		&run.TotalRequestsCompleted, &run.TotalErrors, &run.AvgDurationMs, &run.MinDurationMs,
+		&run.TotalRequestsCompleted, &run.TotalErrors, &run.TotalValidationErrors, &run.AvgDurationMs, &run.MinDurationMs,
 		&run.MaxDurationMs, &run.P50DurationMs, &run.P95DurationMs, &run.P99DurationMs)
 	if err != nil {
 		return nil, err
@@ -270,7 +270,7 @@ func (m *Manager) GetRun(id int64) (*Run, error) {
 func (m *Manager) ListRuns(profileName string, limit int) ([]*Run, error) {
 	query := `
 		SELECT id, config_id, config_name, request_file, COALESCE(profile_name, ''), started_at, completed_at, status,
-		       total_requests_sent, total_requests_completed, total_errors,
+		       total_requests_sent, total_requests_completed, total_errors, COALESCE(total_validation_errors, 0),
 		       COALESCE(avg_duration_ms, 0), COALESCE(min_duration_ms, 0), COALESCE(max_duration_ms, 0),
 		       COALESCE(p50_duration_ms, 0), COALESCE(p95_duration_ms, 0), COALESCE(p99_duration_ms, 0)
 		FROM stress_test_runs
@@ -295,7 +295,7 @@ func (m *Manager) ListRuns(profileName string, limit int) ([]*Run, error) {
 
 		err := rows.Scan(&run.ID, &configID, &run.ConfigName, &run.RequestFile, &run.ProfileName,
 			&run.StartedAt, &completedAt, &run.Status, &run.TotalRequestsSent,
-			&run.TotalRequestsCompleted, &run.TotalErrors, &run.AvgDurationMs, &run.MinDurationMs,
+			&run.TotalRequestsCompleted, &run.TotalErrors, &run.TotalValidationErrors, &run.AvgDurationMs, &run.MinDurationMs,
 			&run.MaxDurationMs, &run.P50DurationMs, &run.P95DurationMs, &run.P99DurationMs)
 		if err != nil {
 			return nil, err
@@ -352,8 +352,8 @@ func (m *Manager) SaveMetricsBatch(metrics []*Metric) error {
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO stress_test_metrics
-		(run_id, timestamp, elapsed_ms, status_code, duration_ms, request_size, response_size, error_message)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		(run_id, timestamp, elapsed_ms, status_code, duration_ms, request_size, response_size, error_message, validation_error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
@@ -362,7 +362,7 @@ func (m *Manager) SaveMetricsBatch(metrics []*Metric) error {
 
 	for _, metric := range metrics {
 		_, err := stmt.Exec(metric.RunID, metric.Timestamp, metric.ElapsedMs, metric.StatusCode,
-			metric.DurationMs, metric.RequestSize, metric.ResponseSize, metric.ErrorMessage)
+			metric.DurationMs, metric.RequestSize, metric.ResponseSize, metric.ErrorMessage, metric.ValidationError)
 		if err != nil {
 			return fmt.Errorf("failed to insert metric: %w", err)
 		}
@@ -374,7 +374,8 @@ func (m *Manager) SaveMetricsBatch(metrics []*Metric) error {
 // GetMetrics retrieves all metrics for a run
 func (m *Manager) GetMetrics(runID int64) ([]*Metric, error) {
 	rows, err := m.db.Query(`
-		SELECT id, run_id, timestamp, elapsed_ms, status_code, duration_ms, request_size, response_size, error_message
+		SELECT id, run_id, timestamp, elapsed_ms, status_code, duration_ms, request_size, response_size,
+		       error_message, COALESCE(validation_error, '')
 		FROM stress_test_metrics
 		WHERE run_id = ?
 		ORDER BY elapsed_ms
@@ -388,16 +389,20 @@ func (m *Manager) GetMetrics(runID int64) ([]*Metric, error) {
 	for rows.Next() {
 		metric := &Metric{}
 		var errorMsg sql.NullString
+		var validationErr sql.NullString
 
 		err := rows.Scan(&metric.ID, &metric.RunID, &metric.Timestamp, &metric.ElapsedMs,
 			&metric.StatusCode, &metric.DurationMs, &metric.RequestSize, &metric.ResponseSize,
-			&errorMsg)
+			&errorMsg, &validationErr)
 		if err != nil {
 			return nil, err
 		}
 
 		if errorMsg.Valid {
 			metric.ErrorMessage = errorMsg.String
+		}
+		if validationErr.Valid {
+			metric.ValidationError = validationErr.String
 		}
 
 		metrics = append(metrics, metric)

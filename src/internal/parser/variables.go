@@ -207,16 +207,21 @@ func LoadSystemEnv() map[string]string {
 // ResolveRequest resolves all variables in a request (URL, headers, body)
 func (vr *VariableResolver) ResolveRequest(req *types.HttpRequest) (*types.HttpRequest, error) {
 	resolved := &types.HttpRequest{
-		Name:          req.Name,
-		Protocol:      req.Protocol,
-		Method:        req.Method,
-		Headers:       make(map[string]string),
-		Documentation: req.Documentation,
-		Filter:        req.Filter,
-		Query:         req.Query,
-		ParseEscapes:  req.ParseEscapes,
-		Streaming:     req.Streaming,
-		TLS:           req.TLS,
+		Name:                 req.Name,
+		Protocol:             req.Protocol,
+		Method:               req.Method,
+		Headers:              make(map[string]string),
+		Documentation:        req.Documentation,
+		Filter:               req.Filter,
+		Query:                req.Query,
+		ParseEscapes:         req.ParseEscapes,
+		Streaming:            req.Streaming,
+		TLS:                  req.TLS,
+		ExpectedStatusCodes:  req.ExpectedStatusCodes,
+		ExpectedBodyExact:    req.ExpectedBodyExact,
+		ExpectedBodyContains: req.ExpectedBodyContains,
+		ExpectedBodyPattern:  req.ExpectedBodyPattern,
+		ExpectedBodyFields:   req.ExpectedBodyFields,
 	}
 
 	// Resolve URL

@@ -6,15 +6,16 @@ import (
 
 // Stats holds runtime statistics for a stress test
 type Stats struct {
-	TotalRequests      int
-	CompletedRequests  int
-	ErrorCount         int
-	SuccessCount       int
-	ActiveWorkers      int     // Current number of workers actively executing requests
-	Durations          []int64 // For percentile calculation
-	TotalDurationMs    int64
-	MinDurationMs      int64
-	MaxDurationMs      int64
+	TotalRequests        int
+	CompletedRequests    int
+	ErrorCount           int // Network errors (timeouts, connection failures)
+	ValidationErrorCount int // Validation errors (unexpected status, body mismatch)
+	SuccessCount         int
+	ActiveWorkers        int     // Current number of workers actively executing requests
+	Durations            []int64 // For percentile calculation
+	TotalDurationMs      int64
+	MinDurationMs        int64
+	MaxDurationMs        int64
 }
 
 // NewStats creates a new Stats instance
@@ -27,13 +28,17 @@ func NewStats() *Stats {
 }
 
 // AddResult adds a request result to the statistics
-func (s *Stats) AddResult(durationMs int64, isError bool) {
+// isNetworkError: true for connection failures, timeouts, etc.
+// isValidationError: true for unexpected status codes, body mismatches, etc.
+func (s *Stats) AddResult(durationMs int64, isNetworkError bool, isValidationError bool) {
 	s.CompletedRequests++
 	s.TotalDurationMs += durationMs
 	s.Durations = append(s.Durations, durationMs)
 
-	if isError {
+	if isNetworkError {
 		s.ErrorCount++
+	} else if isValidationError {
+		s.ValidationErrorCount++
 	} else {
 		s.SuccessCount++
 	}
@@ -121,12 +126,20 @@ func (s *Stats) SuccessRate() float64 {
 	return float64(s.SuccessCount) / float64(s.CompletedRequests) * 100
 }
 
-// ErrorRate returns the error rate as a percentage
+// ErrorRate returns the network error rate as a percentage
 func (s *Stats) ErrorRate() float64 {
 	if s.CompletedRequests == 0 {
 		return 0
 	}
 	return float64(s.ErrorCount) / float64(s.CompletedRequests) * 100
+}
+
+// ValidationErrorRate returns the validation error rate as a percentage
+func (s *Stats) ValidationErrorRate() float64 {
+	if s.CompletedRequests == 0 {
+		return 0
+	}
+	return float64(s.ValidationErrorCount) / float64(s.CompletedRequests) * 100
 }
 
 // Progress returns the completion progress as a percentage

@@ -15,10 +15,17 @@ type HttpRequest struct {
 	ParseEscapes        bool                   `json:"parseEscapes,omitempty" yaml:"parseEscapes,omitempty"` // Parse escape sequences in response body
 	Streaming           bool                   `json:"streaming,omitempty" yaml:"streaming,omitempty"` // Enable real-time streaming display (for SSE, infinite streams)
 	RequiresConfirmation bool                  `json:"requiresConfirmation,omitempty" yaml:"requiresConfirmation,omitempty"` // Require user confirmation before execution
-	TLS                 *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty"`       // TLS/mTLS configuration
-	Documentation       *Documentation         `json:"documentation,omitempty" yaml:"documentation,omitempty"`
-	DocumentationLines  []string               `json:"-" yaml:"-"` // Raw documentation comment lines for lazy loading
-	documentationParsed bool                   `json:"-" yaml:"-"` // Whether documentation has been parsed (unexported for internal use)
+	TLS                  *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty"`       // TLS/mTLS configuration
+	Documentation        *Documentation         `json:"documentation,omitempty" yaml:"documentation,omitempty"`
+	DocumentationLines   []string               `json:"-" yaml:"-"` // Raw documentation comment lines for lazy loading
+	documentationParsed  bool                   `json:"-" yaml:"-"` // Whether documentation has been parsed (unexported for internal use)
+
+	// Validation fields for stress testing
+	ExpectedStatusCodes  []int             `json:"expectedStatusCodes,omitempty" yaml:"expectedStatusCodes,omitempty"` // Expected HTTP status codes for validation
+	ExpectedBodyExact    string            `json:"expectedBodyExact,omitempty" yaml:"expectedBodyExact,omitempty"`       // Exact body match (string equality)
+	ExpectedBodyContains string            `json:"expectedBodyContains,omitempty" yaml:"expectedBodyContains,omitempty"` // Substring that body must contain
+	ExpectedBodyPattern  string            `json:"expectedBodyPattern,omitempty" yaml:"expectedBodyPattern,omitempty"`   // Regex pattern body must match
+	ExpectedBodyFields   map[string]string `json:"expectedBodyFields,omitempty" yaml:"expectedBodyFields,omitempty"`     // JSON field:value or field:pattern map for partial matching
 }
 
 // EnsureDocumentationParsed parses documentation lines if not already parsed
@@ -31,6 +38,23 @@ func (r *HttpRequest) EnsureDocumentationParsed(parseFunc func([]string) *Docume
 	r.documentationParsed = true
 	// Clear the lines to free memory
 	r.DocumentationLines = nil
+}
+
+// IsExpectedStatus checks if the given status code is expected
+// If no expected codes are defined, defaults to 2xx (200-299) as success
+func (r *HttpRequest) IsExpectedStatus(statusCode int) bool {
+	// If no expected codes defined, use default: 2xx is success
+	if len(r.ExpectedStatusCodes) == 0 {
+		return statusCode >= 200 && statusCode < 300
+	}
+
+	// Check if status code matches any expected code
+	for _, expected := range r.ExpectedStatusCodes {
+		if statusCode == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // Documentation contains request documentation metadata

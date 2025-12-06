@@ -63,6 +63,30 @@ var AllMigrations = []Migration{
 			-- Cannot restore deleted data
 		`,
 	},
+	{
+		Version: 3,
+		Name:    "Add validation_error column to stress_test_metrics",
+		Up: `
+			-- Add validation_error column for tracking validation failures
+			ALTER TABLE stress_test_metrics ADD COLUMN validation_error TEXT;
+		`,
+		Down: `
+			-- SQLite does not support DROP COLUMN easily
+			-- Leaving column in place for backward compatibility
+		`,
+	},
+	{
+		Version: 4,
+		Name:    "Add total_validation_errors column to stress_test_runs",
+		Up: `
+			-- Add total_validation_errors column for tracking validation failure count
+			ALTER TABLE stress_test_runs ADD COLUMN total_validation_errors INTEGER DEFAULT 0;
+		`,
+		Down: `
+			-- SQLite does not support DROP COLUMN easily
+			-- Leaving column in place for backward compatibility
+		`,
+	},
 }
 
 // Run executes all pending migrations on the database

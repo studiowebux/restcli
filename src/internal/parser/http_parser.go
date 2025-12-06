@@ -104,6 +104,53 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 					continue
 				}
 			}
+			// Check for validation annotations
+			if strings.HasPrefix(trimmed, "@expectedStatusCodes ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@expectedStatusCodes"))
+				currentRequest.ExpectedStatusCodes = ParseStatusCodes(value)
+				continue
+			}
+			if strings.HasPrefix(trimmed, "@expectedBodyExact ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@expectedBodyExact"))
+				// Remove quotes if present
+				if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+					value = value[1 : len(value)-1]
+				}
+				currentRequest.ExpectedBodyExact = value
+				continue
+			}
+			if strings.HasPrefix(trimmed, "@expectedBody ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@expectedBody"))
+				// Remove quotes if present
+				if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+					value = value[1 : len(value)-1]
+				}
+				currentRequest.ExpectedBodyContains = value
+				continue
+			}
+			if strings.HasPrefix(trimmed, "@expectedBodyPattern ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@expectedBodyPattern"))
+				// Remove quotes if present
+				if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+					value = value[1 : len(value)-1]
+				}
+				currentRequest.ExpectedBodyPattern = value
+				continue
+			}
+			if strings.HasPrefix(trimmed, "@expectedBodyField ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@expectedBodyField"))
+				// Parse field=value format
+				if currentRequest.ExpectedBodyFields == nil {
+					currentRequest.ExpectedBodyFields = make(map[string]string)
+				}
+				parts := strings.SplitN(value, "=", 2)
+				if len(parts) == 2 {
+					field := strings.TrimSpace(parts[0])
+					fieldValue := strings.TrimSpace(parts[1])
+					currentRequest.ExpectedBodyFields[field] = fieldValue
+				}
+				continue
+			}
 			currentRequest.DocumentationLines = append(currentRequest.DocumentationLines, line)
 			continue
 		}
@@ -374,4 +421,37 @@ func parseResponseField(line string) *types.ResponseField {
 	}
 
 	return field
+}
+
+// ParseStatusCodes parses a comma-separated list of status codes and ranges
+// Supports: "200,201,204" or "2xx,3xx" or mixed "200,2xx,404"
+func ParseStatusCodes(input string) []int {
+	var codes []int
+	parts := strings.Split(input, ",")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		// Check for range notation (2xx, 3xx, 4xx, 5xx)
+		if strings.HasSuffix(part, "xx") && len(part) == 3 {
+			rangeStart := int(part[0] - '0')
+			if rangeStart >= 1 && rangeStart <= 5 {
+				// Add all codes in range (e.g., 2xx = 200-299)
+				for i := rangeStart * 100; i < (rangeStart+1)*100; i++ {
+					codes = append(codes, i)
+				}
+			}
+		} else {
+			// Parse as specific code
+			var code int
+			if _, err := fmt.Sscanf(part, "%d", &code); err == nil {
+				codes = append(codes, code)
+			}
+		}
+	}
+
+	return codes
 }

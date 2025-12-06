@@ -50,18 +50,19 @@ func (m *Model) renderStressTestProgress() string {
 		elapsed := time.Since(run.StartedAt)
 
 		stats = &StressTestStats{
-			TotalRequests:     execStats.TotalRequests,
-			CompletedRequests: execStats.CompletedRequests,
-			SuccessCount:      execStats.SuccessCount,
-			ErrorCount:        execStats.ErrorCount,
-			ActiveWorkers:     execStats.ActiveWorkers,
-			AvgDurationMs:     execStats.AvgDurationMs(),
-			MinDurationMs:     execStats.Min(),
-			MaxDurationMs:     execStats.Max(),
-			P50DurationMs:     execStats.P50(),
-			P95DurationMs:     execStats.P95(),
-			P99DurationMs:     execStats.P99(),
-			Elapsed:           elapsed,
+			TotalRequests:        execStats.TotalRequests,
+			CompletedRequests:    execStats.CompletedRequests,
+			SuccessCount:         execStats.SuccessCount,
+			ErrorCount:           execStats.ErrorCount,
+			ValidationErrorCount: execStats.ValidationErrorCount,
+			ActiveWorkers:        execStats.ActiveWorkers,
+			AvgDurationMs:        execStats.AvgDurationMs(),
+			MinDurationMs:        execStats.Min(),
+			MaxDurationMs:        execStats.Max(),
+			P50DurationMs:        execStats.P50(),
+			P95DurationMs:        execStats.P95(),
+			P99DurationMs:        execStats.P99(),
+			Elapsed:              elapsed,
 		}
 	} else {
 		// No executor, show empty state
@@ -99,7 +100,8 @@ func (m *Model) renderStressTestProgress() string {
 	// Two-column layout
 	leftCol := []string{
 		fmt.Sprintf("Success:    %d", stats.SuccessCount),
-		fmt.Sprintf("Errors:     %d", stats.ErrorCount),
+		fmt.Sprintf("Net Errors: %d", stats.ErrorCount),
+		fmt.Sprintf("Val Errors: %d", stats.ValidationErrorCount),
 		fmt.Sprintf("Avg:        %.0fms", stats.AvgDurationMs),
 		fmt.Sprintf("Min:        %dms", stats.MinDurationMs),
 	}
@@ -109,6 +111,7 @@ func (m *Model) renderStressTestProgress() string {
 		fmt.Sprintf("P50:        %dms", stats.P50DurationMs),
 		fmt.Sprintf("P95:        %dms", stats.P95DurationMs),
 		fmt.Sprintf("P99:        %dms", stats.P99DurationMs),
+		"",
 	}
 
 	// Calculate RPS
@@ -153,18 +156,19 @@ func (m *Model) renderStressTestProgress() string {
 
 // StressTestStats holds formatted stats for display
 type StressTestStats struct {
-	TotalRequests     int
-	CompletedRequests int
-	SuccessCount      int
-	ErrorCount        int
-	ActiveWorkers     int
-	AvgDurationMs     float64
-	MinDurationMs     int64
-	MaxDurationMs     int64
-	P50DurationMs     int64
-	P95DurationMs     int64
-	P99DurationMs     int64
-	Elapsed           time.Duration
+	TotalRequests        int
+	CompletedRequests    int
+	SuccessCount         int
+	ErrorCount           int // Network errors
+	ValidationErrorCount int // Validation errors
+	ActiveWorkers        int
+	AvgDurationMs        float64
+	MinDurationMs        int64
+	MaxDurationMs        int64
+	P50DurationMs        int64
+	P95DurationMs        int64
+	P99DurationMs        int64
+	Elapsed              time.Duration
 }
 
 // Progress returns the completion percentage

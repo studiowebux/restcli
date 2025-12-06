@@ -56,11 +56,22 @@ app.get("/slow", async (c) => {
   return c.text("ZZZzzz");
 });
 
+app.get("/json", async (c) => {
+  await new Promise((resolve) =>
+    setTimeout(resolve, (Math.floor(Math.random() * 5000) + 1) * Math.random())
+  );
+
+  return c.json({
+    message: "ZZZzzz",
+  });
+});
+
 app.get("/random", async (c) => {
   await new Promise((resolve) =>
     setTimeout(resolve, (Math.floor(Math.random() * 5000) + 1) * Math.random())
   );
-  return c.text("ZZZzzz");
+
+  return c.text("ZZZzzz1");
 });
 
 let id = 0;

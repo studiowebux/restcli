@@ -1303,6 +1303,82 @@ func (m *Model) updateInspectView() {
 			}
 			content.WriteString("\n")
 		}
+
+		// Show validation configuration if present (for stress testing)
+		hasValidation := len(resolvedRequest.ExpectedStatusCodes) > 0 ||
+			resolvedRequest.ExpectedBodyExact != "" ||
+			resolvedRequest.ExpectedBodyContains != "" ||
+			resolvedRequest.ExpectedBodyPattern != "" ||
+			len(resolvedRequest.ExpectedBodyFields) > 0
+
+		if hasValidation {
+			content.WriteString("Validation (Stress Testing):\n")
+
+			// Expected status codes
+			if len(resolvedRequest.ExpectedStatusCodes) > 0 {
+				codes := ""
+				for i, code := range resolvedRequest.ExpectedStatusCodes {
+					if i > 0 {
+						codes += ", "
+					}
+					codes += fmt.Sprintf("%d", code)
+					// Limit display to first 10 codes
+					if i >= 9 && len(resolvedRequest.ExpectedStatusCodes) > 10 {
+						codes += fmt.Sprintf(", ... (%d more)", len(resolvedRequest.ExpectedStatusCodes)-10)
+						break
+					}
+				}
+				content.WriteString("  Expected Status: " + codes + "\n")
+			}
+
+			// Expected body exact match
+			if resolvedRequest.ExpectedBodyExact != "" {
+				truncated := resolvedRequest.ExpectedBodyExact
+				if len(truncated) > 60 {
+					truncated = truncated[:57] + "..."
+				}
+				content.WriteString("  Body Exact: " + truncated + "\n")
+			}
+
+			// Expected body substring
+			if resolvedRequest.ExpectedBodyContains != "" {
+				truncated := resolvedRequest.ExpectedBodyContains
+				if len(truncated) > 60 {
+					truncated = truncated[:57] + "..."
+				}
+				content.WriteString("  Body Contains: " + truncated + "\n")
+			}
+
+			// Expected body pattern
+			if resolvedRequest.ExpectedBodyPattern != "" {
+				truncated := resolvedRequest.ExpectedBodyPattern
+				if len(truncated) > 60 {
+					truncated = truncated[:57] + "..."
+				}
+				content.WriteString("  Body Pattern: " + truncated + "\n")
+			}
+
+			// Expected body fields
+			if len(resolvedRequest.ExpectedBodyFields) > 0 {
+				content.WriteString("  Body Fields:\n")
+				count := 0
+				for field, value := range resolvedRequest.ExpectedBodyFields {
+					truncatedValue := value
+					if len(truncatedValue) > 50 {
+						truncatedValue = truncatedValue[:47] + "..."
+					}
+					content.WriteString(fmt.Sprintf("    %s = %s\n", field, truncatedValue))
+					count++
+					// Limit display to first 5 fields
+					if count >= 5 && len(resolvedRequest.ExpectedBodyFields) > 5 {
+						content.WriteString(fmt.Sprintf("    ... (%d more fields)\n", len(resolvedRequest.ExpectedBodyFields)-5))
+						break
+					}
+				}
+			}
+
+			content.WriteString("\n")
+		}
 	}
 
 	// Show parsing option if enabled (from original request, not resolved)

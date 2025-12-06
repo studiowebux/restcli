@@ -262,6 +262,169 @@ Stress test data stored in SQLite database:
 - 10,000 requests ≈ 2MB data
 - No automatic cleanup (manual delete via UI)
 
+## Request Validation
+
+Validate response status codes and body content during stress tests.
+
+### Status Code Validation
+
+Define expected HTTP status codes using `@expectedStatusCodes` annotation:
+
+```http
+# @expectedStatusCodes 200,201
+POST https://api.example.com/users
+Content-Type: application/json
+
+{"name": "Alice"}
+```
+
+**Supported Formats:**
+
+- Specific codes: `@expectedStatusCodes 200,201,204`
+- Ranges: `@expectedStatusCodes 2xx,3xx`
+- Mixed: `@expectedStatusCodes 200,2xx,404`
+
+**Default Behavior:**
+
+If no `@expectedStatusCodes` specified, defaults to 2xx (200-299) as success.
+
+**Validation Tracking:**
+
+- Unexpected status codes counted as validation errors
+- Separate from network errors (timeouts, connection failures)
+- Tracked in `total_validation_errors` field
+
+### Body Validation
+
+Validate response body content with four methods:
+
+**Exact Match**
+
+```http
+# @expectedBodyExact "OK"
+GET https://api.example.com/health
+```
+
+Passes only if response body exactly matches the string.
+
+**Substring Match**
+
+```http
+# @expectedBody "success"
+GET https://api.example.com/health
+```
+
+Passes if response body contains the substring.
+
+**Regex Pattern**
+
+```http
+# @expectedBodyPattern "^\{.*status.*ok.*\}$"
+GET https://api.example.com/status
+```
+
+Passes if response body matches the regular expression.
+
+**Partial JSON Field Matching**
+
+```http
+# @expectedBodyField success=true
+# @expectedBodyField status=active
+GET https://api.example.com/user/123
+```
+
+Validates specific JSON fields, ignoring other fields (partial matching).
+
+**Regex in Field Values:**
+
+```http
+# @expectedBodyField id=/^[0-9a-f-]{36}$/
+# @expectedBodyField created_at=/^\d{4}-\d{2}-\d{2}/
+GET https://api.example.com/user/123
+```
+
+Use `/pattern/` format for regex matching on field values (useful for UUIDs, timestamps, etc.).
+
+### JSON/YAML File Format
+
+Validation works in all file formats:
+
+**JSON Example:**
+
+```json
+{
+  "method": "GET",
+  "url": "https://api.example.com/users",
+  "expectedStatusCodes": [200, 201, 204],
+  "expectedBodyExact": "{\"status\":\"ok\"}",
+  "expectedBodyContains": "success",
+  "expectedBodyPattern": "^\\{.*users.*\\}$",
+  "expectedBodyFields": {
+    "success": "true",
+    "count": "/^\\d+$/",
+    "id": "/^[0-9a-f-]{36}$/"
+  }
+}
+```
+
+**YAML Example:**
+
+```yaml
+method: GET
+url: https://api.example.com/users
+expectedStatusCodes: [200, 201, 204]
+expectedBodyExact: '{"status":"ok"}'
+expectedBodyContains: "success"
+expectedBodyFields:
+  success: "true"
+  id: "/^[0-9a-f-]{36}$/"
+```
+
+### Validation Results
+
+**Stats Tracking:**
+
+- `SuccessCount`: Requests passing all validations
+- `ErrorCount`: Network errors (timeouts, connection failures)
+- `ValidationErrorCount`: Validation failures (status/body mismatch)
+
+**Metrics Storage:**
+
+Each request metric includes:
+- `error_message`: Network error details
+- `validation_error`: Validation failure reason
+
+**Example Validation Errors:**
+
+```text
+unexpected status 404
+body does not contain expected substring: success
+field 'success' expected 'true' but got 'false'
+```
+
+### Inspect Modal
+
+Press `i` to inspect request and view validation configuration:
+
+```text
+┌─ Inspect Request ────────────────────────┐
+│                                          │
+│ GET https://api.example.com/users        │
+│                                          │
+│ Headers:                                 │
+│   Authorization: Bearer token123         │
+│                                          │
+│ Validation (Stress Testing):             │
+│   Expected Status: 200, 201              │
+│   Body Contains: success                 │
+│   Body Fields:                           │
+│     success = true                       │
+│     id = /^[0-9a-f-]{36}$/               │
+│                                          │
+│ ↑/↓ scroll [Enter] execute [ESC] close   │
+└──────────────────────────────────────────┘
+```
+
 ## Best Practices
 
 ### Target Server

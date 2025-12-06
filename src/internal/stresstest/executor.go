@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +44,7 @@ type RequestResult struct {
 	ElapsedMs    int64
 	RequestSize  int64
 	ResponseSize int64
+	Body         string // Response body for validation
 	Error        error
 	Timestamp    time.Time
 }
@@ -230,15 +233,16 @@ func (e *Executor) GetStats() *Stats {
 	// Return a copy to avoid race conditions
 	// Use configured total for accurate progress calculation
 	statsCopy := &Stats{
-		TotalRequests:     e.config.Config.TotalRequests,
-		CompletedRequests: e.stats.CompletedRequests,
-		ErrorCount:        e.stats.ErrorCount,
-		SuccessCount:      e.stats.SuccessCount,
-		ActiveWorkers:     int(atomic.LoadInt32(&e.activeWorkers)),
-		TotalDurationMs:   e.stats.TotalDurationMs,
-		MinDurationMs:     e.stats.MinDurationMs,
-		MaxDurationMs:     e.stats.MaxDurationMs,
-		Durations:         make([]int64, len(e.stats.Durations)),
+		TotalRequests:        e.config.Config.TotalRequests,
+		CompletedRequests:    e.stats.CompletedRequests,
+		ErrorCount:           e.stats.ErrorCount,
+		ValidationErrorCount: e.stats.ValidationErrorCount,
+		SuccessCount:         e.stats.SuccessCount,
+		ActiveWorkers:        int(atomic.LoadInt32(&e.activeWorkers)),
+		TotalDurationMs:      e.stats.TotalDurationMs,
+		MinDurationMs:        e.stats.MinDurationMs,
+		MaxDurationMs:        e.stats.MaxDurationMs,
+		Durations:            make([]int64, len(e.stats.Durations)),
 	}
 	copy(statsCopy.Durations, e.stats.Durations)
 
@@ -314,6 +318,7 @@ func (e *Executor) worker() {
 				requestResult.StatusCode = result.Status
 				requestResult.RequestSize = int64(result.RequestSize)
 				requestResult.ResponseSize = int64(result.ResponseSize)
+				requestResult.Body = result.Body
 
 				// CRITICAL: Check the Error field in the result (string)
 				// HTTP execution returns errors in result.Error field
@@ -361,17 +366,101 @@ func (e *Executor) scheduleRequests() {
 	close(e.requestChan)
 }
 
+// validateBody validates the response body against expected patterns
+// Returns empty string if validation passes, or error message if validation fails
+func (e *Executor) validateBody(body string) string {
+	req := e.config.Request
+
+	// Check ExpectedBodyExact (exact string match)
+	if req.ExpectedBodyExact != "" {
+		if body != req.ExpectedBodyExact {
+			return fmt.Sprintf("body does not match expected exact value (expected: %q, got: %q)", req.ExpectedBodyExact, body)
+		}
+	}
+
+	// Check ExpectedBodyContains (substring match)
+	if req.ExpectedBodyContains != "" {
+		if !strings.Contains(body, req.ExpectedBodyContains) {
+			return fmt.Sprintf("body does not contain expected substring: %s", req.ExpectedBodyContains)
+		}
+	}
+
+	// Check ExpectedBodyPattern (regex match)
+	if req.ExpectedBodyPattern != "" {
+		matched, err := regexp.MatchString(req.ExpectedBodyPattern, body)
+		if err != nil {
+			return fmt.Sprintf("invalid body pattern regex: %v", err)
+		}
+		if !matched {
+			return fmt.Sprintf("body does not match expected pattern: %s", req.ExpectedBodyPattern)
+		}
+	}
+
+	// Check ExpectedBodyFields (partial JSON field matching)
+	if len(req.ExpectedBodyFields) > 0 {
+		var bodyJSON map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &bodyJSON); err != nil {
+			return fmt.Sprintf("failed to parse JSON body for field validation: %v", err)
+		}
+
+		for fieldName, expectedValue := range req.ExpectedBodyFields {
+			actualValue, exists := bodyJSON[fieldName]
+			if !exists {
+				return fmt.Sprintf("expected field '%s' not found in response", fieldName)
+			}
+
+			// Convert actual value to string for comparison
+			actualStr := fmt.Sprintf("%v", actualValue)
+
+			// Check if expected value is a regex pattern (starts and ends with /)
+			if strings.HasPrefix(expectedValue, "/") && strings.HasSuffix(expectedValue, "/") {
+				pattern := expectedValue[1 : len(expectedValue)-1]
+				matched, err := regexp.MatchString(pattern, actualStr)
+				if err != nil {
+					return fmt.Sprintf("invalid regex pattern for field '%s': %v", fieldName, err)
+				}
+				if !matched {
+					return fmt.Sprintf("field '%s' value '%s' does not match pattern '%s'", fieldName, actualStr, pattern)
+				}
+			} else {
+				// Literal value comparison
+				if actualStr != expectedValue {
+					return fmt.Sprintf("field '%s' expected '%s' but got '%s'", fieldName, expectedValue, actualStr)
+				}
+			}
+		}
+	}
+
+	return "" // All validations passed
+}
+
 // collectResults collects and processes request results
 func (e *Executor) collectResults() {
 	for result := range e.resultChan {
+		// Determine error types
+		isNetworkError := result.Error != nil || result.StatusCode == 0
+		isValidationError := false
+		validationErrorMsg := ""
+
+		// Only validate if no network error occurred
+		if !isNetworkError {
+			// Check status code validation
+			if !e.config.Request.IsExpectedStatus(result.StatusCode) {
+				isValidationError = true
+				validationErrorMsg = fmt.Sprintf("unexpected status %d", result.StatusCode)
+			} else {
+				// Status code is valid, check body validation
+				bodyValidationErr := e.validateBody(result.Body)
+				if bodyValidationErr != "" {
+					isValidationError = true
+					validationErrorMsg = bodyValidationErr
+				}
+			}
+		}
+
 		// Update statistics
 		e.statsMu.Lock()
-		// CRITICAL: Treat as error if:
-		// 1. Error field is set (timeout, connection failure, etc)
-		// 2. Status code is 0 (connection never established)
-		// 3. Status code >= 400 (HTTP error responses)
-		isError := result.Error != nil || result.StatusCode == 0 || result.StatusCode >= 400
-		e.stats.AddResult(result.DurationMs, isError)
+		e.stats.AddResult(result.DurationMs, isNetworkError, isValidationError)
 		e.statsMu.Unlock()
 
 		// Buffer metric for batch insert
@@ -386,6 +475,8 @@ func (e *Executor) collectResults() {
 		}
 		if result.Error != nil {
 			metric.ErrorMessage = result.Error.Error()
+		} else if isValidationError {
+			metric.ValidationError = validationErrorMsg
 		}
 
 		e.metricsBuf = append(e.metricsBuf, metric)
@@ -426,6 +517,7 @@ func (e *Executor) finalize(status string) {
 	e.run.TotalRequestsSent = e.requestsSent // Use actual sent count, not configured total
 	e.run.TotalRequestsCompleted = e.stats.CompletedRequests
 	e.run.TotalErrors = e.stats.ErrorCount
+	e.run.TotalValidationErrors = e.stats.ValidationErrorCount
 	e.run.AvgDurationMs = e.stats.AvgDurationMs()
 	e.run.MinDurationMs = e.stats.Min()
 	e.run.MaxDurationMs = e.stats.Max()

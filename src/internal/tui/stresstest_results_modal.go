@@ -178,13 +178,15 @@ func (m *Model) updateStressTestDetailView() {
 
 		// Request stats
 		detailContent.WriteString(styleTitle.Render("Requests") + "\n")
-		detailContent.WriteString(fmt.Sprintf("Sent:       %d\n", run.TotalRequestsSent))
-		detailContent.WriteString(fmt.Sprintf("Completed:  %d\n", run.TotalRequestsCompleted))
-		detailContent.WriteString(fmt.Sprintf("Success:    %d\n", run.TotalRequestsCompleted-run.TotalErrors))
-		detailContent.WriteString(fmt.Sprintf("Errors:     %d\n", run.TotalErrors))
+		detailContent.WriteString(fmt.Sprintf("Sent:         %d\n", run.TotalRequestsSent))
+		detailContent.WriteString(fmt.Sprintf("Completed:    %d\n", run.TotalRequestsCompleted))
+		successCount := run.TotalRequestsCompleted - run.TotalErrors - run.TotalValidationErrors
+		detailContent.WriteString(fmt.Sprintf("Success:      %d\n", successCount))
+		detailContent.WriteString(fmt.Sprintf("Net Errors:   %d\n", run.TotalErrors))
+		detailContent.WriteString(fmt.Sprintf("Val Errors:   %d\n", run.TotalValidationErrors))
 		if run.TotalRequestsCompleted > 0 {
-			successRate := float64(run.TotalRequestsCompleted-run.TotalErrors) / float64(run.TotalRequestsCompleted) * 100
-			detailContent.WriteString(fmt.Sprintf("Success:    %.1f%%\n", successRate))
+			successRate := float64(successCount) / float64(run.TotalRequestsCompleted) * 100
+			detailContent.WriteString(fmt.Sprintf("Success Rate: %.1f%%\n", successRate))
 		}
 		detailContent.WriteString("\n")
 

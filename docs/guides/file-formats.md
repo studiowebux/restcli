@@ -65,18 +65,23 @@ GET https://api.example.com/users
 
 ### Special Directives
 
-| Directive                   | Purpose                                      |
-| --------------------------- | -------------------------------------------- |
-| `# @filter`                 | JMESPath filter or bash command              |
-| `# @query`                  | JMESPath query or bash command               |
-| `# @parsing`                | Parse escape sequences (true/false)          |
-| `# @streaming`              | Enable streaming mode (true/false)           |
-| `# @confirmation`           | Require confirmation before execution (true) |
-| `# @protocol`               | Protocol type (http/graphql)                 |
-| `# @tls.certFile`           | Client certificate path (supports variables) |
-| `# @tls.keyFile`            | Private key path (supports variables)        |
-| `# @tls.caFile`             | CA certificate path (supports variables)     |
-| `# @tls.insecureSkipVerify` | Skip TLS verification (true/false)           |
+| Directive                   | Purpose                                        |
+| --------------------------- | ---------------------------------------------- |
+| `# @filter`                 | JMESPath filter or bash command                |
+| `# @query`                  | JMESPath query or bash command                 |
+| `# @parsing`                | Parse escape sequences (true/false)            |
+| `# @streaming`              | Enable streaming mode (true/false)             |
+| `# @confirmation`           | Require confirmation before execution (true)   |
+| `# @protocol`               | Protocol type (http/graphql)                   |
+| `# @tls.certFile`           | Client certificate path (supports variables)   |
+| `# @tls.keyFile`            | Private key path (supports variables)          |
+| `# @tls.caFile`             | CA certificate path (supports variables)       |
+| `# @tls.insecureSkipVerify` | Skip TLS verification (true/false)             |
+| `# @expectedStatusCodes`    | Expected status codes for validation           |
+| `# @expectedBodyExact`      | Expected exact body match (validation)         |
+| `# @expectedBody`           | Expected body substring (validation)           |
+| `# @expectedBodyPattern`    | Expected body regex pattern (validation)       |
+| `# @expectedBodyField`      | Expected JSON field=value (validation)         |
 
 #### Confirmation Example
 
@@ -90,6 +95,39 @@ Authorization: Bearer {{token}}
 ```
 
 When executed, a confirmation modal will appear requiring you to press 'y' to confirm or 'n'/ESC to cancel.
+
+#### Validation Example
+
+For stress testing with response validation:
+
+```text
+### Create User
+# @expectedStatusCodes 200,201
+# @expectedBodyExact '{"id":"123","success":true}'
+# @expectedBody "success"
+# @expectedBodyField success=true
+# @expectedBodyField id=/^[0-9a-f-]{36}$/
+POST https://api.example.com/users
+Content-Type: application/json
+
+{
+  "name": "Alice"
+}
+```
+
+**Status Code Validation:**
+- Specific codes: `@expectedStatusCodes 200,201,204`
+- Ranges: `@expectedStatusCodes 2xx,3xx`
+- Mixed: `@expectedStatusCodes 200,2xx,404`
+
+**Body Validation:**
+- Exact: `@expectedBodyExact "OK"` - exact string match
+- Substring: `@expectedBody "success"` - checks if substring exists
+- Regex: `@expectedBodyPattern "^\\{.*status.*ok.*\\}$"` - matches pattern
+- Fields: `@expectedBodyField success=true` - validates JSON field
+- Field regex: `@expectedBodyField id=/^[0-9a-f-]{36}$/` - validates with pattern
+
+Multiple `@expectedBodyField` annotations allowed for checking multiple fields. Validation uses partial matching (ignores unspecified fields).
 
 ## YAML Format (.yaml)
 
@@ -131,6 +169,26 @@ filter: "users[?active==`true`]"
 query: "[].{name: name, email: email}"
 ```
 
+### With Validation
+
+```yaml
+name: Create User
+method: POST
+url: "https://api.example.com/users"
+headers:
+  Content-Type: "application/json"
+body: |
+  {
+    "name": "Alice"
+  }
+expectedStatusCodes: [200, 201]
+expectedBodyExact: '{"status":"ok"}'
+expectedBodyContains: "success"
+expectedBodyFields:
+  success: "true"
+  id: "/^[0-9a-f-]{36}$/"
+```
+
 ## JSON Format (.json)
 
 Structured format with schema validation.
@@ -160,6 +218,27 @@ Structured format with schema validation.
     "Content-Type": "application/json"
   },
   "body": { "name": "John" }
+}
+```
+
+### With Validation
+
+```json
+{
+  "name": "Create User",
+  "method": "POST",
+  "url": "https://api.example.com/users",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"name\": \"Alice\"}",
+  "expectedStatusCodes": [200, 201],
+  "expectedBodyExact": "{\"status\":\"ok\"}",
+  "expectedBodyContains": "success",
+  "expectedBodyFields": {
+    "success": "true",
+    "id": "/^[0-9a-f-]{36}$/"
+  }
 }
 ```
 
@@ -208,15 +287,20 @@ See [OpenAPI converter](../converters/openapi2http.md) for conversion to request
 
 ### Optional Fields
 
-| Field           | Type   | Description                    |
-| --------------- | ------ | ------------------------------ |
-| `name`          | string | Request name                   |
-| `headers`       | object | HTTP headers                   |
-| `body`          | string | Request body (POST/PUT/PATCH)  |
-| `filter`        | string | JMESPath filter                |
-| `query`         | string | JMESPath query or bash command |
-| `tls`           | object | TLS configuration              |
-| `documentation` | object | Embedded documentation         |
+| Field                    | Type     | Description                                    |
+| ------------------------ | -------- | ---------------------------------------------- |
+| `name`                   | string   | Request name                                   |
+| `headers`                | object   | HTTP headers                                   |
+| `body`                   | string   | Request body (POST/PUT/PATCH)                  |
+| `filter`                 | string   | JMESPath filter                                |
+| `query`                  | string   | JMESPath query or bash command                 |
+| `tls`                    | object   | TLS configuration                              |
+| `documentation`          | object   | Embedded documentation                         |
+| `expectedStatusCodes`    | array    | Expected HTTP status codes (validation)        |
+| `expectedBodyExact`      | string   | Expected exact body match (string equality)    |
+| `expectedBodyContains`   | string   | Expected substring in response body            |
+| `expectedBodyPattern`    | string   | Expected regex pattern for response body       |
+| `expectedBodyFields`     | object   | Expected JSON field values (partial matching)  |
 
 ### TLS Object
 

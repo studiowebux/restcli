@@ -41,7 +41,8 @@ type Run struct {
 	Status                 string // "running", "completed", "cancelled", "failed"
 	TotalRequestsSent      int
 	TotalRequestsCompleted int
-	TotalErrors            int
+	TotalErrors            int // Network errors (timeouts, connection failures)
+	TotalValidationErrors  int // Validation errors (unexpected status, body mismatch)
 	AvgDurationMs          float64
 	MinDurationMs          int64
 	MaxDurationMs          int64
@@ -52,15 +53,16 @@ type Run struct {
 
 // Metric represents a single request metric in a stress test
 type Metric struct {
-	ID           int64
-	RunID        int64
-	Timestamp    time.Time
-	ElapsedMs    int64
-	StatusCode   int
-	DurationMs   int64
-	RequestSize  int64
-	ResponseSize int64
-	ErrorMessage string
+	ID              int64
+	RunID           int64
+	Timestamp       time.Time
+	ElapsedMs       int64
+	StatusCode      int
+	DurationMs      int64
+	RequestSize     int64
+	ResponseSize    int64
+	ErrorMessage    string
+	ValidationError string // Validation failure message (e.g., "unexpected status 404", "body validation failed")
 }
 
 // ExecutionConfig contains the runtime configuration for executing a stress test

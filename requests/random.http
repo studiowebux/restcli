@@ -1,2 +1,4 @@
-### Slow
+### Random Speed Text
+# @expectedStatusCodes 200
+# @expectedBodyExact "ZZZzzz"
 GET http://localhost:8000/random
