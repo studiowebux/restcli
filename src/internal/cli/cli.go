@@ -100,7 +100,7 @@ func Run(opts RunOptions) error {
 	}
 
 	if len(requests) == 0 {
-		return fmt.Errorf("no requests found in file")
+		return fmt.Errorf("no requests found in file: %s", filePath)
 	}
 
 	// Use first request (TODO: support selecting specific request by name)
@@ -117,7 +117,7 @@ func Run(opts RunOptions) error {
 		fmt.Scanln(&response)
 		response = strings.ToLower(strings.TrimSpace(response))
 		if response != "y" && response != "yes" {
-			return fmt.Errorf("execution cancelled by user")
+			return fmt.Errorf("request execution cancelled by user")
 		}
 	}
 
@@ -218,7 +218,7 @@ func Run(opts RunOptions) error {
 		// Prompt for missing variables
 		if len(missingVars) > 0 {
 			if stdinPiped {
-				return fmt.Errorf("cannot prompt for variables while stdin is being piped. Missing: %s", strings.Join(missingVars, ", "))
+				return fmt.Errorf("cannot prompt for variables while stdin is piped (missing: %s)", strings.Join(missingVars, ", "))
 			}
 			if !isInteractive() {
 				return fmt.Errorf("missing variables (non-interactive mode): %s", strings.Join(missingVars, ", "))

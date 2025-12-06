@@ -191,7 +191,7 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	return requests, nil

@@ -156,7 +156,7 @@ func parseCurl(curlCmd string) (*CurlRequest, error) {
 	}
 
 	if !urlFound || req.URL == "" {
-		return nil, fmt.Errorf("could not find URL in cURL command")
+		return nil, fmt.Errorf("URL not found in cURL command")
 	}
 
 	// Extract method - try multiple patterns

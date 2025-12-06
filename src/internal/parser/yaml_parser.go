@@ -125,7 +125,7 @@ func parseOpenAPISnippet(data []byte) ([]types.HttpRequest, error) {
 	}
 
 	if len(requests) == 0 {
-		return nil, fmt.Errorf("no operations found in OpenAPI spec")
+		return nil, fmt.Errorf("no operations found in OpenAPI specification")
 	}
 
 	return requests, nil

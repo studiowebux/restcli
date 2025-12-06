@@ -181,7 +181,7 @@ func LoadEnvFile(path string) (map[string]string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading env file: %w", err)
+		return nil, fmt.Errorf("failed to read env file: %w", err)
 	}
 
 	return envVars, nil

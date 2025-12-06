@@ -29,7 +29,7 @@ func Apply(body string, filter string, query string) (string, error) {
 	if filter != "" {
 		filtered, err := applyJMESPath(result, filter)
 		if err != nil {
-			return "", fmt.Errorf("filter error: %w", err)
+			return "", fmt.Errorf("failed to apply filter: %w", err)
 		}
 		result = filtered
 	}
@@ -41,14 +41,14 @@ func Apply(body string, filter string, query string) (string, error) {
 			command := matches[1]
 			queried, err := executeShellCommand(result, command)
 			if err != nil {
-				return "", fmt.Errorf("query shell error: %w", err)
+				return "", fmt.Errorf("failed to execute query shell command: %w", err)
 			}
 			result = queried
 		} else {
 			// Apply as JMESPath query
 			queried, err := applyJMESPath(result, query)
 			if err != nil {
-				return "", fmt.Errorf("query error: %w", err)
+				return "", fmt.Errorf("failed to apply query: %w", err)
 			}
 			result = queried
 		}

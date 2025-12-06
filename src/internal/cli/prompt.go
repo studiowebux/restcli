@@ -155,7 +155,7 @@ func promptForMultiValueVariable(varName string, mv *types.MultiValueVariable) (
 	p := tea.NewProgram(m)
 	finalModel, err := p.Run()
 	if err != nil {
-		return "", fmt.Errorf("error running selector: %w", err)
+		return "", fmt.Errorf("failed to run selector: %w", err)
 	}
 
 	result := finalModel.(selectorModel)
@@ -165,7 +165,7 @@ func promptForMultiValueVariable(varName string, mv *types.MultiValueVariable) (
 	}
 
 	if result.choice == "" {
-		return "", fmt.Errorf("selection cancelled")
+		return "", fmt.Errorf("selection cancelled by user")
 	}
 
 	return result.choice, nil
