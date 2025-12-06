@@ -93,6 +93,24 @@ type Profile struct {
 	HistoryEnabled   *bool  `json:"historyEnabled,omitempty"`   // Override global history setting (nil = use global)
 	AnalyticsEnabled *bool  `json:"analyticsEnabled,omitempty"` // Enable analytics tracking (default: false)
 	MessageTimeout   *int   `json:"messageTimeout,omitempty"`   // Auto-clear footer messages after N seconds (nil = permanent/no auto-clear)
+	RequestTimeout   *int   `json:"requestTimeout,omitempty"`   // HTTP request timeout in seconds (nil = 30s default)
+	MaxResponseSize  *int64 `json:"maxResponseSize,omitempty"`  // Max response body size in bytes (nil = 100MB default)
+}
+
+// GetRequestTimeout returns the configured timeout or default (30 seconds)
+func (p *Profile) GetRequestTimeout() int {
+	if p.RequestTimeout != nil {
+		return *p.RequestTimeout
+	}
+	return 30 // Default 30 seconds
+}
+
+// GetMaxResponseSize returns the configured max response size or default (100MB)
+func (p *Profile) GetMaxResponseSize() int64 {
+	if p.MaxResponseSize != nil {
+		return *p.MaxResponseSize
+	}
+	return 100 * 1024 * 1024 // Default 100MB
 }
 
 // VariableValue can be a simple string or a multi-value variable

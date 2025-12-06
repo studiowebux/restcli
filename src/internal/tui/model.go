@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -252,6 +253,25 @@ type Model struct {
 // Init initializes the TUI
 func (m *Model) Init() tea.Cmd {
 	return nil
+}
+
+// Cleanup closes database connections and cleans up resources
+func (m *Model) Cleanup() {
+	if m.analyticsManager != nil {
+		if err := m.analyticsManager.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing analytics database: %v\n", err)
+		}
+	}
+	if m.historyManager != nil {
+		if err := m.historyManager.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing history database: %v\n", err)
+		}
+	}
+	if m.stressTestManager != nil {
+		if err := m.stressTestManager.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing stress test database: %v\n", err)
+		}
+	}
 }
 
 // Update handles messages and updates the model

@@ -141,13 +141,13 @@ func (m *Manager) Load(profileName string) ([]types.HistoryEntry, error) {
 	query := `
 		SELECT id, timestamp, request_file, request_name, method, url, headers, body,
 		       response_status, response_status_text, response_headers, response_body,
-		       duration_ms, request_size, response_size, error, COALESCE(profile_name, '')
+		       duration_ms, request_size, response_size, error, profile_name
 		FROM history
-		WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
+		WHERE profile_name = ?
 		ORDER BY timestamp DESC
 	`
 
-	rows, err := m.db.Query(query, profileName, profileName)
+	rows, err := m.db.Query(query, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load history: %w", err)
 	}
@@ -164,7 +164,7 @@ func (m *Manager) LoadForFile(requestFile string) ([]types.HistoryEntry, error) 
 	query := `
 		SELECT id, timestamp, request_file, request_name, method, url, headers, body,
 		       response_status, response_status_text, response_headers, response_body,
-		       duration_ms, request_size, response_size, error
+		       duration_ms, request_size, response_size, error, profile_name
 		FROM history
 		WHERE request_file LIKE ?
 		ORDER BY timestamp DESC

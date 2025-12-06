@@ -134,6 +134,49 @@ GET https://example.com/events
 - Finite streams that complete quickly
 - When you need filtering/querying (not yet supported for streaming)
 
+## Response Size Limits
+
+Streaming responses are protected by a configurable size limit to prevent out-of-memory issues.
+
+### Default Limit
+
+100MB (104857600 bytes)
+
+### Configuring the Limit
+
+Set per profile in `.profiles.json`:
+
+```json
+{
+  "name": "Large Files",
+  "maxResponseSize": 1073741824
+}
+```
+
+This example sets a 1GB limit.
+
+### Behavior on Limit Exceeded
+
+If a streaming response exceeds the configured limit:
+
+```
+Error: response size exceeds maximum allowed size (104857600 bytes)
+```
+
+The request fails and returns what was received before the limit.
+
+### Use Cases
+
+**Increase limit for:**
+- File downloads
+- Large data exports
+- Video/media streaming
+
+**Decrease limit for:**
+- Resource-constrained environments
+- Protection against malformed endpoints
+- Memory-limited containers
+
 ## Technical Details
 
 ### Detection Logic

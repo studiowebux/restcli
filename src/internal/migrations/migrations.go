@@ -49,6 +49,20 @@ var AllMigrations = []Migration{
 			-- Leaving columns in place for backward compatibility
 		`,
 	},
+	{
+		Version: 2,
+		Name:    "Clean up legacy data without profile_name",
+		Up: `
+			-- Delete all entries where profile_name is NULL (legacy data from before profiles)
+			DELETE FROM analytics WHERE profile_name IS NULL;
+			DELETE FROM history WHERE profile_name IS NULL;
+			DELETE FROM stress_test_configs WHERE profile_name IS NULL;
+			DELETE FROM stress_test_runs WHERE profile_name IS NULL;
+		`,
+		Down: `
+			-- Cannot restore deleted data
+		`,
+	},
 }
 
 // Run executes all pending migrations on the database

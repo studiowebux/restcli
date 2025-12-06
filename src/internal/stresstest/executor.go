@@ -127,8 +127,20 @@ func (e *Executor) Start() {
 	// Wait for all workers to be ready, then schedule requests
 	// This prevents race condition where channel closes before workers start
 	go func() {
-		e.workersReady.Wait()
-		e.scheduleRequests()
+		// Use a channel to make Wait() cancellable
+		done := make(chan struct{})
+		go func() {
+			e.workersReady.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			e.scheduleRequests()
+		case <-e.ctx.Done():
+			// Context cancelled before workers ready, exit scheduler
+			return
+		}
 	}()
 
 	// Start duration timer if test duration is set

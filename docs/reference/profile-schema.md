@@ -47,6 +47,8 @@ Array of profile objects:
 | `historyEnabled`   | boolean     | Enable/disable history (overrides global)          |
 | `analyticsEnabled` | boolean     | Enable/disable analytics tracking (default: false) |
 | `messageTimeout`   | number      | Auto-clear footer messages (seconds)               |
+| `requestTimeout`   | number      | HTTP request timeout in seconds (default: 30)      |
+| `maxResponseSize`  | number      | Max response body size in bytes (default: 100MB)   |
 
 ## name (required)
 
@@ -349,6 +351,52 @@ Auto-clear footer messages after specified seconds.
 - `10`: Longer persistence for important messages
 - `null`: Manual control (default behavior)
 
+## requestTimeout (optional)
+
+HTTP request timeout in seconds.
+
+```json
+{
+  "requestTimeout": 60
+}
+```
+
+- Number (e.g., `60`): Wait up to N seconds for response
+- `null` or omitted: Use default timeout (30 seconds)
+
+**Default**: 30 seconds
+
+**Use cases**:
+
+- `60`: Slow APIs or large file downloads
+- `10`: Fast APIs where quick failure is preferred
+- `120`: Long-running requests (exports, reports, etc.)
+
+Note: This timeout applies to the entire HTTP request/response cycle. For streaming requests, the timeout is managed by context cancellation instead.
+
+## maxResponseSize (optional)
+
+Maximum response body size in bytes.
+
+```json
+{
+  "maxResponseSize": 524288000
+}
+```
+
+- Number: Maximum bytes to accept (e.g., `524288000` = 500MB)
+- `null` or omitted: Use default limit (104857600 bytes = 100MB)
+
+**Default**: 104857600 bytes (100MB)
+
+**Use cases**:
+
+- `524288000`: File downloads (500MB)
+- `10485760`: Restrictive limit for resource-constrained environments (10MB)
+- `1073741824`: Large data exports (1GB)
+
+If a response exceeds this limit, the request will fail with an error. This prevents out-of-memory issues when dealing with unexpectedly large responses.
+
 ## Multi-Value Variable Schema
 
 ### Fields
@@ -489,6 +537,29 @@ Auto-clear footer messages after specified seconds.
   "defaultQuery": "{id: id, status: status, timestamp: createdAt}"
 }
 ```
+
+### File Download Profile
+
+```json
+{
+  "name": "File Downloads",
+  "headers": {
+    "Authorization": "Bearer {{token}}"
+  },
+  "variables": {
+    "baseUrl": "https://cdn.example.com"
+  },
+  "requestTimeout": 300,
+  "maxResponseSize": 1073741824,
+  "output": "text",
+  "historyEnabled": false
+}
+```
+
+This profile is optimized for downloading large files with:
+- 5-minute timeout for large transfers
+- 1GB maximum response size
+- History disabled to avoid storing large files
 
 ### Complete Multi-Profile File
 

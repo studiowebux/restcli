@@ -187,7 +187,7 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 
 		// Execute request in goroutine
 		go func() {
-			res, err := executor.Execute(resolvedRequest, tlsConfig)
+			res, err := executor.Execute(resolvedRequest, tlsConfig, profile)
 			resultChan <- result{data: res, err: err}
 		}()
 
@@ -320,7 +320,7 @@ func (m *Model) executeStreamingRequest(resolvedRequest *types.HttpRequest, tlsC
 		defer close(chunkChan)
 
 		// Execute with streaming callback - sends chunks as they arrive
-		_, err := executor.ExecuteWithStreaming(ctx, resolvedRequest, tlsConfig, func(chunk []byte, done bool) {
+		_, err := executor.ExecuteWithStreaming(ctx, resolvedRequest, tlsConfig, profile, func(chunk []byte, done bool) {
 			chunkChan <- streamChunkMsg{chunk: chunk, done: done}
 		})
 

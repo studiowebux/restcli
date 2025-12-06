@@ -14,6 +14,7 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 	// Global keys (work in all modes)
 	switch msg.String() {
 	case "ctrl+c":
+		m.Cleanup()
 		return tea.Quit
 	case "q":
 		// If streaming is active, stop it
@@ -176,6 +177,7 @@ func (m *Model) handleEditorConfigKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "q":
+		m.Cleanup()
 		return tea.Quit
 
 	// Focus switching

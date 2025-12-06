@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,10 +27,18 @@ func New(mgr *session.Manager) (Model, error) {
 	}
 
 	// Initialize analytics, history, and stress test managers using the same database file
-	// (ignore errors, all are optional)
-	analyticsManager, _ := analytics.NewManager(config.DatabasePath)
-	historyManager, _ := history.NewManager(config.DatabasePath)
-	stressTestManager, _ := stresstest.NewManager(config.DatabasePath)
+	analyticsManager, err := analytics.NewManager(config.DatabasePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: analytics disabled: %v\n", err)
+	}
+	historyManager, err := history.NewManager(config.DatabasePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: history disabled: %v\n", err)
+	}
+	stressTestManager, err := stresstest.NewManager(config.DatabasePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: stress test disabled: %v\n", err)
+	}
 
 	m := Model{
 		sessionMgr:            mgr,

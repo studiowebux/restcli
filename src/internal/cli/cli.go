@@ -334,9 +334,13 @@ func Run(opts RunOptions) error {
 	}()
 
 	// Use streaming executor with real-time output callback
-	result, err := executor.ExecuteWithStreaming(ctx, resolvedRequest, tlsConfig, func(chunk []byte, done bool) {
+	var activeProfile *types.Profile
+	if useProfile {
+		activeProfile = profile
+	}
+	result, err := executor.ExecuteWithStreaming(ctx, resolvedRequest, tlsConfig, activeProfile, func(chunk []byte, done bool) {
 		if !done {
-			// Write chunks directly to stdout for real-time display
+			// Write chunks directly to stdout for real-time output
 			os.Stdout.Write(chunk)
 		}
 	})

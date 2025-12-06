@@ -17,13 +17,24 @@ import (
 	"github.com/studiowebux/restcli/internal/types"
 )
 
+const (
+	// MaxResponseSize limits response body size to prevent OOM (100MB)
+	MaxResponseSize = 100 * 1024 * 1024
+)
+
 // Execute performs an HTTP request and returns the result
-func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.RequestResult, error) {
+func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig, profile *types.Profile) (*types.RequestResult, error) {
 	startTime := time.Now()
+
+	// Get timeout from profile or use default
+	timeout := 30 // Default timeout in seconds
+	if profile != nil {
+		timeout = profile.GetRequestTimeout()
+	}
 
 	// Handle GraphQL protocol
 	if req.Protocol == "graphql" {
-		return executeGraphQL(req, tlsConfig, startTime)
+		return executeGraphQL(req, tlsConfig, startTime, timeout)
 	}
 
 	// Create HTTP request
@@ -45,8 +56,7 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.Request
 	}
 
 	// Build HTTP client with optional TLS configuration
-	// Use standard 30 second timeout for non-streaming requests
-	client, err := buildHTTPClient(tlsConfig, 30*time.Second)
+	client, err := buildHTTPClient(tlsConfig, time.Duration(timeout)*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure HTTP client: %w", err)
 	}
@@ -100,12 +110,24 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig) (*types.Request
 // ExecuteWithStreaming performs an HTTP request with streaming support
 // Auto-detects streaming based on Content-Type and Transfer-Encoding headers
 // Calls streamCallback for each chunk received
-func ExecuteWithStreaming(ctx context.Context, req *types.HttpRequest, tlsConfig *types.TLSConfig, streamCallback types.StreamCallback) (*types.RequestResult, error) {
+func ExecuteWithStreaming(ctx context.Context, req *types.HttpRequest, tlsConfig *types.TLSConfig, profile *types.Profile, streamCallback types.StreamCallback) (*types.RequestResult, error) {
 	startTime := time.Now()
+
+	// Get max response size from profile or use default
+	maxSize := int64(MaxResponseSize) // Default 100MB
+	if profile != nil {
+		maxSize = profile.GetMaxResponseSize()
+	}
+
+	// Get timeout from profile or use default (not used for streaming, but kept for consistency)
+	timeout := 30
+	if profile != nil {
+		timeout = profile.GetRequestTimeout()
+	}
 
 	// Handle GraphQL protocol
 	if req.Protocol == "graphql" {
-		return executeGraphQL(req, tlsConfig, startTime)
+		return executeGraphQL(req, tlsConfig, startTime, timeout)
 	}
 
 	// Create HTTP request
@@ -165,7 +187,7 @@ func ExecuteWithStreaming(ctx context.Context, req *types.HttpRequest, tlsConfig
 
 	if isStreaming {
 		// Stream the response (works with or without callback)
-		bodyBytes, readErr = streamResponse(ctx, resp.Body, streamCallback)
+		bodyBytes, readErr = streamResponse(ctx, resp.Body, maxSize, streamCallback)
 	} else {
 		// Non-streaming: read all at once
 		bodyBytes, readErr = io.ReadAll(resp.Body)
@@ -210,7 +232,8 @@ func ExecuteWithStreaming(ctx context.Context, req *types.HttpRequest, tlsConfig
 
 // streamResponse reads the response body in chunks and calls the callback for each chunk
 // callback can be nil, in which case chunks are just accumulated
-func streamResponse(ctx context.Context, body io.Reader, callback types.StreamCallback) ([]byte, error) {
+// maxSize limits the total response size to prevent OOM
+func streamResponse(ctx context.Context, body io.Reader, maxSize int64, callback types.StreamCallback) ([]byte, error) {
 	var fullBody bytes.Buffer
 	reader := bufio.NewReader(body)
 	buffer := make([]byte, 4096) // 4KB chunks
@@ -229,6 +252,12 @@ func streamResponse(ctx context.Context, body io.Reader, callback types.StreamCa
 		n, err := reader.Read(buffer)
 		if n > 0 {
 			chunk := buffer[:n]
+
+			// Check if adding this chunk would exceed max size
+			if int64(fullBody.Len())+int64(n) > maxSize {
+				return fullBody.Bytes(), fmt.Errorf("response size exceeds maximum allowed size (%d bytes)", maxSize)
+			}
+
 			fullBody.Write(chunk)
 			if callback != nil {
 				callback(chunk, false)
@@ -368,7 +397,7 @@ func ParseEscapeSequences(s string) string {
 }
 
 // executeGraphQL handles GraphQL protocol requests
-func executeGraphQL(req *types.HttpRequest, tlsConfig *types.TLSConfig, startTime time.Time) (*types.RequestResult, error) {
+func executeGraphQL(req *types.HttpRequest, tlsConfig *types.TLSConfig, startTime time.Time, timeout int) (*types.RequestResult, error) {
 	// Build GraphQL request payload
 	graphqlPayload := map[string]interface{}{
 		"query": req.Body,
@@ -397,7 +426,7 @@ func executeGraphQL(req *types.HttpRequest, tlsConfig *types.TLSConfig, startTim
 	}
 
 	// Build HTTP client with TLS configuration
-	client, err := buildHTTPClient(tlsConfig, 30*time.Second)
+	client, err := buildHTTPClient(tlsConfig, time.Duration(timeout)*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure HTTP client: %w", err)
 	}

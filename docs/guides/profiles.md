@@ -224,6 +224,40 @@ Default TLS configuration.
 
 See [authentication guide](authentication.md) for mTLS details.
 
+### requestTimeout (optional)
+
+HTTP request timeout in seconds.
+
+```json
+{
+  "requestTimeout": 60
+}
+```
+
+Default: 30 seconds
+
+Use cases:
+- Slow APIs or large file downloads
+- Fast APIs where quick failure is preferred
+- Long-running export/report endpoints
+
+### maxResponseSize (optional)
+
+Maximum response body size in bytes.
+
+```json
+{
+  "maxResponseSize": 524288000
+}
+```
+
+Default: 104857600 (100MB)
+
+Use cases:
+- File downloads requiring larger limits
+- Resource-constrained environments needing stricter limits
+- Preventing OOM from unexpectedly large responses
+
 ## Using Profiles
 
 ### CLI Mode
@@ -367,6 +401,31 @@ Session is for runtime state only.
   }
 ]
 ```
+
+### File Downloads
+
+```json
+[
+  {
+    "name": "CDN Downloads",
+    "headers": {
+      "Authorization": "Bearer {{token}}"
+    },
+    "variables": {
+      "baseUrl": "https://cdn.example.com"
+    },
+    "requestTimeout": 300,
+    "maxResponseSize": 1073741824,
+    "historyEnabled": false,
+    "output": "text"
+  }
+]
+```
+
+Optimized for large file downloads:
+- 5-minute timeout
+- 1GB max response size
+- History disabled to avoid storing files
 
 ## Priority
 
