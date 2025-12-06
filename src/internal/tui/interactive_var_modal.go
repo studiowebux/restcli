@@ -147,7 +147,13 @@ func (m *Model) renderInteractiveVariablePrompt() string {
 
 	content := fmt.Sprintf("Interactive Variable %s\n\n", progress)
 	content += fmt.Sprintf("Variable: %s%s\n\n", currentVar, varInfo)
-	content += fmt.Sprintf("Value: %s", addCursorAt(m.interactiveVarInput, m.interactiveVarCursor))
+
+	// Add cursor and wrap the input value to prevent overflow
+	// Modal width is 70, minus padding/border (4) = 66, minus content padding (4) = 62
+	// "Value: " takes 7 chars, leaving ~55 chars for wrapped input
+	inputWithCursor := addCursorAt(m.interactiveVarInput, m.interactiveVarCursor)
+	wrappedValue := wrapText(inputWithCursor, 55)
+	content += fmt.Sprintf("Value: %s", wrappedValue)
 	content += "\n\nEnter value and press Enter to continue, ESC to cancel"
 
 	return m.renderModal("Interactive Variable Prompt", content, 70, 12)

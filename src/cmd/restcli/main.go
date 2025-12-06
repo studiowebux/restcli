@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	version = "0.0.25"
+	version = "0.0.26"
 )
 
 func main() {
@@ -135,28 +135,19 @@ Zsh (macOS/Linux):
 			if err != nil {
 				return err
 			}
-			// Wrap with conditional check
-			fmt.Println("if type restcli &>/dev/null; then")
 			fmt.Print(buf.String())
-			fmt.Println("fi")
 		case "zsh":
 			err = rootCmd.GenZshCompletion(&buf)
 			if err != nil {
 				return err
 			}
-			// Wrap with conditional check
-			fmt.Println("if (( $+commands[restcli] )); then")
 			fmt.Print(buf.String())
-			fmt.Println("fi")
 		case "fish":
 			err = rootCmd.GenFishCompletion(&buf, true)
 			if err != nil {
 				return err
 			}
-			// Wrap with conditional check
-			fmt.Println("if type -q restcli")
 			fmt.Print(buf.String())
-			fmt.Println("end")
 		case "powershell":
 			// PowerShell doesn't need wrapping
 			return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
