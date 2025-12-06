@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // UnmarshalJSON implements custom JSON unmarshaling for VariableValue
@@ -152,6 +153,7 @@ func (v VariableValue) MarshalYAML() (interface{}, error) {
 
 // GetValue returns the string value for the variable
 // For multi-value variables, it returns the active option
+// Returns empty string if the active index is out of bounds (use Validate to check)
 func (v *VariableValue) GetValue() string {
 	if v.StringValue != nil {
 		return *v.StringValue
@@ -160,6 +162,24 @@ func (v *VariableValue) GetValue() string {
 		return v.MultiValue.Options[v.MultiValue.Active]
 	}
 	return ""
+}
+
+// Validate checks if the variable configuration is valid
+// Returns an error if multi-value variable has invalid active index
+func (v *VariableValue) Validate(varName string) error {
+	if v.MultiValue != nil {
+		if len(v.MultiValue.Options) == 0 {
+			return fmt.Errorf("variable '%s': multi-value variable has no options", varName)
+		}
+		if v.MultiValue.Active < 0 {
+			return fmt.Errorf("variable '%s': active index %d is negative", varName, v.MultiValue.Active)
+		}
+		if v.MultiValue.Active >= len(v.MultiValue.Options) {
+			return fmt.Errorf("variable '%s': active index %d is out of bounds (have %d options)",
+				varName, v.MultiValue.Active, len(v.MultiValue.Options))
+		}
+	}
+	return nil
 }
 
 // SetValue sets the string value for the variable

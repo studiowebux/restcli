@@ -273,10 +273,12 @@ func (vr *VariableResolver) ResolveRequest(req *types.HttpRequest) (*types.HttpR
 
 // Resolve resolves variables and shell commands in a string
 func (vr *VariableResolver) Resolve(input string) (string, error) {
+	var errors []error
+
 	// First pass: resolve shell commands
 	result, err := vr.resolveShellCommands(input)
 	if err != nil {
-		return "", err
+		errors = append(errors, fmt.Errorf("first pass: %w", err))
 	}
 
 	// Second pass: resolve variables
@@ -285,7 +287,18 @@ func (vr *VariableResolver) Resolve(input string) (string, error) {
 	// Third pass: resolve any shell commands that were in variables
 	result, err = vr.resolveShellCommands(result)
 	if err != nil {
-		return "", err
+		errors = append(errors, fmt.Errorf("second pass (from variables): %w", err))
+	}
+
+	// Return combined errors if any
+	if len(errors) > 0 {
+		var errMsg strings.Builder
+		errMsg.WriteString("shell command resolution failed:")
+		for _, e := range errors {
+			errMsg.WriteString("\n  ")
+			errMsg.WriteString(e.Error())
+		}
+		return result, fmt.Errorf("%s", errMsg.String())
 	}
 
 	return result, nil
@@ -331,7 +344,8 @@ func (vr *VariableResolver) resolveVariables(input string) string {
 
 // resolveShellCommands executes shell commands in $(command) syntax
 func (vr *VariableResolver) resolveShellCommands(input string) (string, error) {
-	var lastErr error
+	var cmdErrors []error
+	var failedCommands []string
 
 	result := shellPattern.ReplaceAllStringFunc(input, func(match string) string {
 		// Extract command (remove $( and ))
@@ -356,7 +370,10 @@ func (vr *VariableResolver) resolveShellCommands(input string) (string, error) {
 				errMsg = fmt.Sprintf("$(%s): %s", command, strings.TrimSpace(stderr.String()))
 			}
 			vr.shellErrors = append(vr.shellErrors, errMsg)
-			lastErr = fmt.Errorf("shell command failed: %w\nstderr: %s", err, stderr.String())
+
+			// Accumulate all errors
+			cmdErrors = append(cmdErrors, fmt.Errorf("command '$(%s)': %w", command, err))
+			failedCommands = append(failedCommands, command)
 			return match
 		}
 
@@ -364,7 +381,12 @@ func (vr *VariableResolver) resolveShellCommands(input string) (string, error) {
 		return strings.TrimSpace(stdout.String())
 	})
 
-	return result, lastErr
+	// Return combined error if any commands failed
+	if len(cmdErrors) > 0 {
+		return result, fmt.Errorf("%d shell command(s) failed: %s", len(cmdErrors), strings.Join(failedCommands, ", "))
+	}
+
+	return result, nil
 }
 
 // AddSessionVariable adds or updates a session variable

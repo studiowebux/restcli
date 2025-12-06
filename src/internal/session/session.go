@@ -112,13 +112,20 @@ func (m *Manager) LoadProfiles() error {
 		return fmt.Errorf("failed to parse profiles file: %w", err)
 	}
 
-	// Ensure all profiles have initialized maps
+	// Ensure all profiles have initialized maps and validate variables
 	for i := range profiles {
 		if profiles[i].Headers == nil {
 			profiles[i].Headers = make(map[string]string)
 		}
 		if profiles[i].Variables == nil {
 			profiles[i].Variables = make(map[string]types.VariableValue)
+		}
+
+		// Validate all variables in this profile
+		for varName, varValue := range profiles[i].Variables {
+			if err := varValue.Validate(varName); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: profile '%s': %v\n", profiles[i].Name, err)
+			}
 		}
 	}
 
