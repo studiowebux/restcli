@@ -344,16 +344,6 @@ func IsSuccessStatus(status int) bool {
 	return status >= 200 && status < 300
 }
 
-// IsClientErrorStatus returns true if status code is 4xx
-func IsClientErrorStatus(status int) bool {
-	return status >= 400 && status < 500
-}
-
-// IsServerErrorStatus returns true if status code is 5xx
-func IsServerErrorStatus(status int) bool {
-	return status >= 500 && status < 600
-}
-
 // ParseEscapeSequences parses common escape sequences in a string AND removes outer JSON quotes
 // This is a best-effort parser that handles: \n, \t, \r, \", \\, etc.
 // Should be called AFTER filter/query operations to ensure it's the final processing step

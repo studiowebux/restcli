@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -234,28 +235,50 @@ func (m *Manager) scanEntries(rows *sql.Rows) ([]Entry, error) {
 }
 
 func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
+	// Use a subquery with JSON aggregation to get status codes in a single query
 	query := `
+		WITH status_codes_agg AS (
+			SELECT
+				file_path,
+				normalized_path,
+				method,
+				json_group_object(CAST(status_code AS TEXT), count) as status_codes_json
+			FROM (
+				SELECT
+					file_path,
+					normalized_path,
+					method,
+					status_code,
+					COUNT(*) as count
+				FROM analytics
+				WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
+				GROUP BY file_path, normalized_path, method, status_code
+			)
+			GROUP BY file_path, normalized_path, method
+		)
 		SELECT
-			file_path,
-			normalized_path,
-			method,
+			a.file_path,
+			a.normalized_path,
+			a.method,
 			COUNT(*) as total_calls,
-			SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as success_count,
-			SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as error_count,
-			SUM(CASE WHEN status_code = 0 THEN 1 ELSE 0 END) as network_errors,
-			AVG(duration_ms) as avg_duration,
-			MIN(duration_ms) as min_duration,
-			MAX(duration_ms) as max_duration,
-			SUM(request_size) as total_req_size,
-			SUM(response_size) as total_resp_size,
-			MAX(timestamp) as last_called
-		FROM analytics
-		WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
-		GROUP BY file_path, normalized_path, method
+			SUM(CASE WHEN a.status_code >= 200 AND a.status_code < 300 THEN 1 ELSE 0 END) as success_count,
+			SUM(CASE WHEN a.status_code >= 400 THEN 1 ELSE 0 END) as error_count,
+			SUM(CASE WHEN a.status_code = 0 THEN 1 ELSE 0 END) as network_errors,
+			AVG(a.duration_ms) as avg_duration,
+			MIN(a.duration_ms) as min_duration,
+			MAX(a.duration_ms) as max_duration,
+			SUM(a.request_size) as total_req_size,
+			SUM(a.response_size) as total_resp_size,
+			MAX(a.timestamp) as last_called,
+			COALESCE(s.status_codes_json, '{}') as status_codes_json
+		FROM analytics a
+		LEFT JOIN status_codes_agg s ON a.file_path = s.file_path AND a.normalized_path = s.normalized_path AND a.method = s.method
+		WHERE a.profile_name = ? OR (a.profile_name IS NULL AND ? = '')
+		GROUP BY a.file_path, a.normalized_path, a.method
 		ORDER BY last_called DESC
 	`
 
-	rows, err := m.db.Query(query, profileName, profileName)
+	rows, err := m.db.Query(query, profileName, profileName, profileName, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats per file: %w", err)
 	}
@@ -265,6 +288,7 @@ func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
 	for rows.Next() {
 		var s Stats
 		var lastCalled sql.NullString
+		var statusCodesJSON string
 
 		err := rows.Scan(
 			&s.FilePath,
@@ -280,6 +304,7 @@ func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
 			&s.TotalReqSize,
 			&s.TotalRespSize,
 			&lastCalled,
+			&statusCodesJSON,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan stats: %w", err)
@@ -302,9 +327,20 @@ func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
 			s.LastCalled = time.Now()
 		}
 
-		s.StatusCodes, err = m.getStatusCodesForFile(s.FilePath, profileName)
-		if err != nil {
-			return nil, err
+		// Parse status codes from JSON
+		s.StatusCodes = make(map[int]int)
+		if statusCodesJSON != "{}" {
+			var statusCodesMap map[string]int
+			if err := json.Unmarshal([]byte(statusCodesJSON), &statusCodesMap); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal status codes: %w", err)
+			}
+			// Convert string keys to int keys
+			for codeStr, count := range statusCodesMap {
+				var code int
+				if _, err := fmt.Sscanf(codeStr, "%d", &code); err == nil {
+					s.StatusCodes[code] = count
+				}
+			}
 		}
 
 		statsList = append(statsList, s)
@@ -314,27 +350,47 @@ func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
 }
 
 func (m *Manager) GetStatsPerNormalizedPath(profileName string) ([]Stats, error) {
+	// Use a subquery with JSON aggregation to get status codes in a single query
 	query := `
+		WITH status_codes_agg AS (
+			SELECT
+				normalized_path,
+				method,
+				json_group_object(CAST(status_code AS TEXT), count) as status_codes_json
+			FROM (
+				SELECT
+					normalized_path,
+					method,
+					status_code,
+					COUNT(*) as count
+				FROM analytics
+				WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
+				GROUP BY normalized_path, method, status_code
+			)
+			GROUP BY normalized_path, method
+		)
 		SELECT
-			normalized_path,
-			method,
+			a.normalized_path,
+			a.method,
 			COUNT(*) as total_calls,
-			SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as success_count,
-			SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as error_count,
-			SUM(CASE WHEN status_code = 0 THEN 1 ELSE 0 END) as network_errors,
-			AVG(duration_ms) as avg_duration,
-			MIN(duration_ms) as min_duration,
-			MAX(duration_ms) as max_duration,
-			SUM(request_size) as total_req_size,
-			SUM(response_size) as total_resp_size,
-			MAX(timestamp) as last_called
-		FROM analytics
-		WHERE profile_name = ? OR (profile_name IS NULL AND ? = '')
-		GROUP BY normalized_path, method
+			SUM(CASE WHEN a.status_code >= 200 AND a.status_code < 300 THEN 1 ELSE 0 END) as success_count,
+			SUM(CASE WHEN a.status_code >= 400 THEN 1 ELSE 0 END) as error_count,
+			SUM(CASE WHEN a.status_code = 0 THEN 1 ELSE 0 END) as network_errors,
+			AVG(a.duration_ms) as avg_duration,
+			MIN(a.duration_ms) as min_duration,
+			MAX(a.duration_ms) as max_duration,
+			SUM(a.request_size) as total_req_size,
+			SUM(a.response_size) as total_resp_size,
+			MAX(a.timestamp) as last_called,
+			COALESCE(s.status_codes_json, '{}') as status_codes_json
+		FROM analytics a
+		LEFT JOIN status_codes_agg s ON a.normalized_path = s.normalized_path AND a.method = s.method
+		WHERE a.profile_name = ? OR (a.profile_name IS NULL AND ? = '')
+		GROUP BY a.normalized_path, a.method
 		ORDER BY last_called DESC
 	`
 
-	rows, err := m.db.Query(query, profileName, profileName)
+	rows, err := m.db.Query(query, profileName, profileName, profileName, profileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats per normalized path: %w", err)
 	}
@@ -344,6 +400,7 @@ func (m *Manager) GetStatsPerNormalizedPath(profileName string) ([]Stats, error)
 	for rows.Next() {
 		var s Stats
 		var lastCalled sql.NullString
+		var statusCodesJSON string
 
 		err := rows.Scan(
 			&s.NormalizedPath,
@@ -358,6 +415,7 @@ func (m *Manager) GetStatsPerNormalizedPath(profileName string) ([]Stats, error)
 			&s.TotalReqSize,
 			&s.TotalRespSize,
 			&lastCalled,
+			&statusCodesJSON,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan stats: %w", err)
@@ -380,9 +438,20 @@ func (m *Manager) GetStatsPerNormalizedPath(profileName string) ([]Stats, error)
 			s.LastCalled = time.Now()
 		}
 
-		s.StatusCodes, err = m.getStatusCodesForNormalizedPath(s.NormalizedPath, profileName)
-		if err != nil {
-			return nil, err
+		// Parse status codes from JSON
+		s.StatusCodes = make(map[int]int)
+		if statusCodesJSON != "{}" {
+			var statusCodesMap map[string]int
+			if err := json.Unmarshal([]byte(statusCodesJSON), &statusCodesMap); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal status codes: %w", err)
+			}
+			// Convert string keys to int keys
+			for codeStr, count := range statusCodesMap {
+				var code int
+				if _, err := fmt.Sscanf(codeStr, "%d", &code); err == nil {
+					s.StatusCodes[code] = count
+				}
+			}
 		}
 
 		statsList = append(statsList, s)
