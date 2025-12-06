@@ -13,6 +13,13 @@ import (
 	"time"
 )
 
+const (
+	// OAuthCallbackTimeout is the maximum time to wait for OAuth callback
+	OAuthCallbackTimeout = 5 * time.Minute
+	// TokenRequestTimeout is the timeout for token exchange HTTP requests
+	TokenRequestTimeout = 30 * time.Second
+)
+
 // Config holds OAuth configuration
 type Config struct {
 	AuthURL      string // Base auth URL (auto-build mode)
@@ -63,8 +70,8 @@ func StartFlow(config *Config) (*TokenResponse, error) {
 		return nil, fmt.Errorf("failed to open browser: %w\nPlease visit: %s", err, authURL)
 	}
 
-	// Wait for callback (5 minute timeout)
-	result, err := server.WaitForCallback(5 * time.Minute)
+	// Wait for callback
+	result, err := server.WaitForCallback(OAuthCallbackTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +152,7 @@ func exchangeCodeForToken(config *Config, code, verifier string) (*TokenResponse
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: TokenRequestTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

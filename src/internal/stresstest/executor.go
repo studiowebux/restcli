@@ -18,6 +18,16 @@ import (
 	"github.com/studiowebux/restcli/internal/types"
 )
 
+const (
+	// HTTP client configuration timeouts
+	TCPDialTimeout         = 5 * time.Second
+	TCPKeepAliveInterval   = 30 * time.Second
+	TLSHandshakeTimeout    = 5 * time.Second
+	IdleConnTimeout        = 90 * time.Second
+	ExpectContinueTimeout  = 1 * time.Second
+	ShutdownGracePeriod    = 100 * time.Millisecond
+)
+
 // RequestTask represents a single request to be executed
 type RequestTask struct {
 	SequenceNum int
@@ -185,7 +195,7 @@ func (e *Executor) Wait() error {
 
 	// Wait for result collector to finish
 	// (it closes when resultChan is closed and drained)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(ShutdownGracePeriod)
 
 	// Determine status based on completion
 	status := "completed"
@@ -436,26 +446,26 @@ func buildStressTestHTTPClient(config *Config, tlsConfig *types.TLSConfig) (*htt
 		// Connection pool settings to prevent resource exhaustion
 		MaxIdleConns:        config.ConcurrentConns,           // Total idle connections across all hosts
 		MaxIdleConnsPerHost: config.ConcurrentConns,           // Idle connections per host
-		MaxConnsPerHost:     config.ConcurrentConns * 2,       // Max connections per host (active + idle)
-		IdleConnTimeout:     90 * time.Second,                 // How long idle connections stay open
-		DisableKeepAlives:   false,                            // Enable keep-alive for connection reuse
+		MaxConnsPerHost:     config.ConcurrentConns * 2, // Max connections per host (active + idle)
+		IdleConnTimeout:     IdleConnTimeout,            // How long idle connections stay open
+		DisableKeepAlives:   false,                      // Enable keep-alive for connection reuse
 		DisableCompression:  false,                            // Enable compression
 		ForceAttemptHTTP2:   true,                             // Try HTTP/2 when possible
 
 		// Timeouts for connection establishment
 		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,  // Max time to establish TCP connection
-			KeepAlive: 30 * time.Second, // Keep-alive probe interval
+			Timeout:   TCPDialTimeout,        // Max time to establish TCP connection
+			KeepAlive: TCPKeepAliveInterval, // Keep-alive probe interval
 		}).DialContext,
 
 		// TLS handshake timeout
-		TLSHandshakeTimeout: 5 * time.Second,
+		TLSHandshakeTimeout: TLSHandshakeTimeout,
 
 		// Timeout for reading response headers
 		ResponseHeaderTimeout: config.GetRequestTimeout(),
 
 		// Expect Continue timeout
-		ExpectContinueTimeout: 1 * time.Second,
+		ExpectContinueTimeout: ExpectContinueTimeout,
 	}
 
 	// Configure TLS if provided

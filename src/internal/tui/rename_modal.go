@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/config"
 )
 
 // handleRenameKeys handles keyboard input in rename mode
@@ -73,7 +74,7 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 
 		// Create directories if the new path includes subdirectories
 		newDir := filepath.Dir(newPath)
-		if err := os.MkdirAll(newDir, 0755); err != nil {
+		if err := os.MkdirAll(newDir, config.DirPermissions); err != nil {
 			m.errorMsg = fmt.Sprintf("Failed to create directory: %v", err)
 			return nil
 		}

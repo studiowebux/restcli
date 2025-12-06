@@ -437,7 +437,7 @@ func Run(opts RunOptions) error {
 
 	// Save to file if specified
 	if opts.SavePath != "" {
-		if err := os.WriteFile(opts.SavePath, []byte(output), 0644); err != nil {
+		if err := os.WriteFile(opts.SavePath, []byte(output), config.FilePermissions); err != nil {
 			return fmt.Errorf("failed to save response: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "Response saved to %s\n", opts.SavePath)

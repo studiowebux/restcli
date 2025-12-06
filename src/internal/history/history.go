@@ -49,7 +49,7 @@ func Save(requestFile string, req *types.HttpRequest, result *types.RequestResul
 	}
 
 	// Write to file
-	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+	if err := os.WriteFile(historyPath, data, config.FilePermissions); err != nil {
 		return fmt.Errorf("failed to write history file: %w", err)
 	}
 

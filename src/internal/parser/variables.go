@@ -14,6 +14,11 @@ import (
 	"github.com/studiowebux/restcli/internal/types"
 )
 
+const (
+	// ShellCommandTimeout is the maximum time allowed for shell command execution
+	ShellCommandTimeout = 5 * time.Second
+)
+
 var (
 	// Variable placeholder pattern: {{varName}}
 	varPattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
@@ -351,8 +356,8 @@ func (vr *VariableResolver) resolveShellCommands(input string) (string, error) {
 		// Extract command (remove $( and ))
 		command := strings.TrimSpace(match[2 : len(match)-1])
 
-		// Execute with 5-second timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Execute with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), ShellCommandTimeout)
 		defer cancel()
 
 		// Use sh -c to execute the command

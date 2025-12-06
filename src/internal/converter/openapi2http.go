@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/types"
 	"gopkg.in/yaml.v3"
 )
@@ -114,7 +115,7 @@ func Openapi2Http(opts OpenAPI2HttpOptions) error {
 	}
 
 	// Create output directory
-	if err := os.MkdirAll(opts.OutputDir, 0755); err != nil {
+	if err := os.MkdirAll(opts.OutputDir, config.DirPermissions); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -220,7 +221,7 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy, format string) 
 			filename = strings.TrimSuffix(filename, ".http") + ext
 
 			// Ensure directory exists
-			if err := os.MkdirAll(dir, 0755); err != nil {
+			if err := os.MkdirAll(dir, config.DirPermissions); err != nil {
 				return count, err
 			}
 
@@ -264,7 +265,7 @@ func generateHttpFiles(spec *OpenAPISpec, outputDir, organizeBy, format string) 
 			}
 
 			// Write file
-			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			if err := os.WriteFile(fullPath, []byte(content), config.FilePermissions); err != nil {
 				return count, err
 			}
 

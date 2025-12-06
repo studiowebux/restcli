@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+const (
+	// FilePermissions is the default permission mode for regular files (read/write for owner, read for others)
+	FilePermissions = 0644
+	// DirPermissions is the default permission mode for directories (rwxr-xr-x)
+	DirPermissions = 0755
+)
+
 var (
 	// ConfigDir is the global configuration directory (~/.restcli)
 	ConfigDir string
@@ -46,7 +53,7 @@ func Initialize() error {
 	// Create directories if they don't exist
 	dirs := []string{ConfigDir, RequestsDir}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, DirPermissions); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
@@ -54,7 +61,7 @@ func Initialize() error {
 	// Create empty session file if it doesn't exist
 	if _, err := os.Stat(SessionFile); os.IsNotExist(err) {
 		defaultSession := []byte(`{"variables":{},"historyEnabled":true}`)
-		if err := os.WriteFile(SessionFile, defaultSession, 0644); err != nil {
+		if err := os.WriteFile(SessionFile, defaultSession, FilePermissions); err != nil {
 			return fmt.Errorf("failed to create session file: %w", err)
 		}
 	}
@@ -62,7 +69,7 @@ func Initialize() error {
 	// Create empty profiles file if it doesn't exist
 	if _, err := os.Stat(ProfilesFile); os.IsNotExist(err) {
 		defaultProfiles := []byte(`[{"name":"Default","workdir":".restcli/requests","headers":{},"variables":{}}]`)
-		if err := os.WriteFile(ProfilesFile, defaultProfiles, 0644); err != nil {
+		if err := os.WriteFile(ProfilesFile, defaultProfiles, FilePermissions); err != nil {
 			return fmt.Errorf("failed to create profiles file: %w", err)
 		}
 	}
@@ -95,7 +102,7 @@ func GetWorkingDirectory(profileWorkdir string) (string, error) {
 	workdir := filepath.Join(ConfigDir, profileWorkdir)
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(workdir, 0755); err != nil {
+	if err := os.MkdirAll(workdir, DirPermissions); err != nil {
 		return "", fmt.Errorf("failed to create working directory %s: %w", workdir, err)
 	}
 

@@ -13,6 +13,11 @@ import (
 	"github.com/jmespath/go-jmespath"
 )
 
+const (
+	// QueryShellTimeout is the maximum time allowed for query shell command execution
+	QueryShellTimeout = 30 * time.Second
+)
+
 var (
 	// Shell command pattern: $(command)
 	shellPattern = regexp.MustCompile(`^\$\((.+)\)$`)
@@ -93,8 +98,8 @@ func applyJMESPath(jsonStr string, expression string) (string, error) {
 
 // executeShellCommand executes a shell command with the body piped to stdin
 func executeShellCommand(body string, command string) (string, error) {
-	// Execute with 30-second timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Execute with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), QueryShellTimeout)
 	defer cancel()
 
 	// Use sh -c to execute the command

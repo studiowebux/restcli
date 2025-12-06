@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/types"
 	"gopkg.in/yaml.v3"
 )
@@ -91,7 +92,7 @@ func Curl2Http(opts CurlToHttpOptions) error {
 	if outputFile == "-" {
 		fmt.Print(content)
 	} else {
-		if err := os.WriteFile(outputFile, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(outputFile, []byte(content), config.FilePermissions); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "Created %s\n", outputFile)
@@ -388,7 +389,7 @@ func ValidateOutputFile(path string) error {
 
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, config.DirPermissions); err != nil {
 			return fmt.Errorf("failed to create output directory: %w", err)
 		}
 	}

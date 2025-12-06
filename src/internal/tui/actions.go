@@ -428,7 +428,7 @@ func (m *Model) duplicateFile() tea.Cmd {
 			return errorMsg(fmt.Sprintf("Failed to read file: %v", err))
 		}
 
-		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+		if err := os.WriteFile(dstPath, data, config.FilePermissions); err != nil {
 			return errorMsg(fmt.Sprintf("Failed to write file: %v", err))
 		}
 
@@ -545,7 +545,7 @@ func (m *Model) saveResponse() tea.Cmd {
 			return errorMsg(fmt.Sprintf("Failed to marshal response: %v", err))
 		}
 
-		if err := os.WriteFile(filename, data, 0644); err != nil {
+		if err := os.WriteFile(filename, data, config.FilePermissions); err != nil {
 			return errorMsg(fmt.Sprintf("Failed to save response: %v", err))
 		}
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/config"
 )
 
 var fileTypes = []string{"http", "json", "yaml", "jsonc"}
@@ -85,14 +86,14 @@ func (m *Model) handleCreateFileKeys(msg tea.KeyMsg) tea.Cmd {
 
 		// Create directories if needed
 		dir := filepath.Dir(fullPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, config.DirPermissions); err != nil {
 			m.errorMsg = fmt.Sprintf("Failed to create directory: %v", err)
 			return nil
 		}
 
 		// Create the file with basic template based on type
 		content := getFileTemplate(fileTypes[m.createFileType])
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), config.FilePermissions); err != nil {
 			m.errorMsg = fmt.Sprintf("Failed to create file: %v", err)
 			return nil
 		}

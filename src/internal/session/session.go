@@ -82,7 +82,7 @@ func (m *Manager) SaveSession() error {
 		return fmt.Errorf("failed to marshal session: %w", err)
 	}
 
-	if err := os.WriteFile(sessionPath, data, 0644); err != nil {
+	if err := os.WriteFile(sessionPath, data, config.FilePermissions); err != nil {
 		return fmt.Errorf("failed to write session file: %w", err)
 	}
 
@@ -142,7 +142,7 @@ func (m *Manager) SaveProfiles() error {
 		return fmt.Errorf("failed to marshal profiles: %w", err)
 	}
 
-	if err := os.WriteFile(profilesPath, data, 0644); err != nil {
+	if err := os.WriteFile(profilesPath, data, config.FilePermissions); err != nil {
 		return fmt.Errorf("failed to write profiles file: %w", err)
 	}
 

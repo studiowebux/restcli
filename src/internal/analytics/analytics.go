@@ -9,6 +9,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/migrations"
 )
 
@@ -49,7 +50,7 @@ type Manager struct {
 
 func NewManager(dbPath string) (*Manager, error) {
 	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, config.DirPermissions); err != nil {
 		return nil, fmt.Errorf("failed to create analytics directory: %w", err)
 	}
 

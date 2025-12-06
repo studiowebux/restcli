@@ -7,6 +7,13 @@ import (
 	"github.com/studiowebux/restcli/internal/types"
 )
 
+const (
+	// MaxConcurrentConnections is the maximum allowed concurrent connections
+	MaxConcurrentConnections = 1000
+	// MaxTotalRequests is the maximum allowed total requests
+	MaxTotalRequests = 1000000
+)
+
 // Config represents a stress test configuration
 type Config struct {
 	ID                   int64
@@ -74,14 +81,14 @@ func (c *Config) Validate() error {
 	if c.ConcurrentConns <= 0 {
 		return fmt.Errorf("concurrent connections must be greater than 0")
 	}
-	if c.ConcurrentConns > 1000 {
-		return fmt.Errorf("concurrent connections cannot exceed 1000")
+	if c.ConcurrentConns > MaxConcurrentConnections {
+		return fmt.Errorf("concurrent connections cannot exceed %d", MaxConcurrentConnections)
 	}
 	if c.TotalRequests <= 0 {
 		return fmt.Errorf("total requests must be greater than 0")
 	}
-	if c.TotalRequests > 1000000 {
-		return fmt.Errorf("total requests cannot exceed 1,000,000")
+	if c.TotalRequests > MaxTotalRequests {
+		return fmt.Errorf("total requests cannot exceed %d", MaxTotalRequests)
 	}
 	if c.RampUpDurationSec < 0 {
 		return fmt.Errorf("ramp-up duration cannot be negative")
