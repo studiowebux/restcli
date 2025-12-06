@@ -266,15 +266,15 @@ func Run(opts RunOptions) error {
 			}
 		}
 
-		// Check for interactive variables that always need prompting
-		for varName, varValue := range profileVars {
+		// Check for interactive variables that need prompting (only for variables used in this request)
+		for _, varName := range requiredVars {
 			// Skip if already provided via -e flag
 			if _, ok := cliVars[varName]; ok {
 				continue
 			}
 
-			// If variable is marked as interactive, always prompt
-			if varValue.Interactive {
+			// Check if this variable is marked as interactive in the profile
+			if varValue, ok := profileVars[varName]; ok && varValue.Interactive {
 				if stdinPiped {
 					return fmt.Errorf("interactive variable '%s' requires input. Use -e %s=<value>", varName, varName)
 				}

@@ -14,6 +14,7 @@ import (
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
 	"github.com/studiowebux/restcli/internal/parser"
+	"github.com/studiowebux/restcli/internal/types"
 )
 
 // Color definitions using terminal's native color palette with adaptive brightness
@@ -74,15 +75,34 @@ var (
 )
 
 // highlightJSON applies syntax highlighting to JSON content
-func highlightJSON(jsonStr string) string {
+// Uses configured syntax themes from the profile, or sensible defaults
+func highlightJSON(jsonStr string, profile *types.Profile) string {
 	lexer := lexers.Get("json")
 	if lexer == nil {
 		return jsonStr
 	}
 	lexer = chroma.Coalesce(lexer)
 
-	// Use monokai style for good contrast in terminals
-	style := styles.Get("monokai")
+	// Determine which theme to use based on terminal background
+	// Use lipgloss's built-in background detection
+	isDark := lipgloss.HasDarkBackground()
+	var styleName string
+
+	if isDark {
+		// Dark background - use configured dark theme or default to monokai
+		styleName = "monokai"
+		if profile != nil && profile.SyntaxThemeDark != "" {
+			styleName = profile.SyntaxThemeDark
+		}
+	} else {
+		// Light background - use configured light theme or default to github
+		styleName = "github"
+		if profile != nil && profile.SyntaxThemeLight != "" {
+			styleName = profile.SyntaxThemeLight
+		}
+	}
+
+	style := styles.Get(styleName)
 	if style == nil {
 		style = styles.Fallback
 	}
@@ -698,7 +718,8 @@ func (m *Model) updateResponseView() {
 
 		// Apply syntax highlighting after wrapping (for JSON only)
 		if isJSON {
-			wrappedBody = highlightJSON(wrappedBody)
+			profile := m.sessionMgr.GetActiveProfile()
+			wrappedBody = highlightJSON(wrappedBody, profile)
 		}
 
 		content.WriteString(wrappedBody)

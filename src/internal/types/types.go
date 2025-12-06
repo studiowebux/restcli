@@ -119,6 +119,8 @@ type Profile struct {
 	MessageTimeout   *int   `json:"messageTimeout,omitempty"`   // Auto-clear footer messages after N seconds (nil = permanent/no auto-clear)
 	RequestTimeout   *int   `json:"requestTimeout,omitempty"`   // HTTP request timeout in seconds (nil = 30s default)
 	MaxResponseSize  *int64 `json:"maxResponseSize,omitempty"`  // Max response body size in bytes (nil = 100MB default)
+	SyntaxThemeLight string `json:"syntaxThemeLight,omitempty"` // Chroma syntax theme for light backgrounds (default: github)
+	SyntaxThemeDark  string `json:"syntaxThemeDark,omitempty"`  // Chroma syntax theme for dark backgrounds (default: monokai)
 }
 
 // GetRequestTimeout returns the configured timeout or default (30 seconds)

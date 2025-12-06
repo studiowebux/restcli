@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	version = "0.0.24"
+	version = "0.0.25"
 )
 
 func main() {
@@ -281,9 +281,9 @@ func init() {
 
 		// If user is typing a path (starts with . / or ~), use default file completion
 		if strings.HasPrefix(toComplete, "./") ||
-		   strings.HasPrefix(toComplete, "../") ||
-		   strings.HasPrefix(toComplete, "/") ||
-		   strings.HasPrefix(toComplete, "~/") {
+			strings.HasPrefix(toComplete, "../") ||
+			strings.HasPrefix(toComplete, "/") ||
+			strings.HasPrefix(toComplete, "~/") {
 			return nil, cobra.ShellCompDirectiveDefault
 		}
 

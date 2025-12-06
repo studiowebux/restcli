@@ -1002,16 +1002,24 @@ func (m *Model) loadRequestsFromCurrentFile() {
 	_ = m.sessionMgr.AddRecentFile(filePath)
 }
 
-// getInteractiveVariables returns a list of interactive variables from the active profile
+// getInteractiveVariables returns a list of interactive variables that are used in the current request
 func (m *Model) getInteractiveVariables() []string {
 	profile := m.sessionMgr.GetActiveProfile()
-	if profile == nil {
+	if profile == nil || m.currentRequest == nil {
 		return nil
 	}
 
+	// Extract variables actually used in the current request
+	requiredVars := parser.ExtractRequestVariables(m.currentRequest)
+	requiredVarsMap := make(map[string]bool)
+	for _, varName := range requiredVars {
+		requiredVarsMap[varName] = true
+	}
+
+	// Only return interactive variables that are actually used in this request
 	var interactiveVars []string
 	for name, value := range profile.Variables {
-		if value.Interactive {
+		if value.Interactive && requiredVarsMap[name] {
 			interactiveVars = append(interactiveVars, name)
 		}
 	}

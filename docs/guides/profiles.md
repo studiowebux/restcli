@@ -258,6 +258,25 @@ Use cases:
 - Resource-constrained environments needing stricter limits
 - Preventing OOM from unexpectedly large responses
 
+### syntaxThemeLight / syntaxThemeDark (optional)
+
+Customize JSON syntax highlighting themes for light and dark terminal backgrounds.
+
+```json
+{
+  "syntaxThemeLight": "github",
+  "syntaxThemeDark": "monokai"
+}
+```
+
+Defaults: `github` for light backgrounds, `monokai` for dark backgrounds
+
+The TUI automatically detects your terminal's background color and applies the appropriate theme.
+
+Available themes:
+- [Chroma Style Gallery](https://xyproto.github.io/splash/docs/) - Visual preview of all themes
+- [Chroma Styles Package](https://pkg.go.dev/github.com/alecthomas/chroma/styles) - Complete list with documentation
+
 ## Using Profiles
 
 ### CLI Mode
