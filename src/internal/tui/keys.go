@@ -565,10 +565,16 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.updateResponseView()
 		} else if len(m.searchMatches) > 0 {
 			// Clear active search
+			wasSearchingResponse := m.searchInResponseCtx
 			m.searchMatches = nil
 			m.searchQuery = ""
 			m.searchIndex = 0
+			m.searchInResponseCtx = false
 			m.statusMsg = "Search cleared"
+			// Clear highlighting from response if we were searching there
+			if wasSearchingResponse && m.currentResponse != nil {
+				m.updateResponseView()
+			}
 		} else {
 			m.errorMsg = ""
 			m.statusMsg = ""
@@ -707,10 +713,16 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		// Cancel search - clear query and matches
+		wasSearchingResponse := m.searchInResponseCtx
 		m.mode = ModeNormal
 		m.searchQuery = ""
 		m.searchMatches = nil
 		m.searchIndex = 0
+		m.searchInResponseCtx = false
+		// Clear highlighting from response if we were searching there
+		if wasSearchingResponse && m.currentResponse != nil {
+			m.updateResponseView()
+		}
 
 	case "enter":
 		m.mode = ModeNormal

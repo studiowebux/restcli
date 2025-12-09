@@ -97,10 +97,11 @@ func (m *Model) executeRequest() tea.Cmd {
 	// Clear confirmation flag for next execution
 	m.confirmationGiven = false
 
-	// Clear any previous error and status messages
+	// Clear any previous error, status messages, and response
 	m.errorMsg = ""
 	m.fullErrorMsg = ""
 	m.statusMsg = "Executing request..."
+	m.currentResponse = nil
 
 	// Update response view to show loading indicator
 	m.updateResponseView()
@@ -556,17 +557,30 @@ func (m *Model) saveResponse() tea.Cmd {
 	}
 }
 
-// copyToClipboard copies the FULL response body to clipboard
+// copyToClipboard copies the FULL response body or error to clipboard
 func (m *Model) copyToClipboard() tea.Cmd {
 	return func() tea.Msg {
+		var contentToCopy string
+
 		if m.currentResponse == nil {
-			return errorMsg("No response to copy")
+			// No response, try to copy error message if available
+			if m.fullErrorMsg != "" {
+				contentToCopy = m.fullErrorMsg
+			} else if m.errorMsg != "" {
+				contentToCopy = m.errorMsg
+			} else {
+				return errorMsg("No response or error to copy")
+			}
+		} else {
+			// If response has an error field, copy that; otherwise copy the body
+			if m.currentResponse.Error != "" {
+				contentToCopy = m.currentResponse.Error
+			} else {
+				contentToCopy = m.currentResponse.Body
+			}
 		}
 
-		// Copy the complete body, not truncated
-		fullBody := m.currentResponse.Body
-
-		if err := clipboard.WriteAll(fullBody); err != nil {
+		if err := clipboard.WriteAll(contentToCopy); err != nil {
 			return errorMsg(fmt.Sprintf("Failed to copy to clipboard: %v", err))
 		}
 

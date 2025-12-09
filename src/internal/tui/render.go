@@ -58,8 +58,8 @@ var (
 			Foreground(colorGray)
 
 	styleSearchHighlight = lipgloss.NewStyle().
-				Background(colorYellow).                                  // Adaptive yellow background
-				Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "0"}) // Black text for both modes
+				Background(lipgloss.AdaptiveColor{Light: "5", Dark: "13"}). // Magenta / Bright magenta background
+				Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "0"})   // Black text for both modes
 
 	// Diff background styles for split view highlighting
 	styleDiffRemoved = lipgloss.NewStyle().
