@@ -48,6 +48,7 @@ func (m *Manager) initSchema() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,
 		request_file TEXT NOT NULL,
+		profile_name TEXT,
 		concurrent_connections INTEGER NOT NULL DEFAULT 10,
 		total_requests INTEGER NOT NULL DEFAULT 100,
 		ramp_up_duration_sec INTEGER DEFAULT 0,
@@ -61,12 +62,14 @@ func (m *Manager) initSchema() error {
 		config_id INTEGER,
 		config_name TEXT NOT NULL,
 		request_file TEXT NOT NULL,
+		profile_name TEXT,
 		started_at DATETIME NOT NULL,
 		completed_at DATETIME,
 		status TEXT NOT NULL,
 		total_requests_sent INTEGER DEFAULT 0,
 		total_requests_completed INTEGER DEFAULT 0,
 		total_errors INTEGER DEFAULT 0,
+		total_validation_errors INTEGER DEFAULT 0,
 		avg_duration_ms REAL DEFAULT 0,
 		min_duration_ms INTEGER DEFAULT 0,
 		max_duration_ms INTEGER DEFAULT 0,
@@ -90,6 +93,7 @@ func (m *Manager) initSchema() error {
 		request_size INTEGER DEFAULT 0,
 		response_size INTEGER DEFAULT 0,
 		error_message TEXT,
+		validation_error TEXT,
 		FOREIGN KEY (run_id) REFERENCES stress_test_runs(id) ON DELETE CASCADE
 	);
 

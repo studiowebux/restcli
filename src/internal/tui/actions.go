@@ -21,6 +21,7 @@ import (
 	"github.com/studiowebux/restcli/internal/oauth"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/types"
+	"github.com/studiowebux/restcli/internal/version"
 )
 
 // navigateFiles moves the file selection up or down
@@ -1084,4 +1085,17 @@ func (m *Model) renderHistoryClearConfirmation() string {
 
 	footer := "[y]es [n]o/ESC"
 	return m.renderModalWithFooter("Clear All History", content, footer, 60, 14)
+}
+
+// checkForUpdate checks if a new version is available
+func (m *Model) checkForUpdate() tea.Cmd {
+	return func() tea.Msg {
+		available, latestVersion, url, err := version.CheckForUpdate(m.version)
+		return versionCheckMsg{
+			available:     available,
+			latestVersion: latestVersion,
+			url:           url,
+			err:           err,
+		}
+	}
 }

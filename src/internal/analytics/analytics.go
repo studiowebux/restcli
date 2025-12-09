@@ -88,7 +88,8 @@ func (m *Manager) initSchema() error {
 		response_size INTEGER NOT NULL DEFAULT 0,
 		duration_ms INTEGER NOT NULL,
 		error_message TEXT,
-		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		profile_name TEXT
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_file_path ON analytics(file_path);

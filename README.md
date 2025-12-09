@@ -2,6 +2,10 @@
 
 Keyboard-driven TUI for testing HTTP endpoints with Vim-style navigation.
 
+## Breaking Changes (V0.0.28)
+
+**Database Schema Update**: The database schema has been updated to include `profile_name` across all tables (history, analytics, stress test). Existing databases from previous versions may encounter migration warnings. For a clean start, remove old database files from `~/.restcli/data/` before upgrading.
+
 ## Why?
 
 Manage API calls using directory and file structure instead of massive JSON files.

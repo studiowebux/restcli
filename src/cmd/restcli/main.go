@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	version = "0.0.27"
+	version = "0.0.28"
 )
 
 func main() {
@@ -389,7 +389,7 @@ func runCLI(cmd *cobra.Command, filePath string) error {
 
 // runTUI starts the interactive TUI
 func runTUI(cmd *cobra.Command) error {
-	return tui.Run()
+	return tui.Run(version)
 }
 
 // runCurl2Http converts cURL to .http format

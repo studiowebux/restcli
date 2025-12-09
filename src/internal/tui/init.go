@@ -19,7 +19,7 @@ import (
 )
 
 // New creates a new TUI model
-func New(mgr *session.Manager) (Model, error) {
+func New(mgr *session.Manager, version string) (Model, error) {
 	// Load files
 	files, err := loadFiles(mgr)
 	if err != nil {
@@ -46,6 +46,7 @@ func New(mgr *session.Manager) (Model, error) {
 		historyManager:        historyManager,
 		stressTestManager:     stressTestManager,
 		mode:                  ModeNormal,
+		version:               version,
 		files:                 files,
 		fileIndex:             0,
 		fileOffset:            0,
@@ -76,7 +77,7 @@ func New(mgr *session.Manager) (Model, error) {
 }
 
 // Run starts the TUI
-func Run() error {
+func Run(version string) error {
 	// Initialize config
 	if err := config.Initialize(); err != nil {
 		return err
@@ -89,7 +90,7 @@ func Run() error {
 	}
 
 	// Create model
-	m, err := New(mgr)
+	m, err := New(mgr, version)
 	if err != nil {
 		return err
 	}

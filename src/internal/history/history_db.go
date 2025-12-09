@@ -70,7 +70,8 @@ func (m *Manager) initSchema() error {
 		duration_ms INTEGER NOT NULL,
 		request_size INTEGER,
 		response_size INTEGER,
-		error TEXT
+		error TEXT,
+		profile_name TEXT
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);

@@ -500,6 +500,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case "?":
 		m.mode = ModeHelp
 		m.updateHelpView()
+		return m.checkForUpdate()
 
 	// OAuth
 	case "o":

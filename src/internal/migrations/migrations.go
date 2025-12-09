@@ -19,19 +19,7 @@ var AllMigrations = []Migration{
 		Version: 1,
 		Name:    "Add profile_name columns and indices",
 		Up: `
-			-- Add profile_name column to analytics table
-			ALTER TABLE analytics ADD COLUMN profile_name TEXT;
-
-			-- Add profile_name column to history table
-			ALTER TABLE history ADD COLUMN profile_name TEXT;
-
-			-- Add profile_name column to stress_test_configs table
-			ALTER TABLE stress_test_configs ADD COLUMN profile_name TEXT;
-
-			-- Add profile_name column to stress_test_runs table
-			ALTER TABLE stress_test_runs ADD COLUMN profile_name TEXT;
-
-			-- Create indices for filtering by profile
+			-- Create indices for filtering by profile (columns already exist in schema)
 			CREATE INDEX IF NOT EXISTS idx_analytics_profile ON analytics(profile_name);
 			CREATE INDEX IF NOT EXISTS idx_history_profile ON history(profile_name);
 			CREATE INDEX IF NOT EXISTS idx_stress_configs_profile ON stress_test_configs(profile_name);
@@ -43,10 +31,6 @@ var AllMigrations = []Migration{
 			DROP INDEX IF EXISTS idx_history_profile;
 			DROP INDEX IF EXISTS idx_stress_configs_profile;
 			DROP INDEX IF EXISTS idx_stress_runs_profile;
-
-			-- Note: SQLite does not support DROP COLUMN easily
-			-- Requires table recreation which is complex and risky
-			-- Leaving columns in place for backward compatibility
 		`,
 	},
 	{
@@ -67,8 +51,8 @@ var AllMigrations = []Migration{
 		Version: 3,
 		Name:    "Add validation_error column to stress_test_metrics",
 		Up: `
-			-- Add validation_error column for tracking validation failures
-			ALTER TABLE stress_test_metrics ADD COLUMN validation_error TEXT;
+			-- validation_error column already exists in current schema
+			-- This migration is kept for backward compatibility with older databases
 		`,
 		Down: `
 			-- SQLite does not support DROP COLUMN easily
@@ -79,8 +63,8 @@ var AllMigrations = []Migration{
 		Version: 4,
 		Name:    "Add total_validation_errors column to stress_test_runs",
 		Up: `
-			-- Add total_validation_errors column for tracking validation failure count
-			ALTER TABLE stress_test_runs ADD COLUMN total_validation_errors INTEGER DEFAULT 0;
+			-- total_validation_errors column already exists in current schema
+			-- This migration is kept for backward compatibility with older databases
 		`,
 		Down: `
 			-- SQLite does not support DROP COLUMN easily

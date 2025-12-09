@@ -772,7 +772,11 @@ func (m *Model) highlightSearchMatches(content string) string {
 
 // updateHelpView updates the help viewport content
 func (m *Model) updateHelpView() {
-	helpText := `REST CLI - Keyboard Shortcuts
+	versionLine := fmt.Sprintf("REST CLI v%s", m.version)
+	if m.updateAvailable {
+		versionLine += fmt.Sprintf(" (Update available: v%s - %s)", m.latestVersion, m.updateURL)
+	}
+	helpText := versionLine + ` - Keyboard Shortcuts
 
 NAVIGATION (Keyboard Only)
   TAB            Switch focus (sidebar ↔ response)

@@ -74,6 +74,10 @@ type Model struct {
 	analyticsManager *analytics.Manager
 	historyManager   *history.Manager
 	mode             Mode
+	version          string
+	updateAvailable  bool
+	latestVersion    string
+	updateURL        string
 
 	// File list
 	files         []types.FileInfo
@@ -381,6 +385,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.updateAnalyticsView() // Update viewport content with loaded analytics
 
+	case versionCheckMsg:
+		if msg.err == nil && msg.available {
+			m.updateAvailable = true
+			m.latestVersion = msg.latestVersion
+			m.updateURL = msg.url
+			m.updateHelpView() // Refresh help view to show update notice
+		}
+
 	case stressTestRunsLoadedMsg:
 		m.stressTestRuns = msg.runs
 		m.stressTestRunIndex = 0
@@ -581,6 +593,13 @@ type promptInteractiveVarsMsg struct {
 type streamChunkMsg struct {
 	chunk []byte
 	done  bool
+}
+
+type versionCheckMsg struct {
+	available      bool
+	latestVersion  string
+	url            string
+	err            error
 }
 
 type clearStatusMsg struct{}
