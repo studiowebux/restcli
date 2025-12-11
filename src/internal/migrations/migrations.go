@@ -73,8 +73,131 @@ var AllMigrations = []Migration{
 	},
 }
 
+// InitSchema creates all tables required across all modules
+// This must be called before running migrations to ensure all tables exist
+func InitSchema(db *sql.DB) error {
+	schema := `
+	-- Analytics table
+	CREATE TABLE IF NOT EXISTS analytics (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		file_path TEXT NOT NULL,
+		normalized_path TEXT NOT NULL,
+		method TEXT NOT NULL,
+		status_code INTEGER NOT NULL,
+		request_size INTEGER NOT NULL DEFAULT 0,
+		response_size INTEGER NOT NULL DEFAULT 0,
+		duration_ms INTEGER NOT NULL,
+		error_message TEXT,
+		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		profile_name TEXT
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_file_path ON analytics(file_path);
+	CREATE INDEX IF NOT EXISTS idx_normalized_path ON analytics(normalized_path);
+	CREATE INDEX IF NOT EXISTS idx_method ON analytics(method);
+	CREATE INDEX IF NOT EXISTS idx_timestamp ON analytics(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_status_code ON analytics(status_code);
+
+	-- History table
+	CREATE TABLE IF NOT EXISTS history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp DATETIME NOT NULL,
+		request_file TEXT NOT NULL,
+		request_name TEXT,
+		method TEXT NOT NULL,
+		url TEXT NOT NULL,
+		headers TEXT NOT NULL,
+		body TEXT,
+		response_status INTEGER NOT NULL,
+		response_status_text TEXT NOT NULL,
+		response_headers TEXT NOT NULL,
+		response_body TEXT NOT NULL,
+		duration_ms INTEGER NOT NULL,
+		request_size INTEGER,
+		response_size INTEGER,
+		error TEXT,
+		profile_name TEXT
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_history_request_file ON history(request_file);
+	CREATE INDEX IF NOT EXISTS idx_history_method ON history(method);
+	CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
+
+	-- Stress test tables
+	CREATE TABLE IF NOT EXISTS stress_test_configs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		request_file TEXT NOT NULL,
+		profile_name TEXT,
+		concurrent_connections INTEGER NOT NULL DEFAULT 10,
+		total_requests INTEGER NOT NULL DEFAULT 100,
+		ramp_up_duration_sec INTEGER DEFAULT 0,
+		test_duration_sec INTEGER DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS stress_test_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		config_id INTEGER,
+		config_name TEXT NOT NULL,
+		request_file TEXT NOT NULL,
+		profile_name TEXT,
+		started_at DATETIME NOT NULL,
+		completed_at DATETIME,
+		status TEXT NOT NULL,
+		total_requests_sent INTEGER DEFAULT 0,
+		total_requests_completed INTEGER DEFAULT 0,
+		total_errors INTEGER DEFAULT 0,
+		total_validation_errors INTEGER DEFAULT 0,
+		avg_duration_ms REAL DEFAULT 0,
+		min_duration_ms INTEGER DEFAULT 0,
+		max_duration_ms INTEGER DEFAULT 0,
+		p50_duration_ms INTEGER DEFAULT 0,
+		p95_duration_ms INTEGER DEFAULT 0,
+		p99_duration_ms INTEGER DEFAULT 0,
+		FOREIGN KEY (config_id) REFERENCES stress_test_configs(id) ON DELETE SET NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_stress_runs_started_at ON stress_test_runs(started_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_stress_runs_config_id ON stress_test_runs(config_id);
+	CREATE INDEX IF NOT EXISTS idx_stress_runs_status ON stress_test_runs(status);
+
+	CREATE TABLE IF NOT EXISTS stress_test_metrics (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_id INTEGER NOT NULL,
+		timestamp DATETIME NOT NULL,
+		elapsed_ms INTEGER NOT NULL,
+		status_code INTEGER NOT NULL,
+		duration_ms INTEGER NOT NULL,
+		request_size INTEGER DEFAULT 0,
+		response_size INTEGER DEFAULT 0,
+		error_message TEXT,
+		validation_error TEXT,
+		FOREIGN KEY (run_id) REFERENCES stress_test_runs(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_stress_metrics_run_id ON stress_test_metrics(run_id);
+	CREATE INDEX IF NOT EXISTS idx_stress_metrics_timestamp ON stress_test_metrics(run_id, timestamp);
+	CREATE INDEX IF NOT EXISTS idx_stress_metrics_elapsed ON stress_test_metrics(run_id, elapsed_ms);
+	`
+
+	_, err := db.Exec(schema)
+	if err != nil {
+		return fmt.Errorf("failed to initialize schema: %w", err)
+	}
+
+	return nil
+}
+
 // Run executes all pending migrations on the database
 func Run(db *sql.DB) error {
+	// Initialize schema first to ensure all tables exist
+	if err := InitSchema(db); err != nil {
+		return fmt.Errorf("failed to initialize schema: %w", err)
+	}
+
 	// Create migrations tracking table if it doesn't exist
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (

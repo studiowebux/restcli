@@ -64,47 +64,13 @@ func NewManager(dbPath string) (*Manager, error) {
 	}
 
 	m := &Manager{db: db}
-	if err := m.initSchema(); err != nil {
-		return nil, err
-	}
 
-	// Run database migrations
+	// Run database migrations (includes schema initialization)
 	if err := migrations.Run(db); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	return m, nil
-}
-
-func (m *Manager) initSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS analytics (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		file_path TEXT NOT NULL,
-		normalized_path TEXT NOT NULL,
-		method TEXT NOT NULL,
-		status_code INTEGER NOT NULL,
-		request_size INTEGER NOT NULL DEFAULT 0,
-		response_size INTEGER NOT NULL DEFAULT 0,
-		duration_ms INTEGER NOT NULL,
-		error_message TEXT,
-		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		profile_name TEXT
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_file_path ON analytics(file_path);
-	CREATE INDEX IF NOT EXISTS idx_normalized_path ON analytics(normalized_path);
-	CREATE INDEX IF NOT EXISTS idx_method ON analytics(method);
-	CREATE INDEX IF NOT EXISTS idx_timestamp ON analytics(timestamp);
-	CREATE INDEX IF NOT EXISTS idx_status_code ON analytics(status_code);
-	`
-
-	_, err := m.db.Exec(schema)
-	if err != nil {
-		return fmt.Errorf("failed to initialize analytics schema: %w", err)
-	}
-
-	return nil
 }
 
 func (m *Manager) Save(entry Entry) error {

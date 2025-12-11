@@ -22,12 +22,7 @@ func NewManager(dbPath string) (*Manager, error) {
 
 	m := &Manager{db: db}
 
-	if err := m.initSchema(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
-	}
-
-	// Run database migrations
+	// Run database migrations (includes schema initialization)
 	if err := migrations.Run(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
@@ -39,71 +34,6 @@ func NewManager(dbPath string) (*Manager, error) {
 // Close closes the database connection
 func (m *Manager) Close() error {
 	return m.db.Close()
-}
-
-// initSchema creates the necessary tables if they don't exist
-func (m *Manager) initSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS stress_test_configs (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL UNIQUE,
-		request_file TEXT NOT NULL,
-		profile_name TEXT,
-		concurrent_connections INTEGER NOT NULL DEFAULT 10,
-		total_requests INTEGER NOT NULL DEFAULT 100,
-		ramp_up_duration_sec INTEGER DEFAULT 0,
-		test_duration_sec INTEGER DEFAULT 0,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS stress_test_runs (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		config_id INTEGER,
-		config_name TEXT NOT NULL,
-		request_file TEXT NOT NULL,
-		profile_name TEXT,
-		started_at DATETIME NOT NULL,
-		completed_at DATETIME,
-		status TEXT NOT NULL,
-		total_requests_sent INTEGER DEFAULT 0,
-		total_requests_completed INTEGER DEFAULT 0,
-		total_errors INTEGER DEFAULT 0,
-		total_validation_errors INTEGER DEFAULT 0,
-		avg_duration_ms REAL DEFAULT 0,
-		min_duration_ms INTEGER DEFAULT 0,
-		max_duration_ms INTEGER DEFAULT 0,
-		p50_duration_ms INTEGER DEFAULT 0,
-		p95_duration_ms INTEGER DEFAULT 0,
-		p99_duration_ms INTEGER DEFAULT 0,
-		FOREIGN KEY (config_id) REFERENCES stress_test_configs(id) ON DELETE SET NULL
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_stress_runs_started_at ON stress_test_runs(started_at DESC);
-	CREATE INDEX IF NOT EXISTS idx_stress_runs_config_id ON stress_test_runs(config_id);
-	CREATE INDEX IF NOT EXISTS idx_stress_runs_status ON stress_test_runs(status);
-
-	CREATE TABLE IF NOT EXISTS stress_test_metrics (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		run_id INTEGER NOT NULL,
-		timestamp DATETIME NOT NULL,
-		elapsed_ms INTEGER NOT NULL,
-		status_code INTEGER NOT NULL,
-		duration_ms INTEGER NOT NULL,
-		request_size INTEGER DEFAULT 0,
-		response_size INTEGER DEFAULT 0,
-		error_message TEXT,
-		validation_error TEXT,
-		FOREIGN KEY (run_id) REFERENCES stress_test_runs(id) ON DELETE CASCADE
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_stress_metrics_run_id ON stress_test_metrics(run_id);
-	CREATE INDEX IF NOT EXISTS idx_stress_metrics_timestamp ON stress_test_metrics(run_id, timestamp);
-	CREATE INDEX IF NOT EXISTS idx_stress_metrics_elapsed ON stress_test_metrics(run_id, elapsed_ms);
-	`
-
-	_, err := m.db.Exec(schema)
-	return err
 }
 
 // SaveConfig saves or updates a stress test configuration

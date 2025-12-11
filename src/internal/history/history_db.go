@@ -34,11 +34,8 @@ func NewManager(dbPath string) (*Manager, error) {
 	}
 
 	m := &Manager{db: db}
-	if err := m.initSchema(); err != nil {
-		return nil, err
-	}
 
-	// Run database migrations
+	// Run database migrations (includes schema initialization)
 	if err := migrations.Run(db); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
@@ -50,42 +47,6 @@ func NewManager(dbPath string) (*Manager, error) {
 	}
 
 	return m, nil
-}
-
-func (m *Manager) initSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS history (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp DATETIME NOT NULL,
-		request_file TEXT NOT NULL,
-		request_name TEXT,
-		method TEXT NOT NULL,
-		url TEXT NOT NULL,
-		headers TEXT NOT NULL,
-		body TEXT,
-		response_status INTEGER NOT NULL,
-		response_status_text TEXT NOT NULL,
-		response_headers TEXT NOT NULL,
-		response_body TEXT NOT NULL,
-		duration_ms INTEGER NOT NULL,
-		request_size INTEGER,
-		response_size INTEGER,
-		error TEXT,
-		profile_name TEXT
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);
-	CREATE INDEX IF NOT EXISTS idx_history_request_file ON history(request_file);
-	CREATE INDEX IF NOT EXISTS idx_history_method ON history(method);
-	CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
-	`
-
-	_, err := m.db.Exec(schema)
-	if err != nil {
-		return fmt.Errorf("failed to initialize history schema: %w", err)
-	}
-
-	return nil
 }
 
 func (m *Manager) Save(requestFile string, profileName string, req *types.HttpRequest, result *types.RequestResult) error {
