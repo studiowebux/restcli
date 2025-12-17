@@ -167,7 +167,7 @@ func (m *Model) renderConfirmExecutionModal() string {
 		requestName = fmt.Sprintf("%s %s", m.currentRequest.Method, m.currentRequest.URL)
 	}
 
-	content := fmt.Sprintf("⚠️  Critical Endpoint\n\nAre you sure you want to execute:\n\n  %s\n\nThis request requires confirmation.", requestName)
+	content := fmt.Sprintf("WARNING - Critical Endpoint\n\nAre you sure you want to execute:\n\n  %s\n\nThis request requires confirmation.", requestName)
 	footer := "[y]es [n]o / ESC"
 
 	return m.renderModalWithFooter("Confirm Execution", content, footer, 65, 14)

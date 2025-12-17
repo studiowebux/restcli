@@ -594,8 +594,8 @@ func (m *Model) updateResponseView() {
 			requestCopy.Headers[k] = v
 		}
 
-		// Resolve variables for display
-		resolver := parser.NewVariableResolver(profile.Variables, session.Variables, nil, parser.LoadSystemEnv())
+		// Resolve variables for display (include interactive variables if collected)
+		resolver := parser.NewVariableResolver(profile.Variables, session.Variables, m.interactiveVarValues, parser.LoadSystemEnv())
 		resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 
 		content.WriteString(styleTitle.Render("Request") + "\n")
@@ -690,23 +690,36 @@ func (m *Model) updateResponseView() {
 
 	// Body
 	if m.currentResponse.Body != "" {
-		content.WriteString(styleTitle.Render("Body") + "\n")
+		// Show filter indicator if active
+		if m.filterActive && m.filteredResponse != "" {
+			content.WriteString(styleTitle.Render(fmt.Sprintf("Body (Filtered: %s)", m.filterInput)) + "\n")
+		} else {
+			content.WriteString(styleTitle.Render("Body") + "\n")
+		}
+
+		// Use filtered response if active, otherwise use original
+		var bodySource string
+		if m.filterActive && m.filteredResponse != "" {
+			bodySource = m.filteredResponse
+		} else {
+			bodySource = m.currentResponse.Body
+		}
 
 		// Try to pretty-print and highlight JSON
 		var bodyText string
 		var isJSON bool
 		var jsonData interface{}
-		if err := json.Unmarshal([]byte(m.currentResponse.Body), &jsonData); err == nil {
+		if err := json.Unmarshal([]byte(bodySource), &jsonData); err == nil {
 			if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
 				bodyText = string(prettyJSON)
 				isJSON = true
 			} else {
 				// Fallback to raw body if formatting fails
-				bodyText = m.currentResponse.Body
+				bodyText = bodySource
 			}
 		} else {
 			// Not JSON, show raw body
-			bodyText = m.currentResponse.Body
+			bodyText = bodySource
 		}
 
 		// Wrap text to viewport width to prevent truncation
@@ -724,6 +737,12 @@ func (m *Model) updateResponseView() {
 
 		content.WriteString(wrappedBody)
 		content.WriteString("\n")
+
+		// Show hint to clear filter
+		if m.filterActive {
+			content.WriteString("\n")
+			content.WriteString(styleSubtle.Render("Press J to clear filter"))
+		}
 	}
 
 	// Error
@@ -818,9 +837,11 @@ RESPONSE
   c            Copy full response to clipboard
   b            Toggle body visibility
   B            Toggle headers visibility (request + response)
+  E            Edit request body (one-time override)
   f            Toggle fullscreen (ESC to exit)
   w            Pin response for comparison
   W            Show diff (compare pinned vs current)
+  J            Filter response with JMESPath (toggle on/off)
   ↑/↓, j/k     Scroll response (when body shown)
 
 CONFIGURATION
@@ -849,6 +870,15 @@ DOCUMENTATION, HISTORY & ANALYTICS
   t            Toggle grouping (when in analytics: per-file ↔ by path)
   r            Replay request (when in history modal)
   C            Clear all (when in history/analytics modal - with confirmation)
+
+STRESS TESTING
+  S            Open stress test results modal
+  Enter        Run stress test (when focused on config/run)
+  e            Edit configuration field
+  ↑/↓, j/k     Navigate between fields or runs
+  TAB          Switch focus (config ↔ results)
+  ESC          Stop running test or exit modal
+  C            Clear all stress test runs (with confirmation)
 
 MODAL NAVIGATION
   ↑/↓, j/k     Navigate items
@@ -1482,8 +1512,33 @@ func (m *Model) updateHistoryView() {
 			previewContent.WriteString(fmt.Sprintf("Size: %d bytes\n", entry.ResponseSize))
 			previewContent.WriteString(fmt.Sprintf("Time: %s\n\n", entry.Timestamp[:19]))
 
-			// Show response body
-			previewContent.WriteString(entry.ResponseBody)
+			// Show response body with JSON formatting and wrapping
+			bodyText := entry.ResponseBody
+			isJSON := false
+
+			// Try to pretty-print JSON
+			var jsonData interface{}
+			if err := json.Unmarshal([]byte(entry.ResponseBody), &jsonData); err == nil {
+				if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
+					bodyText = string(prettyJSON)
+					isJSON = true
+				}
+			}
+
+			// Wrap text to viewport width
+			wrapWidth := m.historyPreviewView.Width
+			if wrapWidth < 40 {
+				wrapWidth = 40
+			}
+			wrappedBody := wrapText(bodyText, wrapWidth)
+
+			// Apply syntax highlighting for JSON
+			if isJSON {
+				profile := m.sessionMgr.GetActiveProfile()
+				wrappedBody = highlightJSON(wrappedBody, profile)
+			}
+
+			previewContent.WriteString(wrappedBody)
 		} else {
 			previewContent.WriteString("No history entry selected")
 		}

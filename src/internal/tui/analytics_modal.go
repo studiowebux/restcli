@@ -373,7 +373,7 @@ func (m *Model) loadAnalytics() tea.Cmd {
 // renderAnalyticsClearConfirmation renders the confirmation modal for clearing all analytics
 func (m *Model) renderAnalyticsClearConfirmation() string {
 	count := len(m.analyticsStats)
-	content := "⚠️  WARNING\n\n"
+	content := "WARNING\n\n"
 	content += "This will permanently delete ALL analytics data.\n\n"
 	content += fmt.Sprintf("Total entries to delete: %d\n\n", count)
 	content += "This action cannot be undone!\n\n"

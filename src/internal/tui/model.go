@@ -65,6 +65,8 @@ const (
 	ModeConfirmExecution
 	ModeErrorDetail
 	ModeStatusDetail
+	ModeBodyOverride
+	ModeFilter
 )
 
 // Model represents the TUI state
@@ -244,14 +246,31 @@ type Model struct {
 	diffRightView  viewport.Model       // Right pane viewport (current) for split mode
 
 	// Interactive variable prompt state
-	interactiveVarNames  []string          // Queue of variables to prompt for
-	interactiveVarValues map[string]string // Collected values
-	interactiveVarInput  string            // Current input value
-	interactiveVarCursor int               // Cursor position in input
+	interactiveVarNames      []string          // Queue of variables to prompt for
+	interactiveVarValues     map[string]string // Collected values
+	interactiveVarInput      string            // Current input value
+	interactiveVarCursor     int               // Cursor position in input
+	interactiveVarMode       string            // "select" or "input" - selection list or text input
+	interactiveVarOptions    []string          // Available options for selection
+	interactiveVarAliases    map[int][]string  // Aliases for each option (index -> alias names)
+	interactiveVarActiveIdx  int               // Currently active option index
+	interactiveVarSelectIdx  int               // Selected option in list
 
 	// Streaming state
 	isStreaming  bool   // True when actively streaming response
 	streamCancel func() // Function to cancel ongoing stream
+
+	// Body override state
+	bodyOverrideInput  string // Edited body content
+	bodyOverrideCursor int    // Cursor position (linear, not line-based)
+	bodyOverride       string // Applied body override (cleared after send)
+
+	// Filter state
+	filterInput         string // JMESPath filter/query expression
+	filterCursor        int    // Cursor position in filter input
+	filteredResponse    string // Cached filtered response
+	filterError         string // Filter error message
+	filterActive        bool   // True when viewing filtered result
 }
 
 // Init initializes the TUI
@@ -444,6 +463,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.interactiveVarInput = ""
 		m.interactiveVarCursor = 0
 		m.mode = ModeVariablePromptInteractive
+		m.initInteractiveVarPrompt()
 
 	case clearStatusMsg:
 		m.statusMsg = ""
@@ -556,6 +576,10 @@ func (m Model) View() string {
 		return m.renderMRUModal()
 	case ModeDiff:
 		return m.renderDiffModal()
+	case ModeBodyOverride:
+		return m.renderBodyOverrideModal()
+	case ModeFilter:
+		return m.renderFilterModal()
 	default:
 		return m.renderMain()
 	}

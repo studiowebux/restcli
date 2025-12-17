@@ -6,6 +6,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/stresstest"
 )
 
@@ -91,6 +92,10 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleMRUKeys(msg)
 	case ModeDiff:
 		return m.handleDiffKeys(msg)
+	case ModeBodyOverride:
+		return m.handleBodyOverrideKeys(msg)
+	case ModeFilter:
+		return m.handleFilterKeys(msg)
 	}
 
 	return nil
@@ -398,6 +403,28 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.mode = ModeDiff
 			m.updateDiffView()
 		}
+	case "J":
+		// Filter response with JMESPath
+		if m.currentResponse != nil && m.currentResponse.Body != "" {
+			if m.filterActive {
+				// Clear filter if already active
+				m.filterActive = false
+				m.filteredResponse = ""
+				m.filterInput = ""
+				m.filterError = ""
+				m.updateResponseView()
+				m.statusMsg = "Filter cleared"
+			} else {
+				// Open filter modal
+				m.mode = ModeFilter
+				m.filterInput = ""
+				m.filterCursor = 0
+				m.filterError = ""
+				m.statusMsg = "Enter JMESPath filter expression"
+			}
+		} else {
+			m.statusMsg = "No response to filter"
+		}
 
 	// Editors and modals
 	case "v":
@@ -412,6 +439,25 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		// Open error detail modal if there's an error
 		if m.fullErrorMsg != "" {
 			m.mode = ModeErrorDetail
+		}
+	case "E":
+		// Open body override editor
+		if m.currentRequest != nil {
+			// Initialize with current body resolved
+			profile := m.sessionMgr.GetActiveProfile()
+			requestCopy := *m.currentRequest
+			resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, m.interactiveVarValues, parser.LoadSystemEnv())
+			resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
+			if err == nil && resolvedRequest != nil {
+				m.bodyOverrideInput = resolvedRequest.Body
+			} else {
+				m.bodyOverrideInput = m.currentRequest.Body
+			}
+			m.bodyOverrideCursor = 0
+			m.mode = ModeBodyOverride
+			m.statusMsg = "Editing request body (one-time override)"
+		} else {
+			m.statusMsg = "No request selected"
 		}
 	case "I":
 		// Open status detail modal if there's a status message

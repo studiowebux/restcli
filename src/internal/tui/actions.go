@@ -119,6 +119,11 @@ func (m *Model) executeRequest() tea.Cmd {
 		requestCopy.Headers[k] = v
 	}
 
+	// Apply body override if set (ephemeral, one-time)
+	if m.bodyOverride != "" {
+		requestCopy.Body = m.bodyOverride
+	}
+
 	// Resolve variables (load system env vars for {{env.VAR_NAME}} support)
 	// Include any interactive variable values collected
 	cliVars := m.interactiveVarValues
@@ -131,6 +136,9 @@ func (m *Model) executeRequest() tea.Cmd {
 			return errorMsg(fmt.Sprintf("Failed to resolve variables: %v", err))
 		}
 	}
+
+	// Clear body override after using it (one-time use)
+	m.bodyOverride = ""
 
 	// Get warnings for unresolved variables (short, for status bar)
 	warnings := resolver.GetUnresolvedVariables()
@@ -486,11 +494,19 @@ func (m *Model) saveResponse() tea.Cmd {
 		}
 
 		// Create full response object with metadata
+		// Use filtered response if active, otherwise use original
+		var bodySource string
+		if m.filterActive && m.filteredResponse != "" {
+			bodySource = m.filteredResponse
+		} else {
+			bodySource = m.currentResponse.Body
+		}
+
 		// Try to parse body as JSON to avoid double-stringification
 		var bodyData interface{}
-		if err := json.Unmarshal([]byte(m.currentResponse.Body), &bodyData); err != nil {
+		if err := json.Unmarshal([]byte(bodySource), &bodyData); err != nil {
 			// Body is not JSON (HTML, CBOR, etc) - keep as string
-			bodyData = m.currentResponse.Body
+			bodyData = bodySource
 		}
 		// else: Body is valid JSON - keep as parsed object
 
@@ -542,6 +558,11 @@ func (m *Model) saveResponse() tea.Cmd {
 			"responseSize": m.currentResponse.ResponseSize,
 		}
 
+		// Add filter note if a filter was applied
+		if m.filterActive && m.filteredResponse != "" {
+			fullResponse["filter"] = m.filterInput
+		}
+
 		data, err := json.MarshalIndent(fullResponse, "", "  ")
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to marshal response: %v", err))
@@ -577,7 +598,12 @@ func (m *Model) copyToClipboard() tea.Cmd {
 			if m.currentResponse.Error != "" {
 				contentToCopy = m.currentResponse.Error
 			} else {
-				contentToCopy = m.currentResponse.Body
+				// If filter is active, copy the filtered response
+				if m.filterActive && m.filteredResponse != "" {
+					contentToCopy = m.filteredResponse
+				} else {
+					contentToCopy = m.currentResponse.Body
+				}
 			}
 		}
 
@@ -1077,7 +1103,7 @@ func normalizePath(rawURL string) string {
 // renderHistoryClearConfirmation renders the confirmation modal for clearing all history
 func (m *Model) renderHistoryClearConfirmation() string {
 	count := len(m.historyEntries)
-	content := "⚠️  WARNING\n\n"
+	content := "WARNING\n\n"
 	content += "This will permanently delete ALL history entries.\n\n"
 	content += fmt.Sprintf("Total entries to delete: %d\n\n", count)
 	content += "This action cannot be undone!\n\n"

@@ -156,8 +156,13 @@ func (m *Model) renderVariableEditor() string {
 			// Insert cursor at position in value field
 			valueField = m.varEditValue[:m.varEditValuePos] + "█" + m.varEditValue[m.varEditValuePos:]
 		}
-		content.WriteString("Name:  " + nameField + "\n")
-		content.WriteString("Options (comma-separated): " + valueField + "\n")
+		content.WriteString("Name:  " + nameField + "\n\n")
+
+		// Wrap options field to prevent overflow
+		// Modal width is typically 70-80, minus padding (4) = 66-76
+		// "Options: " prefix takes ~30 chars, leaving ~40-45 chars for content
+		wrappedValue := wrapText(valueField, 55)
+		content.WriteString("Options (comma-separated):\n" + wrappedValue + "\n")
 		footer = "[TAB] switch fields [Enter] save [ESC] cancel"
 	}
 
