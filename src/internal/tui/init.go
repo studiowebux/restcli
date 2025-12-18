@@ -13,6 +13,8 @@ import (
 	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/history"
+	"github.com/studiowebux/restcli/internal/jsonpath"
+	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
@@ -26,7 +28,7 @@ func New(mgr *session.Manager, version string) (Model, error) {
 		return Model{}, err
 	}
 
-	// Initialize analytics, history, and stress test managers using the same database file
+	// Initialize analytics, history, stress test, and bookmark managers using the same database file
 	analyticsManager, err := analytics.NewManager(config.DatabasePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: analytics disabled: %v\n", err)
@@ -39,12 +41,17 @@ func New(mgr *session.Manager, version string) (Model, error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: stress test disabled: %v\n", err)
 	}
+	bookmarkManager, err := jsonpath.NewBookmarkManager(config.DatabasePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: jsonpath bookmarks disabled: %v\n", err)
+	}
 
 	m := Model{
 		sessionMgr:            mgr,
 		analyticsManager:      analyticsManager,
 		historyManager:        historyManager,
 		stressTestManager:     stressTestManager,
+		bookmarkManager:       bookmarkManager,
 		mode:                  ModeNormal,
 		version:               version,
 		files:                 files,
@@ -148,11 +155,18 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 		if ext == ".http" || ext == ".yaml" || ext == ".yml" || ext == ".json" || ext == ".jsonc" {
 			relPath, _ := filepath.Rel(workdir, path)
 
+			// Parse file to get first HTTP method
+			httpMethod := ""
+			if requests, err := parser.Parse(path); err == nil && len(requests) > 0 {
+				httpMethod = requests[0].Method
+			}
+
 			files = append(files, types.FileInfo{
 				Path:         path,
 				Name:         relPath,
 				RequestCount: 0, // TODO: Count requests in file
 				ModifiedTime: info.ModTime(),
+				HTTPMethod:   httpMethod,
 			})
 		}
 

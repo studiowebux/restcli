@@ -240,4 +240,5 @@ type FileInfo struct {
 	Name          string
 	RequestCount  int
 	ModifiedTime  time.Time
+	HTTPMethod    string // First request's HTTP method
 }

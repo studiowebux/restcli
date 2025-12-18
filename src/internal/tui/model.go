@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/history"
+	"github.com/studiowebux/restcli/internal/jsonpath"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
@@ -66,20 +67,21 @@ const (
 	ModeErrorDetail
 	ModeStatusDetail
 	ModeBodyOverride
-	ModeFilter
+	ModeJSONPathHistory
 )
 
 // Model represents the TUI state
 type Model struct {
 	// Core state
-	sessionMgr       *session.Manager
-	analyticsManager *analytics.Manager
-	historyManager   *history.Manager
-	mode             Mode
-	version          string
-	updateAvailable  bool
-	latestVersion    string
-	updateURL        string
+	sessionMgr        *session.Manager
+	analyticsManager  *analytics.Manager
+	historyManager    *history.Manager
+	bookmarkManager   *jsonpath.BookmarkManager
+	mode              Mode
+	version           string
+	updateAvailable   bool
+	latestVersion     string
+	updateURL         string
 
 	// File list
 	files         []types.FileInfo
@@ -271,6 +273,14 @@ type Model struct {
 	filteredResponse    string // Cached filtered response
 	filterError         string // Filter error message
 	filterActive        bool   // True when viewing filtered result
+	filterEditing       bool   // True when actively editing filter in footer
+
+	// JSONPath history state
+	jsonpathBookmarks       []jsonpath.Bookmark // Loaded bookmarks
+	jsonpathHistoryCursor   int                 // Selected bookmark index
+	jsonpathHistorySearch   string              // Search filter for bookmarks
+	jsonpathHistoryMatches  []jsonpath.Bookmark // Filtered bookmarks
+	jsonpathHistorySearching bool                // True when in search mode
 }
 
 // Init initializes the TUI
@@ -293,6 +303,11 @@ func (m *Model) Cleanup() {
 	if m.stressTestManager != nil {
 		if err := m.stressTestManager.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "error closing stress test database: %v\n", err)
+		}
+	}
+	if m.bookmarkManager != nil {
+		if err := m.bookmarkManager.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing bookmark database: %v\n", err)
 		}
 	}
 }
@@ -578,8 +593,8 @@ func (m Model) View() string {
 		return m.renderDiffModal()
 	case ModeBodyOverride:
 		return m.renderBodyOverrideModal()
-	case ModeFilter:
-		return m.renderFilterModal()
+	case ModeJSONPathHistory:
+		return m.renderJSONPathHistoryModal()
 	default:
 		return m.renderMain()
 	}

@@ -181,6 +181,15 @@ func InitSchema(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_stress_metrics_run_id ON stress_test_metrics(run_id);
 	CREATE INDEX IF NOT EXISTS idx_stress_metrics_timestamp ON stress_test_metrics(run_id, timestamp);
 	CREATE INDEX IF NOT EXISTS idx_stress_metrics_elapsed ON stress_test_metrics(run_id, elapsed_ms);
+
+	-- JSONPath bookmarks table
+	CREATE TABLE IF NOT EXISTS jsonpath_bookmarks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		expression TEXT NOT NULL UNIQUE,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_jsonpath_bookmarks_created_at ON jsonpath_bookmarks(created_at DESC);
 	`
 
 	_, err := db.Exec(schema)

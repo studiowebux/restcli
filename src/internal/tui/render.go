@@ -72,7 +72,38 @@ var (
 
 	styleDiffNeutral = lipgloss.NewStyle().
 				Foreground(colorGray)
+
+	// HTTP method styles
+	styleMethodGET     = lipgloss.NewStyle().Foreground(colorBlue)
+	styleMethodPOST    = lipgloss.NewStyle().Foreground(colorGreen)
+	styleMethodPUT     = lipgloss.NewStyle().Foreground(colorYellow)
+	styleMethodPATCH   = lipgloss.NewStyle().Foreground(colorYellow)
+	styleMethodDELETE  = lipgloss.NewStyle().Foreground(colorRed)
+	styleMethodHEAD    = lipgloss.NewStyle().Foreground(colorGray)
+	styleMethodOPTIONS = lipgloss.NewStyle().Foreground(colorGray)
 )
+
+// getMethodStyle returns the appropriate style for an HTTP method
+func getMethodStyle(method string) lipgloss.Style {
+	switch method {
+	case "GET":
+		return styleMethodGET
+	case "POST":
+		return styleMethodPOST
+	case "PUT":
+		return styleMethodPUT
+	case "PATCH":
+		return styleMethodPATCH
+	case "DELETE":
+		return styleMethodDELETE
+	case "HEAD":
+		return styleMethodHEAD
+	case "OPTIONS":
+		return styleMethodOPTIONS
+	default:
+		return lipgloss.NewStyle()
+	}
+}
 
 // highlightJSON applies syntax highlighting to JSON content
 // Uses configured syntax themes from the profile, or sensible defaults
@@ -248,8 +279,17 @@ func (m Model) renderSidebar(width, height int) string {
 		// Hex number
 		hexNum := fmt.Sprintf("%x", i)
 
+		// HTTP method with color (if available)
+		methodPrefix := ""
+		methodLen := 0
+		if file.HTTPMethod != "" {
+			methodStyle := getMethodStyle(file.HTTPMethod)
+			methodPrefix = methodStyle.Render(file.HTTPMethod) + " "
+			methodLen = len(file.HTTPMethod) + 1 // +1 for space
+		}
+
 		// File name (truncate if too long)
-		maxNameLen := width - len(hexNum) - 4
+		maxNameLen := width - len(hexNum) - methodLen - 4
 		if maxNameLen < 10 {
 			maxNameLen = 10
 		}
@@ -258,7 +298,7 @@ func (m Model) renderSidebar(width, height int) string {
 			name = name[:maxNameLen-3] + "..."
 		}
 
-		line := fmt.Sprintf("%s %s", hexNum, name)
+		line := fmt.Sprintf("%s %s%s", hexNum, methodPrefix, name)
 
 		// Check if this file is a search match (only when searching files, not response)
 		isSearchMatch := false
@@ -459,6 +499,29 @@ func (m Model) renderStatusBar() string {
 	// Right side - messages or input
 	right := ""
 
+	// Show filter input if editing (takes precedence)
+	if m.filterEditing {
+		right = fmt.Sprintf("Filter: %s", addCursorAt(m.filterInput, m.filterCursor))
+		if m.filterError != "" {
+			right += " " + styleError.Render(m.filterError)
+		} else if m.statusMsg != "" {
+			// Show status message (e.g., "Bookmark saved")
+			if strings.Contains(m.statusMsg, "✓") || strings.Contains(m.statusMsg, "saved") {
+				right += " " + styleSuccess.Render(m.statusMsg)
+			} else if strings.Contains(m.statusMsg, "exists") {
+				right += " " + styleWarning.Render(m.statusMsg)
+			} else {
+				right += " " + m.statusMsg
+			}
+		}
+		// Center spacing
+		spacing := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+		if spacing < 1 {
+			spacing = 1
+		}
+		return left + strings.Repeat(" ", spacing) + right
+	}
+
 	// Show input for special modes
 	switch m.mode {
 	case ModeGoto:
@@ -487,7 +550,7 @@ func (m Model) renderStatusBar() string {
 				right += styleSubtle.Render(" [press 'I' for full message]")
 			}
 		} else if len(m.searchMatches) == 0 {
-			right += styleSubtle.Render("Press / to search | ? for help | q to quit")
+			right += styleSubtle.Render("Press / to search | J to filter | ? for help | q to quit")
 		}
 	}
 

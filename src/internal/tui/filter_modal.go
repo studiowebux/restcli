@@ -11,6 +11,44 @@ import (
 // handleFilterKeys handles key input for filter modal
 func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
+	case "ctrl+s":
+		// Save current expression as bookmark
+		if m.filterInput == "" {
+			m.filterError = "Cannot save empty expression"
+			return nil
+		}
+
+		if m.bookmarkManager == nil {
+			m.filterError = "Bookmark manager not available"
+			return nil
+		}
+
+		saved, err := m.bookmarkManager.Save(m.filterInput)
+		if err != nil {
+			m.filterError = fmt.Sprintf("Failed to save bookmark: %v", err)
+			return nil
+		}
+
+		if saved {
+			m.filterError = styleSuccess.Render("✓ Bookmark saved successfully")
+		} else {
+			m.filterError = styleWarning.Render("Bookmark already exists")
+		}
+		return nil
+
+	case "up":
+		// Open history modal if input is empty
+		if m.filterInput == "" {
+			m.mode = ModeJSONPathHistory
+			m.jsonpathHistorySearch = ""
+			m.jsonpathHistorySearching = false
+			m.jsonpathHistoryCursor = 0
+			m.loadFilteredBookmarks()
+			return nil
+		}
+		// Otherwise, do nothing (no history navigation in input)
+		return nil
+
 	case "esc":
 		// Clear filter and return to normal mode
 		m.mode = ModeNormal
@@ -163,6 +201,6 @@ func (m *Model) renderFilterModal() string {
 		}
 	}
 
-	footer := "[Enter] apply • [ESC] cancel"
+	footer := "[Enter] apply • [Ctrl+S] save • [↑] history • [ESC] cancel"
 	return m.renderModalWithFooter("Response Filter", content.String(), footer, 75, 18)
 }

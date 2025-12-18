@@ -1,0 +1,2 @@
+### Get Post with Multi-Variable Interactive
+GET https://jsonplaceholder.typicode.com/posts/{{multi}}

@@ -9,6 +9,32 @@ tags:
 
 Transform response data using JMESPath expressions or bash/Linux commands.
 
+## TUI Interactive Filtering
+
+Press `J` in the TUI to open the inline filter editor. The filter input appears in the footer while keeping the JSON response visible above.
+
+**Workflow:**
+1. Press `J` → Footer shows `Filter: █`
+2. Type JMESPath expression (view JSON structure above)
+3. Press `Ctrl+S` → Save bookmark for reuse
+4. Press `Up arrow` (empty input) → Browse saved bookmarks
+5. Press `Enter` → Apply filter
+6. Press `Esc` → Cancel
+
+**Bookmarks:**
+- Saved expressions persist globally
+- Search bookmarks with `/` key
+- Delete with `d` key
+- Navigate with `j/k` or `1-9,0` for quick select
+
+**HTTP Method Colors:**
+File list shows color-coded HTTP methods for easy identification:
+- GET → Blue
+- POST → Green
+- PUT/PATCH → Yellow
+- DELETE → Red
+- HEAD/OPTIONS → Gray
+
 ## Filter vs Query
 
 **Filter**: Narrow down results (subset of data)

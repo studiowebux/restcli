@@ -34,12 +34,14 @@ No more merge conflicts. No more outdated collections. Each endpoint is a file. 
 13. **Variable interpolation in TLS paths** for dynamic cert loading
 
 ### Analysis & Debugging
-14. **Response filtering** with JMESPath or bash commands
-15. **Response pinning and diff** for regression testing
-16. **Error detail modals** with full stack traces
-17. **Embedded documentation** viewer with collapsible trees
-18. **Analytics tracking** with per-endpoint stats and aggregated metrics
-19. **Request history** with persistent storage and search
+14. **Inline filter editor** with bookmark system - filter responses while viewing JSON structure
+15. **Response filtering** with JMESPath or bash commands
+16. **Response pinning and diff** for regression testing
+17. **Error detail modals** with full stack traces
+18. **Embedded documentation** viewer with collapsible trees
+19. **Analytics tracking** with per-endpoint stats and aggregated metrics
+20. **Request history** with persistent storage and search
+21. **HTTP method color coding** in file list for quick identification
 
 ### Performance Testing
 20. **Stress testing** with configurable concurrency and load

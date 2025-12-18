@@ -6,6 +6,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/filter"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/stresstest"
 )
@@ -94,8 +95,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleDiffKeys(msg)
 	case ModeBodyOverride:
 		return m.handleBodyOverrideKeys(msg)
-	case ModeFilter:
-		return m.handleFilterKeys(msg)
+	case ModeJSONPathHistory:
+		return m.handleJSONPathHistoryKeys(msg)
 	}
 
 	return nil
@@ -180,6 +181,11 @@ func (m *Model) handleEditorConfigKeys(msg tea.KeyMsg) tea.Cmd {
 
 // handleNormalKeys handles keys in normal mode
 func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
+	// If filter editing is active, handle filter keys first
+	if m.filterEditing {
+		return m.handleFilterInlineKeys(msg)
+	}
+
 	switch msg.String() {
 	case "q":
 		m.Cleanup()
@@ -349,26 +355,37 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		profile := m.sessionMgr.GetActiveProfile()
 		m.inputValue = profile.Editor
 		m.inputCursor = len(m.inputValue)
+	// File operations (only when sidebar is focused)
 	case "d":
-		return m.duplicateFile()
+		if m.focusedPanel == "sidebar" {
+			return m.duplicateFile()
+		}
 	case "D":
-		// Delete file with confirmation
-		if len(m.files) > 0 {
-			m.mode = ModeDelete
+		if m.focusedPanel == "sidebar" {
+			// Delete file with confirmation
+			if len(m.files) > 0 {
+				m.mode = ModeDelete
+			}
 		}
 	case "R":
-		m.mode = ModeRename
-		m.renameInput = ""
-		m.renameCursor = 0
+		if m.focusedPanel == "sidebar" {
+			m.mode = ModeRename
+			m.renameInput = ""
+			m.renameCursor = 0
+		}
 	case "F":
-		// Create new file
-		m.mode = ModeCreateFile
-		m.createFileInput = ""
-		m.createFileCursor = 0
-		m.createFileType = 0 // Default to .http
-		m.errorMsg = ""
+		if m.focusedPanel == "sidebar" {
+			// Create new file
+			m.mode = ModeCreateFile
+			m.createFileInput = ""
+			m.createFileCursor = 0
+			m.createFileType = 0 // Default to .http
+			m.errorMsg = ""
+		}
 	case "r":
-		return m.refreshFiles()
+		if m.focusedPanel == "sidebar" {
+			return m.refreshFiles()
+		}
 
 	// Response operations
 	case "s":
@@ -415,12 +432,13 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 				m.updateResponseView()
 				m.statusMsg = "Filter cleared"
 			} else {
-				// Open filter modal
-				m.mode = ModeFilter
+				// Start inline filter editing
+				m.filterEditing = true
 				m.filterInput = ""
 				m.filterCursor = 0
 				m.filterError = ""
-				m.statusMsg = "Enter JMESPath filter expression"
+				m.statusMsg = ""
+				m.errorMsg = ""
 			}
 		} else {
 			m.statusMsg = "No response to filter"
@@ -787,6 +805,104 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 		// Only append single printable characters
 		if len(msg.String()) == 1 {
 			m.searchQuery += msg.String()
+		}
+	}
+	return nil
+}
+
+// handleFilterInlineKeys handles keys when filter editing is active in footer
+func (m *Model) handleFilterInlineKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		// Cancel filter editing
+		m.filterEditing = false
+		m.filterInput = ""
+		m.filterCursor = 0
+		m.filterError = ""
+		m.statusMsg = "Filter cancelled"
+		return nil
+
+	case "enter":
+		// Apply filter
+		if m.filterInput == "" {
+			m.filterError = "Filter expression cannot be empty"
+			return nil
+		}
+
+		if m.currentResponse == nil || m.currentResponse.Body == "" {
+			m.filterError = "No response to filter"
+			m.filterEditing = false
+			return nil
+		}
+
+		// Apply the filter/query
+		result, err := filter.Apply(m.currentResponse.Body, "", m.filterInput)
+		if err != nil {
+			m.filterError = fmt.Sprintf("Failed to apply filter: %s", err.Error())
+			return nil
+		}
+
+		// Store filtered result and show it
+		m.filteredResponse = result
+		m.filterActive = true
+		m.filterError = ""
+		m.filterEditing = false
+		m.statusMsg = fmt.Sprintf("Filter applied: %s", m.filterInput)
+
+		// Update response view to show filtered content
+		m.updateResponseView()
+		return nil
+
+	case "ctrl+s":
+		// Save current expression as bookmark
+		if m.filterInput == "" {
+			m.filterError = "Cannot save empty expression"
+			return nil
+		}
+
+		if m.bookmarkManager == nil {
+			m.filterError = "Bookmark manager not available"
+			return nil
+		}
+
+		saved, err := m.bookmarkManager.Save(m.filterInput)
+		if err != nil {
+			m.filterError = fmt.Sprintf("Failed to save bookmark: %v", err)
+			return nil
+		}
+
+		// Clear any previous error and show success/duplicate message
+		m.filterError = ""
+		if saved {
+			m.statusMsg = "✓ Bookmark saved successfully"
+		} else {
+			m.statusMsg = "Bookmark already exists"
+		}
+		return nil
+
+	case "up":
+		// Open history modal if input is empty
+		if m.filterInput == "" {
+			m.mode = ModeJSONPathHistory
+			m.jsonpathHistorySearch = ""
+			m.jsonpathHistorySearching = false
+			m.jsonpathHistoryCursor = 0
+			m.filterEditing = false
+			m.loadFilteredBookmarks()
+			return nil
+		}
+		// Otherwise, do nothing (no history navigation in input)
+		return nil
+
+	default:
+		// Handle text input with cursor support
+		if _, shouldContinue := handleTextInputWithCursor(&m.filterInput, &m.filterCursor, msg); shouldContinue {
+			return nil
+		}
+		// Only append single printable characters
+		if len(msg.String()) == 1 {
+			m.filterInput = m.filterInput[:m.filterCursor] + msg.String() + m.filterInput[m.filterCursor:]
+			m.filterCursor++
 		}
 	}
 	return nil

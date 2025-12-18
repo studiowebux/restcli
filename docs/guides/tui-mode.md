@@ -109,6 +109,27 @@ Example: `(?i)error` matches "Error", "ERROR", "error"
 | `f` | Fullscreen mode           |
 | `w` | Pin response              |
 | `W` | Diff with pinned          |
+| `J` | Filter response (inline)  |
+
+### Inline Filtering
+
+Press `J` to filter responses with JMESPath. The filter input appears in the footer, keeping the JSON visible above for reference.
+
+**Keys:**
+- `Ctrl+S` → Save bookmark
+- `Up arrow` (empty) → Browse bookmarks
+- `/` (in bookmarks) → Search
+- `d` (in bookmarks) → Delete
+- `Enter` → Apply filter
+- `Esc` → Cancel
+
+**Visual Indicators:**
+Files show color-coded HTTP methods:
+- GET → Blue
+- POST → Green
+- PUT/PATCH → Yellow
+- DELETE → Red
+- HEAD/OPTIONS → Gray
 
 ### Pinning and Diff
 
