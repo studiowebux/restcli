@@ -97,6 +97,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleBodyOverrideKeys(msg)
 	case ModeJSONPathHistory:
 		return m.handleJSONPathHistoryKeys(msg)
+	case ModeTagFilter:
+		return m.handleTagFilterKeys(msg)
 	}
 
 	return nil
@@ -564,6 +566,21 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeStressTestResults
 		m.stressTestFocusedPane = "list"
 		return m.loadStressTestRuns()
+	case "t":
+		// Category filter mode
+		m.mode = ModeTagFilter
+		m.inputValue = ""
+		m.inputCursor = 0
+		m.statusMsg = "Enter category to filter (press T to clear)"
+	case "T":
+		// Clear category filter (Shift+t)
+		if len(m.tagFilter) > 0 {
+			m.tagFilter = nil
+			m.files = m.allFiles
+			m.fileIndex = 0
+			m.fileOffset = 0
+			m.statusMsg = "Category filter cleared"
+		}
 	case "?":
 		m.mode = ModeHelp
 		m.updateHelpView()
@@ -2191,6 +2208,87 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 
 		m.stressTestConfigField = 0
 		m.updateStressTestConfigInput()
+	}
+
+	return nil
+}
+
+// handleTagFilterKeys handles keys in tag filter input mode
+func (m *Model) handleTagFilterKeys(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		// Clear filter and return to normal mode
+		m.mode = ModeNormal
+		m.tagFilter = nil
+		m.files = m.allFiles
+		m.fileIndex = 0
+		m.fileOffset = 0
+		m.statusMsg = "Tag filter cleared"
+		m.inputValue = ""
+		m.inputCursor = 0
+
+	case "enter":
+		// Apply tag filter
+		if m.inputValue == "" {
+			// Empty input = clear filter
+			m.mode = ModeNormal
+			m.tagFilter = nil
+			m.files = m.allFiles
+			m.fileIndex = 0
+			m.fileOffset = 0
+			m.statusMsg = "Tag filter cleared"
+		} else {
+			// Apply filter
+			m.tagFilter = []string{m.inputValue}
+			m.applyTagFilter()
+			m.mode = ModeNormal
+			m.statusMsg = fmt.Sprintf("Filtered by category: %s (%d files)", m.inputValue, len(m.files))
+		}
+		m.inputValue = ""
+		m.inputCursor = 0
+
+	case "left":
+		if m.inputCursor > 0 {
+			m.inputCursor--
+		}
+
+	case "right":
+		if m.inputCursor < len(m.inputValue) {
+			m.inputCursor++
+		}
+
+	case "ctrl+a", "home":
+		m.inputCursor = 0
+
+	case "ctrl+e", "end":
+		m.inputCursor = len(m.inputValue)
+
+	case "backspace":
+		if m.inputCursor > 0 {
+			m.inputValue = m.inputValue[:m.inputCursor-1] + m.inputValue[m.inputCursor:]
+			m.inputCursor--
+		}
+
+	case "delete", "ctrl+d":
+		if m.inputCursor < len(m.inputValue) {
+			m.inputValue = m.inputValue[:m.inputCursor] + m.inputValue[m.inputCursor+1:]
+		}
+
+	case "ctrl+u":
+		// Delete from cursor to beginning
+		m.inputValue = m.inputValue[m.inputCursor:]
+		m.inputCursor = 0
+
+	case "ctrl+k":
+		// Delete from cursor to end
+		m.inputValue = m.inputValue[:m.inputCursor]
+
+	default:
+		// Insert character at cursor position
+		if len(msg.String()) == 1 {
+			m.inputValue = m.inputValue[:m.inputCursor] + msg.String() + m.inputValue[m.inputCursor:]
+			m.inputCursor++
+		}
 	}
 
 	return nil

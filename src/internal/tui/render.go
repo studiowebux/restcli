@@ -258,8 +258,11 @@ func (m Model) renderSidebar(width, height int) string {
 	if m.focusedPanel == "sidebar" {
 		titleStyle = styleTitleFocused
 	}
-	title := titleStyle.Render("Files")
-	lines = append(lines, title)
+	title := "Files"
+	if len(m.tagFilter) > 0 {
+		title = fmt.Sprintf("Files (%s)", strings.Join(m.tagFilter, ","))
+	}
+	lines = append(lines, titleStyle.Render(title))
 	lines = append(lines, "")
 
 	// File list
@@ -289,7 +292,23 @@ func (m Model) renderSidebar(width, height int) string {
 		}
 
 		// File name (truncate if too long)
-		maxNameLen := width - len(hexNum) - methodLen - 4
+		// Reserve space for tags if they exist
+		tagsSuffix := ""
+		tagsLen := 0
+		if len(file.Tags) > 0 {
+			// Show first 2 tags
+			displayTags := file.Tags
+			if len(displayTags) > 2 {
+				displayTags = displayTags[:2]
+			}
+			tagsSuffix = " [" + strings.Join(displayTags, ",") + "]"
+			if len(file.Tags) > 2 {
+				tagsSuffix += "..."
+			}
+			tagsLen = len(tagsSuffix)
+		}
+
+		maxNameLen := width - len(hexNum) - methodLen - tagsLen - 4
 		if maxNameLen < 10 {
 			maxNameLen = 10
 		}
@@ -298,7 +317,7 @@ func (m Model) renderSidebar(width, height int) string {
 			name = name[:maxNameLen-3] + "..."
 		}
 
-		line := fmt.Sprintf("%s %s%s", hexNum, methodPrefix, name)
+		line := fmt.Sprintf("%s %s%s%s", hexNum, methodPrefix, name, styleSubtle.Render(tagsSuffix))
 
 		// Check if this file is a search match (only when searching files, not response)
 		isSearchMatch := false
@@ -528,6 +547,10 @@ func (m Model) renderStatusBar() string {
 		right = fmt.Sprintf("Goto: :%s", addCursor(m.gotoInput))
 	case ModeSearch:
 		right = fmt.Sprintf("Search: %s", addCursor(m.searchQuery))
+	case ModeTagFilter:
+		// Build cursor string manually for category filter
+		cursorStr := m.inputValue[:m.inputCursor] + "█" + m.inputValue[m.inputCursor:]
+		right = fmt.Sprintf("Category: %s", cursorStr)
 	default:
 		// Show search results if active
 		if len(m.searchMatches) > 0 {
@@ -1297,6 +1320,9 @@ func (m *Model) updateInspectView() {
 		return
 	}
 
+	// Ensure documentation is parsed before accessing categories
+	m.currentRequest.EnsureDocumentationParsed(parser.ParseDocumentationLines)
+
 	profile := m.sessionMgr.GetActiveProfile()
 
 	// Create a copy of the request to avoid mutation
@@ -1420,6 +1446,12 @@ func (m *Model) updateInspectView() {
 				content.WriteString("  " + styleWarning.Render("Insecure Skip Verify: true") + "\n")
 			}
 			content.WriteString("\n")
+		}
+
+		// Show categories if present
+		if resolvedRequest.Documentation != nil && len(resolvedRequest.Documentation.Tags) > 0 {
+			content.WriteString("Categories:\n")
+			content.WriteString("  " + strings.Join(resolvedRequest.Documentation.Tags, ", ") + "\n\n")
 		}
 
 		// Show validation configuration if present (for stress testing)

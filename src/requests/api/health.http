@@ -1,0 +1,4 @@
+### Health Check
+# @tag monitoring
+# @tag api
+GET https://api.example.com/health

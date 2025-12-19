@@ -1,0 +1,20 @@
+- name: Get User by ID
+  method: POST
+  url: https://api.example.com/graphql
+  protocol: graphql
+  headers:
+    Authorization: Bearer {{token}}
+  body: |
+    query GetUser($id: ID!) {
+      user(id: $id) {
+        id
+        name
+        email
+      }
+    }
+  documentation:
+    description: Fetch user details by ID
+    tags:
+      - graphql
+      - users
+      - api

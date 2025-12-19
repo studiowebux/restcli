@@ -55,6 +55,7 @@ func New(mgr *session.Manager, version string) (Model, error) {
 		mode:                  ModeNormal,
 		version:               version,
 		files:                 files,
+		allFiles:              files,  // Store unfiltered list for tag filtering
 		fileIndex:             0,
 		fileOffset:            0,
 		showHeaders:           false,
@@ -155,10 +156,27 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 		if ext == ".http" || ext == ".yaml" || ext == ".yml" || ext == ".json" || ext == ".jsonc" {
 			relPath, _ := filepath.Rel(workdir, path)
 
-			// Parse file to get first HTTP method
+			// Parse file to get first HTTP method and tags
 			httpMethod := ""
+			tags := []string{}
 			if requests, err := parser.Parse(path); err == nil && len(requests) > 0 {
 				httpMethod = requests[0].Method
+
+				// Collect unique tags from all requests in file
+				tagSet := make(map[string]bool)
+				for _, req := range requests {
+					// Ensure documentation is parsed from DocumentationLines
+					req.EnsureDocumentationParsed(parser.ParseDocumentationLines)
+
+					if req.Documentation != nil {
+						for _, tag := range req.Documentation.Tags {
+							tagSet[tag] = true
+						}
+					}
+				}
+				for tag := range tagSet {
+					tags = append(tags, tag)
+				}
 			}
 
 			files = append(files, types.FileInfo{
@@ -167,6 +185,7 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 				RequestCount: 0, // TODO: Count requests in file
 				ModifiedTime: info.ModTime(),
 				HTTPMethod:   httpMethod,
+				Tags:         tags,
 			})
 		}
 

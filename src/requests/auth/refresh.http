@@ -1,0 +1,9 @@
+### Refresh Token
+# @tag auth
+# @tag api
+POST https://api.example.com/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "{{refresh_token}}"
+}

@@ -1125,3 +1125,20 @@ func (m *Model) checkForUpdate() tea.Cmd {
 		}
 	}
 }
+
+// applyTagFilter applies the current tag filter to the file list
+func (m *Model) applyTagFilter() {
+	if len(m.tagFilter) == 0 {
+		m.files = m.allFiles
+		return
+	}
+
+	// Use the filter package to filter files
+	m.files = filter.FilterByTags(m.allFiles, m.tagFilter)
+
+	// Reset file index if out of bounds
+	if m.fileIndex >= len(m.files) {
+		m.fileIndex = 0
+		m.fileOffset = 0
+	}
+}

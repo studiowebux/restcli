@@ -68,6 +68,7 @@ const (
 	ModeStatusDetail
 	ModeBodyOverride
 	ModeJSONPathHistory
+	ModeTagFilter
 )
 
 // Model represents the TUI state
@@ -92,6 +93,12 @@ type Model struct {
 	searchIndex         int    // Current position in searchMatches
 	searchInResponseCtx bool   // True if current search is in response context
 	gotoInput           string // Goto line input
+
+	// Collections and tag filtering
+	allFiles          []types.FileInfo    // Unfiltered file list
+	activeCollection  *types.Collection   // Currently active collection filter
+	tagFilter         []string            // Active tag filters
+	collectionIndex   int                 // Selected collection in browser
 
 	// Request/Response
 	currentRequests       []types.HttpRequest

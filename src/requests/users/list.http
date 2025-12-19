@@ -1,0 +1,6 @@
+### List Users
+# @tag users
+# @tag api
+# @tag admin
+GET https://api.example.com/users
+Authorization: Bearer {{token}}

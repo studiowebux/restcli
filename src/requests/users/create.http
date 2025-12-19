@@ -1,0 +1,13 @@
+### Create User
+# @tag users
+# @tag api
+# @tag admin
+# @tag critical
+POST https://api.example.com/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "{{name}}",
+  "email": "{{email}}"
+}

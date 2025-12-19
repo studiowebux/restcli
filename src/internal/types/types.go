@@ -240,5 +240,15 @@ type FileInfo struct {
 	Name          string
 	RequestCount  int
 	ModifiedTime  time.Time
-	HTTPMethod    string // First request's HTTP method
+	HTTPMethod    string   // First request's HTTP method
+	Tags          []string // Aggregated tags from all requests in file
+}
+
+// Collection represents a virtual grouping of requests based on tags or patterns
+type Collection struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	TagFilter   []string `json:"tagFilter,omitempty"`   // Requests with ANY of these tags
+	PathPattern string   `json:"pathPattern,omitempty"` // Glob pattern for file paths
+	Color       string   `json:"color,omitempty"`       // UI color hint
 }
