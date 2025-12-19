@@ -21,6 +21,7 @@ type Server struct {
 	logs       []RequestLog
 	logsMutex  sync.RWMutex
 	workdir    string
+	notifyCh   chan struct{} // Channel to notify when new log arrives
 }
 
 // NewServer creates a new mock server
@@ -33,9 +34,10 @@ func NewServer(config *Config, workdir string) *Server {
 	}
 
 	return &Server{
-		config:  config,
-		logs:    make([]RequestLog, 0),
-		workdir: workdir,
+		config:   config,
+		logs:     make([]RequestLog, 0),
+		workdir:  workdir,
+		notifyCh: make(chan struct{}, 100), // Buffered channel for notifications
 	}
 }
 
@@ -198,6 +200,18 @@ func (s *Server) logRequest(log RequestLog) {
 	if len(s.logs) > 1000 {
 		s.logs = s.logs[len(s.logs)-1000:]
 	}
+
+	// Notify listeners (non-blocking)
+	select {
+	case s.notifyCh <- struct{}{}:
+	default:
+		// Channel full, skip notification
+	}
+}
+
+// NotifyChannel returns the notification channel
+func (s *Server) NotifyChannel() <-chan struct{} {
+	return s.notifyCh
 }
 
 // GetLogs returns all logged requests

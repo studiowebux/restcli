@@ -13,6 +13,7 @@ import (
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/jsonpath"
 	"github.com/studiowebux/restcli/internal/mock"
+	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
@@ -71,6 +72,8 @@ const (
 	ModeJSONPathHistory
 	ModeTagFilter
 	ModeMockServer
+	ModeProxyViewer
+	ModeProxyDetail
 )
 
 // Model represents the TUI state
@@ -210,6 +213,13 @@ type Model struct {
 	mockServerRunning bool
 	mockConfigPath    string
 	mockLogs          []mock.RequestLog
+
+	// Proxy server state
+	proxyServer        *proxy.Proxy
+	proxyRunning       bool
+	proxyLogs          []*proxy.ProxyLog
+	proxySelectedIndex int
+
 	stressTestConfigInput         string // Input buffer for config fields
 	stressTestConfigCursor        int // Cursor position in input
 	stressTestConfigInsertMode    bool // True when actively typing (disables vim navigation)
@@ -538,6 +548,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = m.tickMockServer()
 		}
 
+	case proxyViewerTickMsg:
+		// Refresh proxy viewer if in that mode and proxy is running
+		if m.mode == ModeProxyViewer && m.proxyRunning {
+			m.updateProxyView()
+			// Return another tick to keep refreshing
+			cmd = m.tickProxyViewer()
+		}
+
+	case proxyLogReceivedMsg:
+		// New proxy log received - update view
+		if m.mode == ModeProxyViewer && m.proxyRunning {
+			m.updateProxyView()
+		}
+		// Continue listening for more logs
+		if m.proxyRunning && m.proxyServer != nil {
+			cmd = m.listenForProxyLogs()
+		}
+
 	case clearStatusMsg:
 		m.statusMsg = ""
 
@@ -647,6 +675,10 @@ func (m Model) View() string {
 		return m.renderCreateFileModal()
 	case ModeMockServer:
 		return m.renderMockServer()
+	case ModeProxyViewer:
+		return m.renderProxyModal()
+	case ModeProxyDetail:
+		return m.renderProxyDetailModal()
 	case ModeMRU:
 		return m.renderMRUModal()
 	case ModeDiff:
@@ -711,6 +743,9 @@ type chainCompleteMsg struct {
 }
 
 type mockServerTickMsg struct{}
+type mockLogReceivedMsg struct{}
+type proxyViewerTickMsg struct{}
+type proxyLogReceivedMsg struct{}
 
 type errorMsg string
 
@@ -762,4 +797,33 @@ func (m *Model) tickMockServer() tea.Cmd {
 	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
 		return mockServerTickMsg{}
 	})
+}
+
+// tickProxyViewer returns a command that will send proxyViewerTickMsg after a short delay
+func (m *Model) tickProxyViewer() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+		return proxyViewerTickMsg{}
+	})
+}
+
+// listenForProxyLogs waits for new proxy log notifications
+func (m *Model) listenForProxyLogs() tea.Cmd {
+	if m.proxyServer == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		<-m.proxyServer.NotifyChannel()
+		return proxyLogReceivedMsg{}
+	}
+}
+
+// listenForMockLogs waits for new mock server log notifications
+func (m *Model) listenForMockLogs() tea.Cmd {
+	if m.mockServer == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		<-m.mockServer.NotifyChannel()
+		return mockLogReceivedMsg{}
+	}
 }

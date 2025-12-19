@@ -15,6 +15,7 @@ import (
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/jsonpath"
 	"github.com/studiowebux/restcli/internal/parser"
+	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
@@ -202,6 +203,12 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 	})
 
 	return files, nil
+}
+
+// SetProxy sets the proxy server for the model
+func (m *Model) SetProxy(p *proxy.Proxy) {
+	m.proxyServer = p
+	m.proxyRunning = p != nil
 }
 
 type tickMsg time.Time

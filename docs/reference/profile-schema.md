@@ -49,6 +49,7 @@ Array of profile objects:
 | `messageTimeout`   | number      | Auto-clear footer messages (seconds)               |
 | `requestTimeout`   | number      | HTTP request timeout in seconds (default: 30)      |
 | `maxResponseSize`  | number      | Max response body size in bytes (default: 100MB)   |
+| `proxyPort`        | number      | Debug proxy port (default: 8888)                   |
 
 ## name (required)
 
@@ -396,6 +397,29 @@ Maximum response body size in bytes.
 - `1073741824`: Large data exports (1GB)
 
 If a response exceeds this limit, the request will fail with an error. This prevents out-of-memory issues when dealing with unexpectedly large responses.
+
+## proxyPort (optional)
+
+Debug proxy port number.
+
+```json
+{
+  "proxyPort": 9000
+}
+```
+
+- Number: Port for debug proxy (e.g., `9000`, `3128`)
+- `null` or omitted: Use default port (8888)
+
+**Default**: 8888
+
+**Use cases**:
+
+- `9000`: Custom port to avoid conflicts
+- `3128`: Standard proxy port convention
+- `8888`: Default (no configuration needed)
+
+Configure different proxy ports per profile for isolated debugging environments.
 
 ## Multi-Value Variable Schema
 

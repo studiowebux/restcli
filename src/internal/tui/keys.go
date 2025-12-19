@@ -101,6 +101,10 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleTagFilterKeys(msg)
 	case ModeMockServer:
 		return m.handleMockServerKeys(msg)
+	case ModeProxyViewer:
+		return m.handleProxyViewerKeys(msg)
+	case ModeProxyDetail:
+		return m.handleProxyDetailKeys(msg)
 	}
 
 	return nil
@@ -574,6 +578,15 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.loadStressTestRuns()
 	case "M":
 		m.mode = ModeMockServer
+	case "y":
+		// Open proxy viewer (debug proxy)
+		m.mode = ModeProxyViewer
+		m.updateProxyView()
+		// Start event listener if proxy is running
+		if m.proxyRunning && m.proxyServer != nil {
+			return m.listenForProxyLogs()
+		}
+		return nil
 	case "t":
 		// Category filter mode
 		m.mode = ModeTagFilter

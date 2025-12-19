@@ -125,6 +125,7 @@ type Profile struct {
 	MaxResponseSize  *int64 `json:"maxResponseSize,omitempty"`  // Max response body size in bytes (nil = 100MB default)
 	SyntaxThemeLight string `json:"syntaxThemeLight,omitempty"` // Chroma syntax theme for light backgrounds (default: github)
 	SyntaxThemeDark  string `json:"syntaxThemeDark,omitempty"`  // Chroma syntax theme for dark backgrounds (default: monokai)
+	ProxyPort        *int   `json:"proxyPort,omitempty"`        // Debug proxy port (nil = 8888 default)
 }
 
 // GetRequestTimeout returns the configured timeout or default (30 seconds)
@@ -141,6 +142,14 @@ func (p *Profile) GetMaxResponseSize() int64 {
 		return *p.MaxResponseSize
 	}
 	return 100 * 1024 * 1024 // Default 100MB
+}
+
+// GetProxyPort returns the configured proxy port or default (8888)
+func (p *Profile) GetProxyPort() int {
+	if p.ProxyPort != nil {
+		return *p.ProxyPort
+	}
+	return 8888 // Default port
 }
 
 // VariableValue can be a simple string or a multi-value variable

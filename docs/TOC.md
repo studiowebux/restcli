@@ -19,6 +19,7 @@
   - [Analytics](guides/analytics.md)
   - [Stress Testing](guides/stress-testing.md)
   - [Mock Server](guides/mock-server.md)
+  - [Debug Proxy](guides/debug-proxy.md)
   - [CLI](guides/cli-mode.md)
   - [TUI](guides/tui-mode.md)
 - Reference

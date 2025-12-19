@@ -91,15 +91,24 @@ Search is context-aware based on focused panel and supports Regexes.
 
 ## Configuration
 
-| Key | Action               |
-| --- | -------------------- |
-| `v` | Open variable editor |
-| `h` | Open header editor   |
-| `p` | Switch profile       |
-| `n` | Create new profile   |
-| `C` | View configuration   |
-| `P` | View profile config  |
-| `S` | View session config  |
+| Key            | Action               |
+| -------------- | -------------------- |
+| `v`            | Open variable editor |
+| `h`            | Open header editor   |
+| `p`            | Switch profile       |
+| `n`            | Create new profile   |
+| `C`            | View configuration   |
+| `P`            | View profile config  |
+| `Ctrl+X`       | View session config  |
+
+## Tools
+
+| Key | Action              |
+| --- | ------------------- |
+| `M` | Mock server manager |
+| `y` | Debug proxy viewer  |
+| `A` | Analytics viewer    |
+| `S` | Stress test results |
 
 ## Authentication
 

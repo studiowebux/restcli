@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/studiowebux/restcli/internal/cli"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/converter"
 	"github.com/studiowebux/restcli/internal/mock"
+	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/tui"
 )
@@ -152,6 +154,30 @@ var mockLogsCmd = &cobra.Command{
 	},
 }
 
+var proxyCmd = &cobra.Command{
+	Use:   "proxy",
+	Short: "Manage debug HTTP proxy",
+	Long: `Manage debug HTTP proxy for capturing and inspecting traffic.
+
+The proxy captures all HTTP requests passing through it, allowing you to inspect
+request/response details in real-time. Useful for debugging and troubleshooting.`,
+}
+
+var proxyStartCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start debug HTTP proxy",
+	Long: `Start a debug HTTP proxy on the specified port.
+
+Configure your application to use this proxy:
+  export HTTP_PROXY=http://localhost:8888
+  export http_proxy=http://localhost:8888
+
+The proxy will capture all HTTP traffic and display it in the TUI.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runProxyStart(cmd)
+	},
+}
+
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
 	Short: "Generate shell completion scripts",
@@ -243,6 +269,11 @@ var (
 	harImportHeaders bool
 	harFormat        string
 	harFilter        string
+)
+
+// Flags for proxy
+var (
+	proxyPort int
 )
 
 func init() {
@@ -443,6 +474,11 @@ func init() {
 	mockCmd.AddCommand(mockStopCmd)
 	mockCmd.AddCommand(mockLogsCmd)
 	rootCmd.AddCommand(mockCmd)
+
+	// Add proxy subcommands
+	proxyStartCmd.Flags().IntVar(&proxyPort, "proxy-port", 8888, "Proxy port")
+	proxyCmd.AddCommand(proxyStartCmd)
+	rootCmd.AddCommand(proxyCmd)
 }
 
 // runCLI executes a request file in CLI mode
@@ -591,6 +627,54 @@ func runMockStop(cmd *cobra.Command) error {
 // runMockLogs shows mock server logs
 func runMockLogs(cmd *cobra.Command) error {
 	return fmt.Errorf("logs command requires active server - use TUI (press 'M') to view real-time logs")
+}
+
+// runProxyStart starts the debug proxy server
+func runProxyStart(cmd *cobra.Command) error {
+	// Create proxy
+	p := proxy.NewProxy(proxyPort)
+
+	// Start proxy
+	if err := p.Start(); err != nil {
+		return fmt.Errorf("failed to start proxy: %w", err)
+	}
+
+	defer p.Stop()
+
+	fmt.Fprintf(os.Stderr, "Debug proxy started at http://localhost:%d\n", proxyPort)
+	fmt.Fprintf(os.Stderr, "\nConfigure your application to use this proxy:\n")
+	fmt.Fprintf(os.Stderr, "  export HTTP_PROXY=http://localhost:%d\n", proxyPort)
+	fmt.Fprintf(os.Stderr, "  export http_proxy=http://localhost:%d\n\n", proxyPort)
+	fmt.Fprintf(os.Stderr, "Press 'y' in TUI to view captured traffic\n")
+	fmt.Fprintf(os.Stderr, "Press Ctrl+C to stop\n\n")
+
+	// Initialize config
+	if err := config.Initialize(); err != nil {
+		return err
+	}
+
+	// Load session
+	mgr := session.NewManager()
+	if err := mgr.Load(); err != nil {
+		return err
+	}
+
+	// Create TUI model
+	m, err := tui.New(mgr, version)
+	if err != nil {
+		return err
+	}
+
+	// Set proxy in model
+	m.SetProxy(p)
+
+	// Run TUI
+	program := tea.NewProgram(&m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	if _, err := program.Run(); err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	return nil
 }
 
 // runHar2Http converts HAR file to .http files
