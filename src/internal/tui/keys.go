@@ -1374,9 +1374,49 @@ func (m *Model) toggleFieldInTree(respIdx int, parentPath string, allFields []Do
 
 // handleHistoryKeys handles keys in history viewer mode
 func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
+	// If search is active, handle search input first
+	if m.historySearchActive {
+		switch msg.String() {
+		case "esc":
+			// Clear search and show all entries
+			m.historySearchActive = false
+			m.historySearchQuery = ""
+			m.historyEntries = m.historyAllEntries
+			m.historyIndex = 0
+			m.updateHistoryView()
+			m.statusMsg = "Search cleared"
+			return nil
+		case "enter":
+			// Exit search mode, keep filtered results
+			m.historySearchActive = false
+			m.statusMsg = fmt.Sprintf("Filtered to %d entries", len(m.historyEntries))
+			return nil
+		case "backspace":
+			if len(m.historySearchQuery) > 0 {
+				m.historySearchQuery = m.historySearchQuery[:len(m.historySearchQuery)-1]
+				m.filterHistoryEntries()
+			}
+			return nil
+		default:
+			// Append character to search query
+			if len(msg.String()) == 1 {
+				m.historySearchQuery += msg.String()
+				m.filterHistoryEntries()
+			}
+			return nil
+		}
+	}
+
 	switch msg.String() {
 	case "esc", "H", "q", "tab":
 		m.mode = ModeNormal
+
+	// Activate search mode
+	case "/":
+		m.historySearchActive = true
+		m.historySearchQuery = ""
+		m.statusMsg = "Search history (ESC to cancel, Enter to apply)"
+		return nil
 
 	// Item selection (left pane)
 	case "up", "k":

@@ -24,6 +24,11 @@ const (
 
 // Execute performs an HTTP request and returns the result
 func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig, profile *types.Profile) (*types.RequestResult, error) {
+	return ExecuteWithContext(context.Background(), req, tlsConfig, profile)
+}
+
+// ExecuteWithContext performs an HTTP request with cancellation support via context
+func ExecuteWithContext(ctx context.Context, req *types.HttpRequest, tlsConfig *types.TLSConfig, profile *types.Profile) (*types.RequestResult, error) {
 	startTime := time.Now()
 
 	// Get timeout from profile or use default
@@ -45,7 +50,7 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig, profile *types.
 		requestSize = len(req.Body)
 	}
 
-	httpReq, err := http.NewRequest(req.Method, req.URL, bodyReader)
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -102,6 +107,7 @@ func Execute(req *types.HttpRequest, tlsConfig *types.TLSConfig, profile *types.
 		Duration:     duration,
 		RequestSize:  requestSize,
 		ResponseSize: len(bodyBytes),
+		Timestamp:    startTime.Format(time.RFC3339),
 	}
 
 	return result, nil

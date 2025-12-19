@@ -132,15 +132,24 @@ func (m *Model) renderHistory() string {
 	}
 
 	// Add footer with instructions and scroll position
-	footerText := "↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
+	var footerText string
+	if m.historySearchActive {
+		// Show search input when active
+		footerText = fmt.Sprintf("Search: %s█", m.historySearchQuery)
+		if len(m.historyEntries) > 0 {
+			footerText += fmt.Sprintf(" [%d results]", len(m.historyEntries))
+		}
+	} else {
+		footerText = "/: Search | ↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
 
-	// Add scroll indicator if there are entries
-	if len(m.historyEntries) > 0 {
-		current := m.historyIndex + 1
-		total := len(m.historyEntries)
-		percentage := int(float64(current) / float64(total) * 100)
-		scrollInfo := fmt.Sprintf(" [%d/%d] (%d%%)", current, total, percentage)
-		footerText += scrollInfo
+		// Add scroll indicator if there are entries
+		if len(m.historyEntries) > 0 {
+			current := m.historyIndex + 1
+			total := len(m.historyEntries)
+			percentage := int(float64(current) / float64(total) * 100)
+			scrollInfo := fmt.Sprintf(" [%d/%d] (%d%%)", current, total, percentage)
+			footerText += scrollInfo
+		}
 	}
 
 	footer := styleSubtle.Render(footerText)

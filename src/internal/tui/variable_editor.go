@@ -423,8 +423,14 @@ func (m *Model) handleVariableInputKeys(msg tea.KeyMsg) tea.Cmd {
 				// If same name, nothing to do
 			}
 		} else {
-			// Regular variable
+			// Regular variable - preserve existing Interactive flag if editing
 			var varValue types.VariableValue
+			if m.mode == ModeVariableEdit {
+				// Editing: preserve existing Interactive flag
+				if existingVar, exists := profile.Variables[m.varEditName]; exists {
+					varValue.Interactive = existingVar.Interactive
+				}
+			}
 			varValue.SetValue(m.varEditValue)
 			profile.Variables[m.varEditName] = varValue
 		}

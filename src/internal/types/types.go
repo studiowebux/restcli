@@ -220,6 +220,7 @@ type RequestResult struct {
 	RequestSize    int               `json:"requestSize"`    // bytes
 	ResponseSize   int               `json:"responseSize"`   // bytes
 	Error          string            `json:"error,omitempty"`
+	Timestamp      string            `json:"timestamp,omitempty"` // RFC3339 format
 }
 
 // HistoryEntry represents a saved request/response pair

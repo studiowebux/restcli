@@ -518,9 +518,14 @@ func (m Model) renderResponse(width, height int) string {
 	lines = append(lines, statusLine)
 
 	// Timing info
-	timing := fmt.Sprintf("Duration: %s | Size: %s",
-		executor.FormatDuration(m.currentResponse.Duration),
-		executor.FormatSize(m.currentResponse.ResponseSize))
+	timingParts := []string{
+		fmt.Sprintf("Duration: %s", executor.FormatDuration(m.currentResponse.Duration)),
+		fmt.Sprintf("Size: %s", executor.FormatSize(m.currentResponse.ResponseSize)),
+	}
+	if m.currentResponse.Timestamp != "" {
+		timingParts = append(timingParts, fmt.Sprintf("Time: %s", m.currentResponse.Timestamp))
+	}
+	timing := strings.Join(timingParts, " | ")
 	lines = append(lines, styleSubtle.Render(timing))
 	lines = append(lines, "")
 
@@ -790,9 +795,14 @@ func (m *Model) updateResponseView() {
 		m.currentResponse.StatusText))
 
 	// Timing info
-	content.WriteString(styleSubtle.Render(fmt.Sprintf("Duration: %s | Size: %s",
-		executor.FormatDuration(m.currentResponse.Duration),
-		executor.FormatSize(m.currentResponse.ResponseSize))))
+	timingParts := []string{
+		fmt.Sprintf("Duration: %s", executor.FormatDuration(m.currentResponse.Duration)),
+		fmt.Sprintf("Size: %s", executor.FormatSize(m.currentResponse.ResponseSize)),
+	}
+	if m.currentResponse.Timestamp != "" {
+		timingParts = append(timingParts, fmt.Sprintf("Time: %s", m.currentResponse.Timestamp))
+	}
+	content.WriteString(styleSubtle.Render(strings.Join(timingParts, " | ")))
 	content.WriteString("\n")
 
 	// Response Headers (toggle with Shift+B, with wrapping)

@@ -184,8 +184,11 @@ type Model struct {
 
 	// History state
 	historyEntries        []types.HistoryEntry
+	historyAllEntries     []types.HistoryEntry // Unfiltered entries for search
 	historyIndex          int
 	historyPreviewVisible bool // Toggle for showing/hiding response preview pane
+	historySearchActive   bool // True when search input is active
+	historySearchQuery    string // Search query for filtering history
 
 	// Analytics state
 	analyticsStats        []analytics.Stats
@@ -452,7 +455,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case historyLoadedMsg:
 		m.historyEntries = msg.entries
+		m.historyAllEntries = msg.entries // Store unfiltered for search
 		m.historyIndex = 0
+		m.historySearchQuery = "" // Reset search on load
+		m.historySearchActive = false
 		if len(msg.entries) > 0 {
 			m.statusMsg = fmt.Sprintf("Loaded %d history entries", len(msg.entries))
 		}

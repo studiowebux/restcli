@@ -203,7 +203,7 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 
 		// Execute request in goroutine
 		go func() {
-			res, err := executor.Execute(resolvedRequest, tlsConfig, profile)
+			res, err := executor.ExecuteWithContext(ctx, resolvedRequest, tlsConfig, profile)
 			resultChan <- result{data: res, err: err}
 		}()
 
@@ -1033,6 +1033,7 @@ func (m *Model) loadHistoryEntry(index int) tea.Cmd {
 		RequestSize:  entry.RequestSize,
 		ResponseSize: entry.ResponseSize,
 		Error:        entry.Error,
+		Timestamp:    entry.Timestamp,
 	}
 
 	// Convert to HttpRequest
@@ -1053,6 +1054,36 @@ func (m *Model) loadHistoryEntry(index int) tea.Cmd {
 	m.statusMsg = fmt.Sprintf("Loaded history entry from %s", entry.Timestamp[:19])
 
 	return nil
+}
+
+// filterHistoryEntries filters history entries based on search query
+// Searches in: URL, method, request name, status code, timestamp
+func (m *Model) filterHistoryEntries() {
+	query := strings.ToLower(m.historySearchQuery)
+
+	if query == "" {
+		m.historyEntries = m.historyAllEntries
+		m.historyIndex = 0
+		m.updateHistoryView()
+		return
+	}
+
+	var filtered []types.HistoryEntry
+	for _, entry := range m.historyAllEntries {
+		// Search in multiple fields
+		if strings.Contains(strings.ToLower(entry.URL), query) ||
+			strings.Contains(strings.ToLower(entry.Method), query) ||
+			strings.Contains(strings.ToLower(entry.RequestName), query) ||
+			strings.Contains(entry.ResponseStatusText, query) ||
+			strings.Contains(fmt.Sprintf("%d", entry.ResponseStatus), query) ||
+			strings.Contains(entry.Timestamp, query) {
+			filtered = append(filtered, entry)
+		}
+	}
+
+	m.historyEntries = filtered
+	m.historyIndex = 0
+	m.updateHistoryView()
 }
 
 // replayHistoryEntry re-executes a request from history
