@@ -200,6 +200,9 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.focusedPanel = "sidebar"
 			m.statusMsg = "Focus: File sidebar (use TAB to switch)"
+			// Reload request from file list when switching to sidebar so Enter executes
+			// the file list selection instead of re-executing the loaded history entry
+			m.loadRequestsFromCurrentFile()
 		}
 
 	// Navigation - based on focused panel (EXCLUSIVE control)
@@ -1334,7 +1337,7 @@ func (m *Model) toggleFieldInTree(respIdx int, parentPath string, allFields []Do
 // handleHistoryKeys handles keys in history viewer mode
 func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
-	case "esc", "H", "q":
+	case "esc", "H", "q", "tab":
 		m.mode = ModeNormal
 
 	// Item selection (left pane)
