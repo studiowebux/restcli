@@ -1,0 +1,6 @@
+### Get User
+# @category auth
+# @category chain
+# @extract userId id
+# @extract userName name
+GET https://jsonplaceholder.typicode.com/users/3

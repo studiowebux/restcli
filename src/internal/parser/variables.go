@@ -216,12 +216,15 @@ func (vr *VariableResolver) ResolveRequest(req *types.HttpRequest) (*types.HttpR
 		Query:                req.Query,
 		ParseEscapes:         req.ParseEscapes,
 		Streaming:            req.Streaming,
+		RequiresConfirmation: req.RequiresConfirmation,
 		TLS:                  req.TLS,
 		ExpectedStatusCodes:  req.ExpectedStatusCodes,
 		ExpectedBodyExact:    req.ExpectedBodyExact,
 		ExpectedBodyContains: req.ExpectedBodyContains,
 		ExpectedBodyPattern:  req.ExpectedBodyPattern,
 		ExpectedBodyFields:   req.ExpectedBodyFields,
+		DependsOn:            req.DependsOn,
+		Extract:              req.Extract,
 	}
 
 	// Resolve URL

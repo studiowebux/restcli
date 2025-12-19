@@ -20,40 +20,42 @@ No more merge conflicts. No more outdated collections. Each endpoint is a file. 
 3. **Multi-value variables** with aliases (e.g., `dev`, `staging`, `prod`)
 4. **Profile system** for environment-specific headers and variables
 5. **Request history** with split view and live preview
+6. **Categories and filtering** - organize requests with categories, filter by category in TUI
 
 ### Execution & Control
-6. **Streaming support** for SSE and real-time responses
-7. **GraphQL & HTTP protocols** with automatic detection
-8. **Request cancellation** (ESC to abort in-progress requests)
-9. **Confirmation modals** for critical endpoints
-10. **Concurrent request blocking** prevents accidental request
+7. **Request chaining** with dependency resolution and automatic variable extraction
+8. **Streaming support** for SSE and real-time responses
+9. **GraphQL & HTTP protocols** with automatic detection
+10. **Request cancellation** (ESC to abort in-progress requests)
+11. **Confirmation modals** for critical endpoints
+12. **Concurrent request blocking** prevents accidental request
 
 ### Security & Auth
-11. **OAuth 2.0** with PKCE flow and token auto-extraction
-12. **mTLS support** with client certificates
-13. **Variable interpolation in TLS paths** for dynamic cert loading
+13. **OAuth 2.0** with PKCE flow and token auto-extraction
+14. **mTLS support** with client certificates
+15. **Variable interpolation in TLS paths** for dynamic cert loading
 
 ### Analysis & Debugging
-14. **Inline filter editor** with bookmark system - filter responses while viewing JSON structure
-15. **Response filtering** with JMESPath or bash commands
-16. **Response pinning and diff** for regression testing
-17. **Error detail modals** with full stack traces
-18. **Embedded documentation** viewer with collapsible trees
-19. **Analytics tracking** with per-endpoint stats and aggregated metrics
-20. **Request history** with persistent storage and search
-21. **HTTP method color coding** in file list for quick identification
+16. **Inline filter editor** with bookmark system - filter responses while viewing JSON structure
+17. **Response filtering** with JMESPath or bash commands
+18. **Response pinning and diff** for regression testing
+19. **Error detail modals** with full stack traces
+20. **Embedded documentation** viewer with collapsible trees
+21. **Analytics tracking** with per-endpoint stats and aggregated metrics
+22. **Request history** with persistent storage and search
+23. **HTTP method color coding** in file list for quick identification
 
 ### Performance Testing
-20. **Stress testing** with configurable concurrency and load
-21. **Ramp-up control** for gradual load increase
-22. **Real-time metrics** (latency, RPS, percentiles P50/P95/P99)
-23. **Test result persistence** with historical comparison
-24. **One-click re-run** for saved test configurations
+24. **Stress testing** with configurable concurrency and load
+25. **Ramp-up control** for gradual load increase
+26. **Real-time metrics** (latency, RPS, percentiles P50/P95/P99)
+27. **Test result persistence** with historical comparison
+28. **One-click re-run** for saved test configurations
 
 ### Automation
-25. **CLI mode** for scripting (JSON/YAML output)
-26. **cURL converter** (convert cURL to request files)
-27. **OpenAPI converter** (generate requests from specs)
+29. **CLI mode** for scripting (JSON/YAML output)
+30. **cURL converter** (convert cURL to request files)
+31. **OpenAPI converter** (generate requests from specs)
 
 ## Installation
 
@@ -173,11 +175,13 @@ Complete documentation at [docs/](docs/)
 5. [File Formats](docs/guides/file-formats.md)
 6. [Variables](docs/guides/variables.md)
 7. [Profiles](docs/guides/profiles.md)
-8. [Authentication](docs/guides/authentication.md)
-9. [Filtering & Querying](docs/guides/filtering.md)
-10. [Analytics](docs/guides/analytics.md)
-11. [Stress Testing](docs/guides/stress-testing.md)
-12. [Examples](docs/examples.md)
+8. [Categories](docs/guides/categories.md)
+9. [Request Chaining](docs/guides/chaining.md)
+10. [Authentication](docs/guides/authentication.md)
+11. [Filtering & Querying](docs/guides/filtering.md)
+12. [Analytics](docs/guides/analytics.md)
+13. [Stress Testing](docs/guides/stress-testing.md)
+14. [Examples](docs/examples.md)
 
 ## License
 

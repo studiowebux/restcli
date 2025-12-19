@@ -151,6 +151,28 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 				}
 				continue
 			}
+			// Check for chaining annotations
+			if strings.HasPrefix(trimmed, "@depends ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@depends"))
+				// Parse space-separated file paths
+				deps := strings.Fields(value)
+				currentRequest.DependsOn = append(currentRequest.DependsOn, deps...)
+				continue
+			}
+			if strings.HasPrefix(trimmed, "@extract ") {
+				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "@extract"))
+				// Parse varName jmesPath format
+				parts := strings.Fields(value)
+				if len(parts) >= 2 {
+					if currentRequest.Extract == nil {
+						currentRequest.Extract = make(map[string]string)
+					}
+					varName := parts[0]
+					jmesPath := strings.Join(parts[1:], " ")
+					currentRequest.Extract[varName] = jmesPath
+				}
+				continue
+			}
 			currentRequest.DocumentationLines = append(currentRequest.DocumentationLines, line)
 			continue
 		}

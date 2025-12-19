@@ -1,0 +1,16 @@
+{
+  "name": "Get Post Comments (JSON multi-level chain)",
+  "method": "GET",
+  "url": "https://jsonplaceholder.typicode.com/comments?postId={{postId}}",
+  "documentation": {
+    "description": "Fetch comments for the post created in create-post.yaml",
+    "tags": ["chain", "json", "multi-level"]
+  },
+  "dependsOn": [
+    "chain/create-post.yaml"
+  ],
+  "extract": {
+    "firstCommentId": "[0].id",
+    "commentCount": "length(@)"
+  }
+}

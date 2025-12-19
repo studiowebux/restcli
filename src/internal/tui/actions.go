@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/atotto/clipboard"
 	"github.com/studiowebux/restcli/internal/analytics"
+	"github.com/studiowebux/restcli/internal/chain"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
 	"github.com/studiowebux/restcli/internal/filter"
@@ -64,6 +65,11 @@ func (m *Model) executeRequest() tea.Cmd {
 		return func() tea.Msg {
 			return errorMsg("No request selected")
 		}
+	}
+
+	// Check if request has dependencies - execute chain if needed
+	if chain.HasDependencies(m.currentRequest) {
+		return m.executeChain()
 	}
 
 	// IMMEDIATELY mark as loading to prevent concurrent execution
@@ -376,6 +382,161 @@ func (m *Model) refreshFiles() tea.Cmd {
 
 		m.statusMsg = "Files and profiles reloaded"
 		return fileListLoadedMsg{files: files}
+	}
+}
+
+// executeChain executes a request chain (request with dependencies)
+func (m *Model) executeChain() tea.Cmd {
+	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
+		return func() tea.Msg {
+			return errorMsg("No file selected")
+		}
+	}
+
+	currentFile := m.files[m.fileIndex].Path
+	profile := m.sessionMgr.GetActiveProfile()
+
+	// Build dependency graph
+	graph := chain.NewGraph(profile.Workdir)
+	if err := graph.BuildGraph(currentFile); err != nil {
+		return func() tea.Msg {
+			return errorMsg(fmt.Sprintf("Failed to build dependency graph: %v", err))
+		}
+	}
+
+	// Get execution order
+	executionOrder, err := graph.GetExecutionOrder(currentFile)
+	if err != nil {
+		return func() tea.Msg {
+			return errorMsg(fmt.Sprintf("Failed to determine execution order: %v", err))
+		}
+	}
+
+	// Mark as loading
+	m.loading = true
+	m.statusMsg = fmt.Sprintf("Executing chain: %d requests", len(executionOrder))
+	m.updateResponseView()
+
+	// Execute chain asynchronously
+	return func() tea.Msg {
+		// Execute each request in order
+		for i, filePath := range executionOrder {
+			// Parse the file
+			requests, err := parser.Parse(filePath)
+			if err != nil {
+				return chainCompleteMsg{
+					success: false,
+					message: fmt.Sprintf("Failed to parse %s: %v", filepath.Base(filePath), err),
+				}
+			}
+
+			if len(requests) == 0 {
+				return chainCompleteMsg{
+					success: false,
+					message: fmt.Sprintf("No requests found in %s", filepath.Base(filePath)),
+				}
+			}
+
+			req := &requests[0]
+
+			// Resolve variables
+			resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil, parser.LoadSystemEnv())
+			resolvedRequest, err := resolver.ResolveRequest(req)
+			if err != nil {
+				return chainCompleteMsg{
+					success: false,
+					message: fmt.Sprintf("Failed to resolve variables in %s: %v", filepath.Base(filePath), err),
+				}
+			}
+
+			// Merge TLS config
+			var tlsConfig *types.TLSConfig
+			if profile.TLS != nil {
+				resolvedProfileTLS := &types.TLSConfig{
+					InsecureSkipVerify: profile.TLS.InsecureSkipVerify,
+				}
+				if profile.TLS.CertFile != "" {
+					certFile, _ := resolver.Resolve(profile.TLS.CertFile)
+					resolvedProfileTLS.CertFile = certFile
+				}
+				if profile.TLS.KeyFile != "" {
+					keyFile, _ := resolver.Resolve(profile.TLS.KeyFile)
+					resolvedProfileTLS.KeyFile = keyFile
+				}
+				if profile.TLS.CAFile != "" {
+					caFile, _ := resolver.Resolve(profile.TLS.CAFile)
+					resolvedProfileTLS.CAFile = caFile
+				}
+				tlsConfig = resolvedProfileTLS
+			}
+			if resolvedRequest.TLS != nil {
+				tlsConfig = resolvedRequest.TLS
+			}
+
+			// Execute request
+			result, err := executor.Execute(resolvedRequest, tlsConfig, profile)
+			if err != nil {
+				return chainCompleteMsg{
+					success: false,
+					message: fmt.Sprintf("Request %d/%d (%s) failed: %v", i+1, len(executionOrder), filepath.Base(filePath), err),
+				}
+			}
+
+			// Save to history
+			shouldSaveHistory := m.sessionMgr.IsHistoryEnabled()
+			if profile != nil && profile.HistoryEnabled != nil {
+				shouldSaveHistory = *profile.HistoryEnabled
+			}
+			if shouldSaveHistory && m.historyManager != nil {
+				_ = m.historyManager.Save(filePath, profile.Name, resolvedRequest, result)
+			}
+
+			// Track analytics if enabled
+			if profile.AnalyticsEnabled != nil && *profile.AnalyticsEnabled && m.analyticsManager != nil {
+				entry := analytics.Entry{
+					FilePath:       filePath,
+					NormalizedPath: resolvedRequest.URL,
+					Method:         resolvedRequest.Method,
+					StatusCode:     result.Status,
+					RequestSize:    int64(result.RequestSize),
+					ResponseSize:   int64(result.ResponseSize),
+					DurationMs:     result.Duration,
+					Timestamp:      time.Now(),
+					ProfileName:    profile.Name,
+				}
+				_ = m.analyticsManager.Save(entry)
+			}
+
+			// Extract variables if specified
+			if chain.HasExtractions(req) {
+				extracted, err := chain.ExtractVariables(req, result.Body)
+				if err != nil {
+					return chainCompleteMsg{
+						success: false,
+						message: fmt.Sprintf("Failed to extract variables from %s: %v", filepath.Base(filePath), err),
+					}
+				}
+
+				// Store extracted variables in session
+				for varName, varValue := range extracted {
+					m.sessionMgr.SetSessionVariable(varName, varValue)
+				}
+			}
+
+			// If this is the last request, save the result
+			if i == len(executionOrder)-1 {
+				return chainCompleteMsg{
+					success:  true,
+					message:  fmt.Sprintf("Chain completed: %d requests executed", len(executionOrder)),
+					response: result,
+				}
+			}
+		}
+
+		return chainCompleteMsg{
+			success: true,
+			message: fmt.Sprintf("Chain completed: %d requests executed", len(executionOrder)),
+		}
 	}
 }
 

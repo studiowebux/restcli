@@ -1,0 +1,12 @@
+{
+  "name": "Get User Albums (JSON chain example)",
+  "method": "GET",
+  "url": "https://jsonplaceholder.typicode.com/albums?userId={{userId}}",
+  "documentation": {
+    "description": "Fetch albums for the user extracted from login.http",
+    "tags": ["chain", "json", "example"]
+  },
+  "dependsOn": [
+    "chain/login.http"
+  ]
+}

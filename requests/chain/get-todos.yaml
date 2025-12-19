@@ -1,0 +1,11 @@
+- name: Get User Todos (YAML chain example)
+  method: GET
+  url: https://jsonplaceholder.typicode.com/todos?userId={{userId}}
+  documentation:
+    description: Fetch todos for the user extracted from login.http
+    tags:
+      - chain
+      - yaml
+      - example
+  dependsOn:
+    - chain/login.http

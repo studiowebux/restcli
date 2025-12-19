@@ -350,6 +350,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.statusMsg = "Executing request..."
 		return m.executeRequest()
 	case "i":
+		if m.currentRequest == nil {
+			m.errorMsg = "No request loaded (select a file first)"
+			return nil
+		}
 		m.mode = ModeInspect
 		m.updateInspectView() // Set content once when entering modal
 	case "x":

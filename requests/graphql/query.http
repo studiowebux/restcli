@@ -1,0 +1,9 @@
+### GraphQL Countries Query
+# @category graphql
+# @category api
+POST https://countries.trevorblades.com/graphql
+Content-Type: application/json
+
+{
+  "query": "{ countries { code name } }"
+}

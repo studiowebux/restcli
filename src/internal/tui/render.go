@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
@@ -11,6 +12,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/chain"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
 	"github.com/studiowebux/restcli/internal/parser"
@@ -291,6 +293,18 @@ func (m Model) renderSidebar(width, height int) string {
 			methodLen = len(file.HTTPMethod) + 1 // +1 for space
 		}
 
+		// Check if this file is part of a chain
+		chainIndicator := ""
+		chainLen := 0
+		// Parse file to check for dependencies or extractions
+		if requests, err := parser.Parse(file.Path); err == nil && len(requests) > 0 {
+			req := &requests[0]
+			if len(req.DependsOn) > 0 || len(req.Extract) > 0 {
+				chainIndicator = " [CHAIN]"
+				chainLen = len(chainIndicator)
+			}
+		}
+
 		// File name (truncate if too long)
 		// Reserve space for tags if they exist
 		tagsSuffix := ""
@@ -308,7 +322,7 @@ func (m Model) renderSidebar(width, height int) string {
 			tagsLen = len(tagsSuffix)
 		}
 
-		maxNameLen := width - len(hexNum) - methodLen - tagsLen - 4
+		maxNameLen := width - len(hexNum) - methodLen - tagsLen - chainLen - 4
 		if maxNameLen < 10 {
 			maxNameLen = 10
 		}
@@ -317,7 +331,7 @@ func (m Model) renderSidebar(width, height int) string {
 			name = name[:maxNameLen-3] + "..."
 		}
 
-		line := fmt.Sprintf("%s %s%s%s", hexNum, methodPrefix, name, styleSubtle.Render(tagsSuffix))
+		line := fmt.Sprintf("%s %s%s%s%s", hexNum, methodPrefix, name, styleSubtle.Render(chainIndicator), styleSubtle.Render(tagsSuffix))
 
 		// Check if this file is a search match (only when searching files, not response)
 		isSearchMatch := false
@@ -1452,6 +1466,66 @@ func (m *Model) updateInspectView() {
 		if resolvedRequest.Documentation != nil && len(resolvedRequest.Documentation.Tags) > 0 {
 			content.WriteString("Categories:\n")
 			content.WriteString("  " + strings.Join(resolvedRequest.Documentation.Tags, ", ") + "\n\n")
+		}
+
+		// Show chaining configuration if present
+		if len(resolvedRequest.DependsOn) > 0 || len(resolvedRequest.Extract) > 0 {
+			content.WriteString("Request Chaining:\n")
+
+			// Show execution order if there are dependencies
+			if len(resolvedRequest.DependsOn) > 0 {
+				// Build dependency graph to show execution order
+				profile := m.sessionMgr.GetActiveProfile()
+				graph := chain.NewGraph(profile.Workdir)
+
+				// Get current file path
+				currentFile := ""
+				if len(m.files) > 0 && m.fileIndex < len(m.files) {
+					currentFile = m.files[m.fileIndex].Path
+				}
+
+				if currentFile != "" {
+					if err := graph.BuildGraph(currentFile); err == nil {
+						if execOrder, err := graph.GetExecutionOrder(currentFile); err == nil {
+							content.WriteString("  Execution order:\n")
+							for i, filePath := range execOrder {
+								baseName := filepath.Base(filePath)
+
+								// Check if this file has extractions
+								if requests, err := parser.Parse(filePath); err == nil && len(requests) > 0 {
+									req := &requests[0]
+									if len(req.Extract) > 0 {
+										extractVars := make([]string, 0, len(req.Extract))
+										for varName := range req.Extract {
+											extractVars = append(extractVars, varName)
+										}
+										content.WriteString(fmt.Sprintf("    %d. %s → extracts: %s\n", i+1, baseName, strings.Join(extractVars, ", ")))
+									} else {
+										content.WriteString(fmt.Sprintf("    %d. %s\n", i+1, baseName))
+									}
+								} else {
+									content.WriteString(fmt.Sprintf("    %d. %s\n", i+1, baseName))
+								}
+							}
+						}
+					}
+				}
+
+				content.WriteString("\n  Dependencies:\n")
+				for _, dep := range resolvedRequest.DependsOn {
+					content.WriteString("    - " + dep + "\n")
+				}
+			}
+
+			// Show extractions for current file
+			if len(resolvedRequest.Extract) > 0 {
+				content.WriteString("  This file extracts:\n")
+				for varName, jmesPath := range resolvedRequest.Extract {
+					content.WriteString(fmt.Sprintf("    %s = %s\n", varName, jmesPath))
+				}
+			}
+
+			content.WriteString("\n")
 		}
 
 		// Show validation configuration if present (for stress testing)

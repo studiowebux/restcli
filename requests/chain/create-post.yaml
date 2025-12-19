@@ -1,0 +1,22 @@
+- name: Create Post (YAML with extraction)
+  method: POST
+  url: https://jsonplaceholder.typicode.com/posts
+  headers:
+    Content-Type: application/json
+  body: |
+    {
+      "title": "Post by {{userName}}",
+      "body": "This is a post created by user {{userId}}",
+      "userId": {{userId}}
+    }
+  documentation:
+    description: Create a post using extracted user data
+    tags:
+      - chain
+      - yaml
+      - create
+  dependsOn:
+    - chain/login.http
+  extract:
+    postId: id
+    postTitle: title

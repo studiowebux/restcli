@@ -1,2 +1,3 @@
 ### Get Example
+# @category example
 GET https://jsonplaceholder.typicode.com/posts/{{env.TODO_ID}}

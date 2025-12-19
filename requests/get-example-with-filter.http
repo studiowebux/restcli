@@ -1,4 +1,7 @@
 ### Get Example
+# @category api
+# @category example
+# @category filtering
 GET https://jsonplaceholder.typicode.com/posts
 
 # @filter [?userId==`1`]

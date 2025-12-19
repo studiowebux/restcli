@@ -1,4 +1,7 @@
 ### Create Post
+# @category api
+# @category example
+# @category create
 POST https://jsonplaceholder.typicode.com/posts
 Content-Type: application/json
 

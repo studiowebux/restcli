@@ -76,7 +76,9 @@ Select format: `.http`, `.yaml`, `.json`, `.jsonc`
 
 Enter filename (extension added automatically).
 
-## Search
+## Search and Filtering
+
+### File Search
 
 | Key      | Action           |
 | -------- | ---------------- |
@@ -84,11 +86,18 @@ Enter filename (extension added automatically).
 | `n`      | Next match       |
 | `N`      | Previous match   |
 | `Ctrl+R` | Alternative next |
+| `t`      | Filter by tag    |
 
 Search is context-aware:
 
 1. Sidebar focused: searches filenames
 2. Response focused: searches response body
+
+### Category Filtering
+
+Press `t` to filter files by category. Type category name and press `Enter`. Press `T` to clear filter.
+
+See [Categories](categories.md) for details.
 
 **Search behavior:**
 

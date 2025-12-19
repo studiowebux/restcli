@@ -1,0 +1,5 @@
+### Get User's Posts (depends on login)
+# @category auth
+# @category chain
+# @depends chain/login.http
+GET https://jsonplaceholder.typicode.com/posts?userId={{userId}}

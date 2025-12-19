@@ -344,6 +344,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reload current file's requests to reflect any changes
 		m.loadRequestsFromCurrentFile()
 
+	case chainCompleteMsg:
+		m.loading = false
+		if msg.success {
+			if msg.response != nil {
+				m.currentResponse = msg.response
+			}
+			m.errorMsg = ""
+			m.fullErrorMsg = ""
+			m.statusMsg = msg.message
+			m.fullStatusMsg = msg.message
+			m.updateResponseView()
+			m.focusedPanel = "response"
+		} else {
+			m.errorMsg = msg.message
+			m.fullErrorMsg = msg.message
+			if len(msg.message) > 100 {
+				m.statusMsg = msg.message[:97] + "..."
+			} else {
+				m.statusMsg = msg.message
+			}
+		}
+
 	case requestExecutedMsg:
 		m.loading = false // Clear loading flag
 		m.requestCancelFunc = nil // Clear cancel function
@@ -650,6 +672,12 @@ type versionCheckMsg struct {
 
 type clearStatusMsg struct{}
 type clearErrorMsg struct{}
+
+type chainCompleteMsg struct {
+	success  bool
+	message  string
+	response *types.RequestResult
+}
 
 type errorMsg string
 

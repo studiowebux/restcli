@@ -26,6 +26,10 @@ type HttpRequest struct {
 	ExpectedBodyContains string            `json:"expectedBodyContains,omitempty" yaml:"expectedBodyContains,omitempty"` // Substring that body must contain
 	ExpectedBodyPattern  string            `json:"expectedBodyPattern,omitempty" yaml:"expectedBodyPattern,omitempty"`   // Regex pattern body must match
 	ExpectedBodyFields   map[string]string `json:"expectedBodyFields,omitempty" yaml:"expectedBodyFields,omitempty"`     // JSON field:value or field:pattern map for partial matching
+
+	// Request chaining fields
+	DependsOn []string                `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"` // List of file paths this request depends on
+	Extract   map[string]string       `json:"extract,omitempty" yaml:"extract,omitempty"`     // Map of varName -> JMESPath for extracting values from response
 }
 
 // EnsureDocumentationParsed parses documentation lines if not already parsed
