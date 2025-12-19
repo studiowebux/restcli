@@ -99,6 +99,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleJSONPathHistoryKeys(msg)
 	case ModeTagFilter:
 		return m.handleTagFilterKeys(msg)
+	case ModeMockServer:
+		return m.handleMockServerKeys(msg)
 	}
 
 	return nil
@@ -570,6 +572,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeStressTestResults
 		m.stressTestFocusedPane = "list"
 		return m.loadStressTestRuns()
+	case "M":
+		m.mode = ModeMockServer
 	case "t":
 		// Category filter mode
 		m.mode = ModeTagFilter

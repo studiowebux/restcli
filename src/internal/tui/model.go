@@ -12,6 +12,7 @@ import (
 	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/jsonpath"
+	"github.com/studiowebux/restcli/internal/mock"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
@@ -69,6 +70,7 @@ const (
 	ModeBodyOverride
 	ModeJSONPathHistory
 	ModeTagFilter
+	ModeMockServer
 )
 
 // Model represents the TUI state
@@ -202,6 +204,12 @@ type Model struct {
 	stressTestFocusedPane   string // "list" or "details"
 	stressTestConfigEdit          *stresstest.Config // Config being edited
 	stressTestConfigField         int // Which field is being edited
+
+	// Mock server state
+	mockServer        *mock.Server
+	mockServerRunning bool
+	mockConfigPath    string
+	mockLogs          []mock.RequestLog
 	stressTestConfigInput         string // Input buffer for config fields
 	stressTestConfigCursor        int // Cursor position in input
 	stressTestConfigInsertMode    bool // True when actively typing (disables vim navigation)
@@ -509,6 +517,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeVariablePromptInteractive
 		m.initInteractiveVarPrompt()
 
+	case mockServerStartedMsg:
+		m.mockServer = msg.server
+		m.mockConfigPath = msg.configPath
+		m.mockServerRunning = true
+		m.statusMsg = fmt.Sprintf("Mock server started at %s", msg.address)
+		// Start ticker for refreshing logs
+		cmd = m.tickMockServer()
+
+	case mockServerStoppedMsg:
+		m.mockServerRunning = false
+		m.mockServer = nil
+		m.mockConfigPath = ""
+		m.statusMsg = "Mock server stopped"
+
+	case mockServerTickMsg:
+		// Refresh mock server view if in that mode and server is running
+		if m.mode == ModeMockServer && m.mockServerRunning {
+			// Return another tick to keep refreshing
+			cmd = m.tickMockServer()
+		}
+
 	case clearStatusMsg:
 		m.statusMsg = ""
 
@@ -616,6 +645,8 @@ func (m Model) View() string {
 		return m.renderShellErrorsModal()
 	case ModeCreateFile:
 		return m.renderCreateFileModal()
+	case ModeMockServer:
+		return m.renderMockServer()
 	case ModeMRU:
 		return m.renderMRUModal()
 	case ModeDiff:
@@ -679,6 +710,8 @@ type chainCompleteMsg struct {
 	response *types.RequestResult
 }
 
+type mockServerTickMsg struct{}
+
 type errorMsg string
 
 // Helper methods for setting messages with optional timeout
@@ -722,4 +755,11 @@ func (m *Model) setErrorMessage(msg string) tea.Cmd {
 		})
 	}
 	return nil
+}
+
+// tickMockServer returns a command that will send mockServerTickMsg after a short delay
+func (m *Model) tickMockServer() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+		return mockServerTickMsg{}
+	})
 }

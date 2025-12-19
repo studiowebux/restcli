@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/studiowebux/restcli/internal/cli"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/converter"
+	"github.com/studiowebux/restcli/internal/mock"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/tui"
 )
@@ -95,6 +97,45 @@ Supports both local files and remote URLs.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runOpenapi2Http(cmd, args[0])
+	},
+}
+
+var mockCmd = &cobra.Command{
+	Use:   "mock",
+	Short: "Manage mock HTTP server",
+	Long: `Manage mock HTTP server for testing.
+
+Create a .mock.yaml or .mock.json file with your mock routes and responses.
+The mock server will match incoming requests and return configured responses.`,
+}
+
+var mockStartCmd = &cobra.Command{
+	Use:   "start [config-file]",
+	Short: "Start mock HTTP server",
+	Long: `Start a mock HTTP server with the specified configuration file.
+
+If no config file is provided, looks for .mock.yaml or .mock.json files in:
+  - mocks/ directory
+  - current directory`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runMockStart(cmd, args)
+	},
+}
+
+var mockStopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop running mock server",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runMockStop(cmd)
+	},
+}
+
+var mockLogsCmd = &cobra.Command{
+	Use:   "logs",
+	Short: "Show mock server logs",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runMockLogs(cmd)
 	},
 }
 
@@ -368,6 +409,12 @@ func init() {
 	rootCmd.AddCommand(curl2httpCmd)
 	rootCmd.AddCommand(openapi2httpCmd)
 	rootCmd.AddCommand(completionCmd)
+
+	// Add mock subcommands
+	mockCmd.AddCommand(mockStartCmd)
+	mockCmd.AddCommand(mockStopCmd)
+	mockCmd.AddCommand(mockLogsCmd)
+	rootCmd.AddCommand(mockCmd)
 }
 
 // runCLI executes a request file in CLI mode
@@ -437,4 +484,83 @@ func runOpenapi2Http(cmd *cobra.Command, specPath string) error {
 	}
 
 	return converter.Openapi2Http(opts)
+}
+
+// findMockConfig finds mock config files
+func findMockConfig(configPath string) (string, error) {
+	// If config path provided, use it
+	if configPath != "" {
+		if _, err := os.Stat(configPath); err != nil {
+			return "", fmt.Errorf("config file not found: %s", configPath)
+		}
+		return configPath, nil
+	}
+
+	// Search common locations
+	searchPaths := []string{
+		"mocks",
+		".",
+		"../mocks",  // Parent dir (common when running from src/)
+		"..",        // Parent directory
+	}
+
+	patterns := []string{"*.mock.yaml", "*.mock.yml", "*.mock.json"}
+
+	for _, dir := range searchPaths {
+		for _, pattern := range patterns {
+			matches, err := filepath.Glob(filepath.Join(dir, pattern))
+			if err == nil && len(matches) > 0 {
+				return matches[0], nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no mock config files found in mocks/, current, or parent directory")
+}
+
+// runMockStart starts the mock server
+func runMockStart(cmd *cobra.Command, args []string) error {
+	var configPath string
+	if len(args) > 0 {
+		configPath = args[0]
+	}
+
+	// Find config file
+	foundPath, err := findMockConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	// Load config
+	config, err := mock.LoadConfig(foundPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Get workdir for resolving relative paths
+	workdir := filepath.Dir(foundPath)
+
+	// Create and start server
+	server := mock.NewServer(config, workdir)
+	if err := server.Start(); err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+
+	fmt.Printf("Mock server started at %s\n", server.GetAddress())
+	fmt.Printf("Config: %s\n", foundPath)
+	fmt.Printf("Routes: %d\n", len(config.Routes))
+	fmt.Println("\nPress Ctrl+C to stop")
+
+	// Wait indefinitely
+	select {}
+}
+
+// runMockStop stops the mock server
+func runMockStop(cmd *cobra.Command) error {
+	return fmt.Errorf("stop command requires server management - use TUI (press 'M') or Ctrl+C on running server")
+}
+
+// runMockLogs shows mock server logs
+func runMockLogs(cmd *cobra.Command) error {
+	return fmt.Errorf("logs command requires active server - use TUI (press 'M') to view real-time logs")
 }

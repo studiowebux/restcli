@@ -1,0 +1,68 @@
+port: 8080
+host: localhost
+logging: true
+
+routes:
+  - name: Get Users
+    method: GET
+    path: /api/users
+    status: 200
+    headers:
+      Content-Type: application/json
+    body: |
+      [
+        {"id": 1, "name": "John Doe", "email": "john@example.com"},
+        {"id": 2, "name": "Jane Smith", "email": "jane@example.com"}
+      ]
+
+  - name: Get User by ID
+    method: GET
+    path: /api/users/1
+    status: 200
+    headers:
+      Content-Type: application/json
+    body: |
+      {"id": 1, "name": "John Doe", "email": "john@example.com"}
+
+  - name: Create User
+    method: POST
+    path: /api/users
+    status: 201
+    headers:
+      Content-Type: application/json
+    body: |
+      {"id": 3, "name": "New User", "email": "new@example.com", "created": true}
+
+  - name: Health Check
+    method: GET
+    path: /health
+    status: 200
+    headers:
+      Content-Type: application/json
+    body: '{"status": "ok", "timestamp": "2025-01-01T00:00:00Z"}'
+
+  - name: API with delay
+    method: GET
+    path: /api/slow
+    status: 200
+    delay: 2000
+    headers:
+      Content-Type: application/json
+    body: '{"message": "This response was delayed by 2 seconds"}'
+
+  - name: Error response
+    method: GET
+    path: /api/error
+    status: 500
+    headers:
+      Content-Type: application/json
+    body: '{"error": "Internal server error", "code": 500}'
+
+  - name: Catch-all prefix
+    method: GET
+    path: /api/
+    pathType: prefix
+    status: 404
+    headers:
+      Content-Type: application/json
+    body: '{"error": "Endpoint not found"}'
