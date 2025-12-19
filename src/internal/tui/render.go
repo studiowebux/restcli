@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -249,6 +250,33 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// isBinaryContent checks if the content appears to be binary data
+func isBinaryContent(s string) bool {
+	// Check if content is valid UTF-8
+	if !utf8.ValidString(s) {
+		return true
+	}
+
+	// Check for significant amount of non-printable characters
+	// Allow some control chars like \n, \r, \t
+	nonPrintableCount := 0
+	totalChars := 0
+	for _, r := range s {
+		totalChars++
+		// Consider anything below space (except \n, \r, \t) or above ~ as non-printable
+		if (r < ' ' && r != '\n' && r != '\r' && r != '\t') || r > '~' && r < 128 {
+			nonPrintableCount++
+		}
+	}
+
+	// If more than 10% non-printable, consider it binary
+	if totalChars > 0 && float64(nonPrintableCount)/float64(totalChars) > 0.1 {
+		return true
+	}
+
+	return false
 }
 
 // renderSidebar renders the file list sidebar
@@ -803,6 +831,21 @@ func (m *Model) updateResponseView() {
 			bodySource = m.filteredResponse
 		} else {
 			bodySource = m.currentResponse.Body
+		}
+
+		// Check if content is binary
+		if isBinaryContent(bodySource) {
+			// Show binary content indicator instead of garbage
+			content.WriteString(styleSubtle.Render(fmt.Sprintf(
+				"[Binary content - %s - %d bytes]\n\nResponse contains binary data that cannot be displayed as text.\n"+
+					"Content-Type: %s",
+				executor.FormatSize(len(bodySource)),
+				len(bodySource),
+				m.currentResponse.Headers["Content-Type"],
+			)))
+			m.responseContent = content.String()
+			m.responseView.SetContent(content.String())
+			return
 		}
 
 		// Try to pretty-print and highlight JSON

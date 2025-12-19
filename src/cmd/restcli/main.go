@@ -100,6 +100,19 @@ Supports both local files and remote URLs.`,
 	},
 }
 
+var har2httpCmd = &cobra.Command{
+	Use:   "har2http <har-file>",
+	Short: "Convert HAR file to .http files",
+	Long: `Convert HTTP Archive (HAR) file to .http files.
+
+HAR files are exported by browsers (Chrome DevTools, Firefox, etc.) and contain
+recorded HTTP requests. This command converts them to editable request files.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runHar2Http(cmd, args[0])
+	},
+}
+
 var mockCmd = &cobra.Command{
 	Use:   "mock",
 	Short: "Manage mock HTTP server",
@@ -224,6 +237,14 @@ var (
 	openapiFormat     string
 )
 
+// Flags for har2http
+var (
+	harOutputDir     string
+	harImportHeaders bool
+	harFormat        string
+	harFilter        string
+)
+
 func init() {
 	// Root command flags
 	rootCmd.PersistentFlags().StringVarP(&flagProfile, "profile", "p", "", "Profile to use")
@@ -255,6 +276,12 @@ func init() {
 	openapi2httpCmd.Flags().StringVarP(&openapiOutputDir, "output", "o", "requests", "Output directory")
 	openapi2httpCmd.Flags().StringVar(&openapiOrganizeBy, "organize-by", "tags", "Organization strategy (tags/paths/flat)")
 	openapi2httpCmd.Flags().StringVarP(&openapiFormat, "format", "f", "http", "Output format (http/json/yaml)")
+
+	// har2http flags
+	har2httpCmd.Flags().StringVarP(&harOutputDir, "output", "o", "requests", "Output directory")
+	har2httpCmd.Flags().BoolVar(&harImportHeaders, "import-headers", false, "Include sensitive headers (Auth, Cookie)")
+	har2httpCmd.Flags().StringVarP(&harFormat, "format", "f", "http", "Output format (http/json/yaml)")
+	har2httpCmd.Flags().StringVar(&harFilter, "filter", "", "Filter requests by URL pattern")
 
 	// Helper function to get .http files in a directory
 	getHttpFilesInDir := func(dir string) []string {
@@ -408,6 +435,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(curl2httpCmd)
 	rootCmd.AddCommand(openapi2httpCmd)
+	rootCmd.AddCommand(har2httpCmd)
 	rootCmd.AddCommand(completionCmd)
 
 	// Add mock subcommands
@@ -563,4 +591,17 @@ func runMockStop(cmd *cobra.Command) error {
 // runMockLogs shows mock server logs
 func runMockLogs(cmd *cobra.Command) error {
 	return fmt.Errorf("logs command requires active server - use TUI (press 'M') to view real-time logs")
+}
+
+// runHar2Http converts HAR file to .http files
+func runHar2Http(cmd *cobra.Command, harFile string) error {
+	opts := converter.Har2HttpOptions{
+		HarFile:       harFile,
+		OutputDir:     harOutputDir,
+		ImportHeaders: harImportHeaders,
+		Format:        harFormat,
+		Filter:        harFilter,
+	}
+
+	return converter.Har2Http(opts)
 }
