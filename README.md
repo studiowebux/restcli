@@ -42,7 +42,7 @@ No more merge conflicts. No more outdated collections. Each endpoint is a file. 
 19. **Error detail modals** with full stack traces
 20. **Embedded documentation** viewer with collapsible trees
 21. **Analytics tracking** with per-endpoint stats and aggregated metrics
-22. **Request history** with persistent storage and search
+22. **Request history** with persistent storage, search, and timestamp tracking
 23. **HTTP method color coding** in file list for quick identification
 
 ### Performance Testing
@@ -52,10 +52,15 @@ No more merge conflicts. No more outdated collections. Each endpoint is a file. 
 27. **Test result persistence** with historical comparison
 28. **One-click re-run** for saved test configurations
 
+### Development Tools
+29. **Mock server** with YAML-based endpoint definitions
+30. **Debug proxy** for inspecting HTTP traffic (localhost only, HTTP-only)
+31. **HAR file importer** (convert browser recordings to request files)
+
 ### Automation
-29. **CLI mode** for scripting (JSON/YAML output)
-30. **cURL converter** (convert cURL to request files)
-31. **OpenAPI converter** (generate requests from specs)
+32. **CLI mode** for scripting (JSON/YAML output)
+33. **cURL converter** (convert cURL to request files)
+34. **OpenAPI converter** (generate requests from specs)
 
 ## Installation
 
@@ -179,9 +184,13 @@ Complete documentation at [docs/](docs/)
 9. [Request Chaining](docs/guides/chaining.md)
 10. [Authentication](docs/guides/authentication.md)
 11. [Filtering & Querying](docs/guides/filtering.md)
-12. [Analytics](docs/guides/analytics.md)
-13. [Stress Testing](docs/guides/stress-testing.md)
-14. [Examples](docs/examples.md)
+12. [History](docs/guides/history.md)
+13. [Analytics](docs/guides/analytics.md)
+14. [Stress Testing](docs/guides/stress-testing.md)
+15. [Mock Server](docs/guides/mock-server.md)
+16. [Debug Proxy](docs/guides/debug-proxy.md)
+17. [HAR Importer](docs/converters/har2http.md)
+18. [Examples](docs/examples.md)
 
 ## License
 

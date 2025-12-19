@@ -70,6 +70,7 @@ Press `H` to open history viewer.
 **History List:**
 | Key | Action |
 | --- | ------ |
+| `/` | Search/filter entries |
 | `↑/↓` or `j/k` | Navigate entries (left pane) |
 | `Shift+↑/↓` or `J/K` | Scroll preview pane (right pane) |
 | `gg` | Go to first entry |
@@ -82,7 +83,23 @@ Press `H` to open history viewer.
 | `C` | Clear all history (with confirmation) |
 | `ESC` or `H` or `q` | Close viewer |
 
-Footer shows scroll position: `[current/total] (percentage%)`
+**Search Mode:**
+
+Press `/` to filter history entries. Search is case-insensitive and matches:
+- URL
+- HTTP method
+- Request name
+- Status code
+- Status text
+- Timestamp
+
+While searching:
+- Type to filter in real-time
+- `Backspace` to delete characters
+- `Enter` to keep filtered results
+- `ESC` to cancel and show all entries
+
+Footer shows: `Search: query█ [N results]` or scroll position `[current/total] (percentage%)`
 
 **Details View:**
 
