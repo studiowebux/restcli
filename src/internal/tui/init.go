@@ -71,10 +71,13 @@ func New(mgr *session.Manager, version string) (Model, error) {
 		analyticsDetailView:     viewport.New(80, 20),
 		stressTestListView:      viewport.New(80, 20),
 		stressTestDetailView:    viewport.New(80, 20),
-		historyPreviewVisible:   true, // Show preview by default
-		analyticsPreviewVisible: true, // Show preview by default
-		analyticsFocusedPane:    "list", // Start with list focused
-		stressTestFocusedPane:  "list", // Start with list focused
+		wsHistoryView:           viewport.New(80, 20), // Left pane: message history
+		wsMessageMenuView:       viewport.New(80, 20), // Right pane: predefined messages
+		wsFocusedPane:           "menu",               // Start with menu focused
+		historyPreviewVisible:   true,                 // Show preview by default
+		analyticsPreviewVisible: true,                 // Show preview by default
+		analyticsFocusedPane:    "list",               // Start with list focused
+		stressTestFocusedPane:   "list",               // Start with list focused
 	}
 
 	// Load requests from first file
@@ -154,29 +157,44 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".http" || ext == ".yaml" || ext == ".yml" || ext == ".json" || ext == ".jsonc" {
+		if ext == ".http" || ext == ".yaml" || ext == ".yml" || ext == ".json" || ext == ".jsonc" || ext == ".ws" {
 			relPath, _ := filepath.Rel(workdir, path)
 
 			// Parse file to get first HTTP method and tags
 			httpMethod := ""
 			tags := []string{}
-			if requests, err := parser.Parse(path); err == nil && len(requests) > 0 {
-				httpMethod = requests[0].Method
 
-				// Collect unique tags from all requests in file
-				tagSet := make(map[string]bool)
-				for _, req := range requests {
-					// Ensure documentation is parsed from DocumentationLines
-					req.EnsureDocumentationParsed(parser.ParseDocumentationLines)
+			// WebSocket files are handled differently
+			if ext == ".ws" {
+				// Use "WS" as the method indicator for WebSocket files
+				httpMethod = "WS"
 
-					if req.Documentation != nil {
-						for _, tag := range req.Documentation.Tags {
-							tagSet[tag] = true
-						}
+				// Try to parse WebSocket file for tags
+				if wsReq, err := parser.ParseWebSocketFile(path); err == nil && wsReq.Documentation != nil {
+					for _, tag := range wsReq.Documentation.Tags {
+						tags = append(tags, tag)
 					}
 				}
-				for tag := range tagSet {
-					tags = append(tags, tag)
+			} else {
+				// Regular HTTP request files
+				if requests, err := parser.Parse(path); err == nil && len(requests) > 0 {
+					httpMethod = requests[0].Method
+
+					// Collect unique tags from all requests in file
+					tagSet := make(map[string]bool)
+					for _, req := range requests {
+						// Ensure documentation is parsed from DocumentationLines
+						req.EnsureDocumentationParsed(parser.ParseDocumentationLines)
+
+						if req.Documentation != nil {
+							for _, tag := range req.Documentation.Tags {
+								tagSet[tag] = true
+							}
+						}
+					}
+					for tag := range tagSet {
+						tags = append(tags, tag)
+					}
 				}
 			}
 

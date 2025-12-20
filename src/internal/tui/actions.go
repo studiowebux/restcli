@@ -187,6 +187,186 @@ func (m *Model) executeRequest() tea.Cmd {
 	return m.executeRegularRequest(resolvedRequest, tlsConfig, warnings, shellErrs, profile)
 }
 
+// executeWebSocket opens WebSocket modal and loads predefined messages
+func (m *Model) executeWebSocket() tea.Cmd {
+	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
+		return func() tea.Msg {
+			return errorMsg("No file selected")
+		}
+	}
+
+	filePath := m.files[m.fileIndex].Path
+
+	// Parse the .ws file
+	wsReq, err := parser.ParseWebSocketFile(filePath)
+	if err != nil {
+		return func() tea.Msg {
+			return errorMsg(fmt.Sprintf("Failed to parse WebSocket file: %v", err))
+		}
+	}
+
+	// Initialize WebSocket state
+	m.wsActive = false // Not connected yet
+	// Only clear messages if switching to a different WebSocket URL
+	if m.wsURL != wsReq.URL {
+		m.wsMessages = []types.ReceivedMessage{}
+	}
+	m.wsConnectionStatus = "not connected"
+	m.wsURL = wsReq.URL
+	m.wsError = ""
+	m.wsPredefinedMessages = wsReq.Messages // Load all predefined messages
+
+	// Filter to only "send" messages for the menu
+	m.wsSendableMessages = []types.WebSocketMessage{}
+	for _, msg := range wsReq.Messages {
+		if msg.Direction == "send" {
+			m.wsSendableMessages = append(m.wsSendableMessages, msg)
+		}
+	}
+
+	m.wsSelectedMessageIndex = 0
+	m.wsFocusedPane = "menu"       // Start with menu focused
+	m.wsPendingMessageIndex = -1   // No pending message initially
+	m.mode = ModeWebSocket
+
+	// Initialize viewport content
+	m.updateWebSocketViews(m.width, m.height)
+
+	return nil
+}
+
+// sendWebSocketMessage sends a predefined message from the menu
+func (m *Model) sendWebSocketMessage(msgIndex int) tea.Cmd {
+	if msgIndex < 0 || msgIndex >= len(m.wsSendableMessages) {
+		return func() tea.Msg {
+			return errorMsg("Invalid message index")
+		}
+	}
+
+	// If not connected, initiate connection first and store message to send after
+	if !m.wsActive {
+		m.wsPendingMessageIndex = msgIndex
+		return m.connectWebSocket()
+	}
+
+	// Get the selected send message
+	msg := m.wsSendableMessages[msgIndex]
+
+	// Send via channel
+	if m.wsSendChannel != nil {
+		go func() {
+			select {
+			case m.wsSendChannel <- msg.Content:
+			default:
+				// Channel full or closed
+			}
+		}()
+	}
+
+	return nil
+}
+
+// connectWebSocket establishes WebSocket connection
+func (m *Model) connectWebSocket() tea.Cmd {
+	profile := m.sessionMgr.GetActiveProfile()
+	if profile == nil {
+		return func() tea.Msg {
+			return errorMsg("No active profile")
+		}
+	}
+
+	// Parse the .ws file again to get full request
+	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
+		return func() tea.Msg {
+			return errorMsg("No file selected")
+		}
+	}
+
+	filePath := m.files[m.fileIndex].Path
+	wsReq, err := parser.ParseWebSocketFile(filePath)
+	if err != nil {
+		return func() tea.Msg {
+			return errorMsg(fmt.Sprintf("Failed to parse WebSocket file: %v", err))
+		}
+	}
+
+	// Set connecting status
+	m.wsActive = true
+	m.wsConnectionStatus = "connecting"
+
+	// Create channels for WebSocket communication
+	m.wsMessageChannel = make(chan types.ReceivedMessage, 100)
+	m.wsSendChannel = make(chan string, 10)
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	m.wsCancelFunc = cancel
+
+	// Start persistent WebSocket connection in a goroutine
+	go func() {
+		msgChan := m.wsMessageChannel
+		sendChan := m.wsSendChannel
+		defer cancel()
+		defer close(msgChan)
+
+		// Create callback that sends messages to the channel
+		callback := func(message *types.ReceivedMessage, done bool) {
+			if done {
+				return
+			}
+			if message != nil {
+				select {
+				case msgChan <- *message:
+				default:
+				}
+			}
+		}
+
+		// Execute PERSISTENT WebSocket connection
+		err := executor.ExecuteWebSocketInteractive(
+			ctx,
+			wsReq.URL,
+			wsReq.Headers,
+			wsReq.Subprotocols,
+			profile.TLS,
+			sendChan,
+			callback,
+		)
+
+		// Send completion message if error
+		if err != nil {
+			msgChan <- types.ReceivedMessage{
+				Type:      "system",
+				Content:   fmt.Sprintf("Error: %v", err),
+				Timestamp: time.Now().Format(time.RFC3339),
+				Direction: "system",
+			}
+		}
+	}()
+
+	// Send initial status and wait for first message
+	return tea.Batch(
+		func() tea.Msg {
+			return wsConnectionStatusMsg{status: "connecting"}
+		},
+		m.waitForWsMessage(),
+	)
+}
+
+// waitForWsMessage waits for the next WebSocket message from the channel
+func (m *Model) waitForWsMessage() tea.Cmd {
+	return func() tea.Msg {
+		if m.wsMessageChannel == nil {
+			return errorMsg("No active WebSocket connection")
+		}
+		msg, ok := <-m.wsMessageChannel
+		if !ok {
+			return wsConnectionCompleteMsg{result: nil, err: nil}
+		}
+		return wsMessageReceivedMsg{message: &msg}
+	}
+}
+
 // executeRegularRequest executes a standard (non-streaming) HTTP request with cancellation support
 func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsConfig *types.TLSConfig, warnings, shellErrs []string, profile *types.Profile) tea.Cmd {
 	// Create a cancellable context
@@ -1214,6 +1394,14 @@ func (m *Model) loadRequestsFromCurrentFile() {
 	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
 		m.currentRequests = nil
 		m.currentRequest = nil
+		return
+	}
+
+	// Skip parsing for WebSocket files - they're executed directly
+	if m.files[m.fileIndex].HTTPMethod == "WS" {
+		m.currentRequests = nil
+		m.currentRequest = nil
+		m.errorMsg = "" // Clear any errors
 		return
 	}
 

@@ -131,12 +131,16 @@ func parseOpenAPISnippet(data []byte) ([]types.HttpRequest, error) {
 	return requests, nil
 }
 
-// DetectFormat detects whether a file is traditional .http format, YAML/JSON/JSONC, or OpenAPI
+// DetectFormat detects whether a file is traditional .http format, YAML/JSON/JSONC, OpenAPI, or WebSocket
 func DetectFormat(filePath string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	// Extension-based detection
 	switch ext {
+	case ".ws":
+		// WebSocket connection files
+		return "websocket", nil
+
 	case ".yaml", ".yml", ".json", ".jsonc":
 		// For YAML/JSON/JSONC files, check if it's OpenAPI
 		data, err := os.ReadFile(filePath)
@@ -182,6 +186,8 @@ func DetectFormat(filePath string) (string, error) {
 }
 
 // Parse is the main entry point for parsing any supported file format
+// Note: WebSocket (.ws) files are not supported by this function as they return
+// a different type (*types.WebSocketRequest). Use ParseWebSocketFile() directly.
 func Parse(filePath string) ([]types.HttpRequest, error) {
 	format, err := DetectFormat(filePath)
 	if err != nil {
@@ -189,6 +195,8 @@ func Parse(filePath string) ([]types.HttpRequest, error) {
 	}
 
 	switch format {
+	case "websocket":
+		return nil, fmt.Errorf("WebSocket files (.ws) must be parsed with ParseWebSocketFile()")
 	case "openapi":
 		data, err := os.ReadFile(filePath)
 		if err != nil {

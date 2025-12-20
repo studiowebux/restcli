@@ -84,9 +84,10 @@ var (
 	styleMethodDELETE  = lipgloss.NewStyle().Foreground(colorRed)
 	styleMethodHEAD    = lipgloss.NewStyle().Foreground(colorGray)
 	styleMethodOPTIONS = lipgloss.NewStyle().Foreground(colorGray)
+	styleMethodWS      = lipgloss.NewStyle().Foreground(colorCyan)
 )
 
-// getMethodStyle returns the appropriate style for an HTTP method
+// getMethodStyle returns the appropriate style for an HTTP method or protocol
 func getMethodStyle(method string) lipgloss.Style {
 	switch method {
 	case "GET":
@@ -103,6 +104,8 @@ func getMethodStyle(method string) lipgloss.Style {
 		return styleMethodHEAD
 	case "OPTIONS":
 		return styleMethodOPTIONS
+	case "WS":
+		return styleMethodWS
 	default:
 		return lipgloss.NewStyle()
 	}
