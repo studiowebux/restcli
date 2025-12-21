@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -273,7 +274,7 @@ func buildWebSocketTLSConfig(tlsConfig *types.TLSConfig) (*tls.Config, error) {
 
 // ExecuteWebSocketInteractive establishes a persistent WebSocket connection
 // and listens for messages to send via sendChan
-func ExecuteWebSocketInteractive(ctx context.Context, url string, headers map[string]string, subprotocols []string, tlsConfig *types.TLSConfig, sendChan <-chan string, callback types.WebSocketCallback) error {
+func ExecuteWebSocketInteractive(ctx context.Context, url string, headers map[string]string, subprotocols []string, tlsConfig *types.TLSConfig, resolver *parser.VariableResolver, sendChan <-chan string, callback types.WebSocketCallback) error {
 	startTime := time.Now()
 
 	// Build WebSocket dialer
@@ -350,8 +351,27 @@ func ExecuteWebSocketInteractive(ctx context.Context, url string, headers map[st
 				continue
 			}
 
+			// Resolve variables in message if resolver is provided
+			resolvedMessage := message
+			if resolver != nil {
+				resolved, err := resolver.Resolve(message)
+				if err != nil {
+					if callback != nil {
+						errorMsg := &types.ReceivedMessage{
+							Type:      "system",
+							Content:   fmt.Sprintf("Variable resolution failed: %v", err),
+							Timestamp: time.Now().Format(time.RFC3339),
+							Direction: "system",
+						}
+						callback(errorMsg, false)
+					}
+					continue
+				}
+				resolvedMessage = resolved
+			}
+
 			// Send as text message
-			err := conn.WriteMessage(websocket.TextMessage, []byte(message))
+			err := conn.WriteMessage(websocket.TextMessage, []byte(resolvedMessage))
 			if err != nil {
 				if callback != nil {
 					errorMsg := &types.ReceivedMessage{

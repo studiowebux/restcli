@@ -204,6 +204,53 @@ Search is context-aware based on focused panel and supports Regexes.
 | `j`/`k` | Scroll diff |
 | `Esc`   | Close diff  |
 
+## WebSocket Mode
+
+Interactive dual-pane mode for WebSocket connections.
+
+### Navigation
+
+| Key               | Action                           |
+| ----------------- | -------------------------------- |
+| `j`/`k` or `↑`/`↓` | Navigate messages or scroll history |
+| `Tab`             | Switch focus between panes       |
+| `gg`              | Jump to top                      |
+| `G`               | Jump to bottom                   |
+| `Ctrl+D`          | Page down                        |
+| `Ctrl+U`          | Page up                          |
+
+### Actions
+
+| Key     | Action                                |
+| ------- | ------------------------------------- |
+| `Enter` | Send selected message                 |
+| `r`     | Connect/reconnect                     |
+| `d`     | Disconnect                            |
+| `i`     | Compose custom message (when connected) |
+| `c`     | Copy last message to clipboard        |
+| `C`     | Clear message history (with confirmation) |
+| `e`     | Export message history to JSON        |
+| `/`     | Search messages                       |
+| `q`, `Esc` | Close WebSocket modal              |
+
+### Search Mode
+
+| Key         | Action                  |
+| ----------- | ----------------------- |
+| Type        | Filter messages         |
+| `Enter`     | Keep filter active      |
+| `Esc`       | Clear filter            |
+
+### Composer Mode
+
+| Key         | Action            |
+| ----------- | ----------------- |
+| Type        | Write message     |
+| `Enter`     | Send message      |
+| `Esc`       | Cancel            |
+| `Backspace` | Delete character  |
+| `Space`     | Insert space      |
+
 ## Quick Reference
 
 ### Essential Keys

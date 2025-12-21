@@ -1,201 +1,116 @@
 # WebSocket Examples
 
-This directory contains example WebSocket connection files (`.ws`) for testing REST CLI's WebSocket client functionality.
+Example WebSocket configurations demonstrating various features and use cases.
 
-## Prerequisites
+## Available Examples
 
-Deno runtime for running the local echo server.
+### Basic Echo Server
+**File:** `local-echo.ws`
+**Server:** `server/websocket/echo-server.ts`
 
-## Quick Start
-
-1. Start the echo server:
-```bash
-deno run --allow-net server/websocket/echo-server.ts
-```
-
-2. Open REST CLI TUI:
-```bash
-restcli
-```
-
-3. Navigate to `requests/examples/websocket/local-echo.ws`
-
-4. Execute the WebSocket connection
-
-## File Format (.ws)
-
-WebSocket files use a simple text format:
-
-```
-WEBSOCKET ws://localhost:8080
-
-### Message Name
-# @type text|json|binary
-# @timeout 30
-> message content
-<
-```
-
-### Syntax Elements
-
-**Connection Header**
-```
-WEBSOCKET <url>
-```
-Defines the WebSocket endpoint to connect to. Supports `ws://` and `wss://` schemes.
-
-**Headers** (optional)
-```
-Authorization: Bearer token123
-Custom-Header: value
-```
-Connection-level headers sent during WebSocket handshake.
-
-**Annotations** (optional)
-
-Connection-level:
-- `# @subprotocol <name>` - Request specific subprotocol
-- `# @tls.certFile <path>` - Client certificate for mTLS
-- `# @tls.keyFile <path>` - Private key for mTLS
-- `# @tls.caFile <path>` - Custom CA certificate
-- `# @tls.insecureSkipVerify true|false` - Skip TLS verification
-
-Message-level:
-- `# @type text|json|binary` - Message type (default: text)
-- `# @timeout <seconds>` - Receive timeout (default: 30)
-
-**Message Separator**
-```
-### Message Name
-```
-Starts a new message definition with an optional descriptive name.
-
-**Send Direction**
-```
-> message content
-```
-Indicates a message to send. Content can be inline or on following lines.
-
-For JSON messages:
-```
-> json
-{
-  "key": "value"
-}
-```
-
-**Receive Direction**
-```
-<
-```
-Indicates expecting a message from the server. Waits up to `@timeout` seconds.
-
-### Message Flow
-
-Messages are executed sequentially:
-1. `> ...` - Send message to server
-2. `<` - Wait for response from server
-3. Repeat
-
-Connection closes automatically after all messages are processed.
-
-## Examples
-
-### local-echo.ws
-
-Simple echo server test demonstrating:
-- Text messages
-- JSON messages
-- Multiple message exchanges
-- Automatic echoing
-
-### Usage Patterns
-
-**Simple Text Echo**
-```
-WEBSOCKET ws://localhost:8080
-
-### Greeting
-> Hello, World!
-<
-```
-
-**JSON Request/Response**
-```
-WEBSOCKET ws://localhost:8080
-
-### JSON Echo
-# @type json
-> json
-{
-  "action": "ping",
-  "timestamp": "2025-12-19T10:00:00Z"
-}
-<
-```
-
-**Authenticated Connection**
-```
-WEBSOCKET wss://api.example.com/ws
-Authorization: Bearer {{authToken}}
-
-### Subscribe
-> json
-{"action": "subscribe", "channel": "updates"}
-<
-```
-
-**mTLS Connection**
-```
-WEBSOCKET wss://secure.example.com/ws
-# @tls.certFile certs/client.crt
-# @tls.keyFile certs/client.key
-# @tls.caFile certs/ca.crt
-
-### Secure Handshake
-> Hello
-<
-```
-
-**Custom Timeout**
-```
-WEBSOCKET ws://slow-server.com
-
-### Long Wait
-# @timeout 120
-> Request data
-<
-```
-
-## Server Setup
-
-The included `echo-server.ts` provides a simple WebSocket server for testing:
+Simple echo server that reflects back all messages sent to it. Good for basic WebSocket testing.
 
 ```bash
-# Default port 8080
+# Start server
 deno run --allow-net server/websocket/echo-server.ts
 
-# Custom port
-deno run --allow-net server/websocket/echo-server.ts 9000
+# Run in restcli
+restcli requests/examples/websocket/local-echo.ws
+```
+
+### Authentication
+**File:** `auth-example.ws`
+**Server:** `server/websocket/auth-server.ts`
+
+Demonstrates WebSocket connections with Bearer token authentication. The server validates the Authorization header before accepting the connection.
+
+Valid token: `demo-token-12345`
+
+```bash
+# Start server
+deno run --allow-net server/websocket/auth-server.ts
+
+# Run in restcli
+restcli requests/examples/websocket/auth-example.ws
 ```
 
 Features:
-- Echoes all received messages
-- Logs connection events
-- Handles multiple concurrent connections
-- Graceful shutdown on Ctrl+C
+- Bearer token authentication
+- Connection rejection for invalid tokens
+- Authenticated message echoing
 
-## Notes
+### Subprotocol: Chat
+**File:** `subprotocol-chat.ws`
+**Server:** `server/websocket/subprotocol-server.ts`
 
-Phase 1 (Current):
-- Parser and executor foundation complete
-- Example files created
-- Local echo server available
+Demonstrates the "chat" subprotocol with structured message types.
 
-Phase 2 (TUI Integration):
-- Split-pane modal for live messaging
-- Real-time message history
-- Interactive message composition
-- Connection status display
+```bash
+# Start server
+deno run --allow-net server/websocket/subprotocol-server.ts
 
-WebSocket support is completely isolated from HTTP/REST functionality. `.ws` files are recognized but require Phase 2 TUI integration for execution.
+# Run in restcli
+restcli requests/examples/websocket/subprotocol-chat.ws
+```
+
+Message format:
+```json
+{
+  "type": "message",
+  "text": "Your message here"
+}
+```
+
+Supported message types:
+- `message` - Chat messages
+- `ping` - Ping/pong for keepalive
+
+### Subprotocol: JSON-RPC
+**File:** `subprotocol-jsonrpc.ws`
+**Server:** `server/websocket/subprotocol-server.ts`
+
+Demonstrates JSON-RPC 2.0 protocol over WebSocket.
+
+```bash
+# Start server
+deno run --allow-net server/websocket/subprotocol-server.ts
+
+# Run in restcli
+restcli requests/examples/websocket/subprotocol-jsonrpc.ws
+```
+
+Supported methods:
+- `echo` - Echoes back the parameters
+- `ping` - Returns current timestamp
+- `time` - Returns current server time
+
+Request format:
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "echo",
+  "params": {"message": "test"},
+  "id": 1
+}
+```
+
+## Running Examples
+
+All WebSocket examples can be executed in restcli's TUI mode:
+
+```bash
+# Interactive TUI
+restcli
+
+# Direct execution
+restcli requests/examples/websocket/local-echo.ws
+```
+
+## Features Demonstrated
+
+- Basic send/receive messaging
+- Authentication with headers
+- Subprotocol negotiation
+- Structured message protocols
+- Error handling
+- Connection management

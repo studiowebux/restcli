@@ -68,10 +68,36 @@ func (m *Model) renderWebSocketModal() string {
 
 	// Build header
 	header := headerStyle.Render(fmt.Sprintf(" WebSocket: %s ", m.wsURL))
-	status := statusStyle.Render(fmt.Sprintf(" Status: %s | Messages: %d/%d ",
+
+	// Color-code status based on connection state
+	var statusColor string
+	var statusIndicator string
+	switch m.wsConnectionStatus {
+	case "connected":
+		statusColor = "10" // Green
+		statusIndicator = "●"
+	case "connecting":
+		statusColor = "226" // Yellow
+		statusIndicator = "◐"
+	case "disconnected", "not connected":
+		statusColor = "241" // Gray
+		statusIndicator = "○"
+	default:
+		statusColor = "9" // Red for errors
+		statusIndicator = "✖"
+	}
+
+	statusColorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(statusColor)).
+		Bold(true)
+
+	statusText := fmt.Sprintf(" Status: %s %s | Messages: %d/%d ",
+		statusIndicator,
 		m.wsConnectionStatus,
 		len(m.wsMessages),
-		len(m.wsSendableMessages)))
+		len(m.wsSendableMessages))
+
+	status := statusColorStyle.Render(statusText)
 
 	// Viewport dimensions are set in updateWebSocketViews(), not here
 
@@ -156,9 +182,9 @@ func (m *Model) renderWebSocketModal() string {
 		}
 
 		if m.wsFocusedPane == "menu" {
-			footer = statusStyle.Render(fmt.Sprintf(" j/k: Select | Enter: Send | /: Search | c: Copy | C: Clear | %s | Tab: Switch | q: Close ", connectionAction))
+			footer = statusStyle.Render(fmt.Sprintf(" j/k: Select | Enter: Send | /: Search | c: Copy | C: Clear | e: Export | %s | Tab: Switch | q: Close ", connectionAction))
 		} else {
-			footer = statusStyle.Render(fmt.Sprintf(" j/k: Scroll | /: Search | c: Copy | C: Clear | %s | Tab: Switch | q: Close ", connectionAction))
+			footer = statusStyle.Render(fmt.Sprintf(" j/k: Scroll | /: Search | c: Copy | C: Clear | e: Export | %s | Tab: Switch | q: Close ", connectionAction))
 		}
 	}
 
@@ -607,6 +633,14 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 				return clearWSStatusMsg{}
 			})
+		}
+		return nil
+
+	case "e":
+		// Export message history to file
+		m.wsLastKey = ""
+		if len(m.wsMessages) > 0 {
+			return m.exportWebSocketMessages()
 		}
 		return nil
 

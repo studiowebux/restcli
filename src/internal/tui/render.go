@@ -1048,6 +1048,18 @@ OAUTH
   o            Start OAuth flow
   O            Configure OAuth
 
+WEBSOCKET
+  Enter        Send selected message
+  r            Connect/reconnect
+  d            Disconnect
+  i            Compose custom message
+  c            Copy last message
+  C            Clear history
+  e            Export to JSON
+  /            Search messages
+  Tab          Switch panes
+  q, Esc       Close modal
+
 TEXT INPUT (in modals)
   Ctrl+V       Paste from clipboard (recommended)
   Cmd+V        Paste from clipboard (macOS, may not work in Terminal.app)

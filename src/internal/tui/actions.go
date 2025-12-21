@@ -322,13 +322,41 @@ func (m *Model) connectWebSocket() tea.Cmd {
 			}
 		}
 
+		// Create variable resolver for message resolution
+		session := m.sessionMgr.GetSession()
+		resolver := parser.NewVariableResolver(
+			profile.Variables,
+			session.Variables,
+			nil, // No CLI vars for WebSocket
+			parser.LoadSystemEnv(),
+		)
+
+		// Merge headers: profile headers first, then .ws file headers (which override)
+		mergedHeaders := make(map[string]string)
+		// Copy profile headers first
+		if profile.Headers != nil {
+			for k, v := range profile.Headers {
+				mergedHeaders[k] = v
+			}
+		}
+		// Copy .ws file headers second (these override profile headers)
+		if wsReq.Headers != nil {
+			for k, v := range wsReq.Headers {
+				mergedHeaders[k] = v
+			}
+		}
+
+		// TODO: OAuth auto-injection - fetch token if profile.OAuth.Enabled and inject as Authorization header
+		// For now, users can manually add "Authorization: Bearer <token>" in profile or .ws file headers
+
 		// Execute PERSISTENT WebSocket connection
 		err := executor.ExecuteWebSocketInteractive(
 			ctx,
 			wsReq.URL,
-			wsReq.Headers,
+			mergedHeaders,
 			wsReq.Subprotocols,
 			profile.TLS,
+			resolver,
 			sendChan,
 			callback,
 		)
@@ -364,6 +392,32 @@ func (m *Model) waitForWsMessage() tea.Cmd {
 			return wsConnectionCompleteMsg{result: nil, err: nil}
 		}
 		return wsMessageReceivedMsg{message: &msg}
+	}
+}
+
+// exportWebSocketMessages exports the message history to a JSON file
+func (m *Model) exportWebSocketMessages() tea.Cmd {
+	return func() tea.Msg {
+		if len(m.wsMessages) == 0 {
+			return setWSStatusMsg{message: "No messages to export"}
+		}
+
+		// Generate filename with timestamp
+		timestamp := time.Now().Format("20060102-150405")
+		filename := fmt.Sprintf("websocket-messages-%s.json", timestamp)
+
+		// Marshal messages to JSON
+		data, err := json.MarshalIndent(m.wsMessages, "", "  ")
+		if err != nil {
+			return setWSStatusMsg{message: fmt.Sprintf("Export failed: %v", err)}
+		}
+
+		// Write to file
+		if err := os.WriteFile(filename, data, 0644); err != nil {
+			return setWSStatusMsg{message: fmt.Sprintf("Export failed: %v", err)}
+		}
+
+		return setWSStatusMsg{message: fmt.Sprintf("Exported %d messages to %s", len(m.wsMessages), filename)}
 	}
 }
 

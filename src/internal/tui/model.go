@@ -669,6 +669,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearWSStatusMsg:
 		m.wsStatusMsg = ""
 
+	case setWSStatusMsg:
+		m.wsStatusMsg = msg.message
+		// Auto-clear after 2 seconds
+		cmd = tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return clearWSStatusMsg{}
+		})
+
 	case errorMsg:
 		m.loading = false // Clear loading flag on error
 		fullMsg := string(msg)
@@ -834,6 +841,9 @@ type versionCheckMsg struct {
 type clearStatusMsg struct{}
 type clearErrorMsg struct{}
 type clearWSStatusMsg struct{}
+type setWSStatusMsg struct {
+	message string
+}
 
 type chainCompleteMsg struct {
 	success  bool
