@@ -987,6 +987,8 @@ FILE OPERATIONS
   F            Create new file
   R            Rename file
   r            Refresh file list
+  t            Filter by category
+  T            Clear category filter
 
 RESPONSE
   s            Save response to file
@@ -1000,14 +1002,34 @@ RESPONSE
   J            Filter response with JMESPath (toggle on/off)
   ↑/↓, j/k     Scroll response (when body shown)
 
+INLINE FILTER EDITOR (when J pressed)
+  Type         Enter JMESPath expression
+  Enter        Apply filter
+  Esc          Cancel filter editing
+  Ctrl+S       Save expression as bookmark
+  Up           Open bookmark/history selector
+
 CONFIGURATION
   v            Variable editor
   h            Header editor
-  p            Switch profile (press [e] to edit, [d] duplicate, [D] delete)
+  p            Switch profile
   n            Create new profile (when no search active)
   C            View current configuration
   P            Edit .profiles.json
-  S            Edit .session.json
+  Ctrl+X       View session config
+
+PROFILE SWITCHER (when in profile modal)
+  Enter        Switch to selected profile
+  e            Edit selected profile
+  d            Duplicate selected profile
+  D            Delete selected profile
+  n            Create new profile
+
+TOOLS
+  M            Mock server manager
+  y            Debug proxy viewer
+  A            Analytics viewer
+  S            Stress test results
 
 VARIABLE EDITOR (multi-value)
   m            Manage options for multi-value variable
@@ -1022,10 +1044,25 @@ DOCUMENTATION, HISTORY & ANALYTICS
   m            View documentation
   H            View history
   A            View analytics
-  p            Toggle preview pane (when in history/analytics)
-  t            Toggle grouping (when in analytics: per-file ↔ by path)
-  r            Replay request (when in history modal)
-  C            Clear all (when in history/analytics modal - with confirmation)
+
+DOCUMENTATION VIEWER (when in docs modal)
+  j/k          Navigate tree
+  Enter        Expand/collapse section
+  Space        Toggle section
+  Esc          Close viewer
+
+HISTORY VIEWER (when in history modal)
+  j/k          Navigate history
+  Enter        Load selected response
+  r            Replay selected request
+  p            Toggle preview pane
+  C            Clear all history (with confirmation)
+  Esc          Close viewer
+
+ANALYTICS VIEWER (when in analytics modal)
+  p            Toggle preview pane
+  t            Toggle grouping (per-file ↔ by path)
+  C            Clear all analytics (with confirmation)
 
 STRESS TESTING
   S            Open stress test results modal
@@ -1060,6 +1097,16 @@ WEBSOCKET
   Tab          Switch panes
   q, Esc       Close modal
 
+DIFF VIEWER (when comparing responses)
+  j/k          Scroll diff
+  Esc          Close diff
+
+MODAL OPERATIONS
+  Esc          Close modal
+  Enter        Confirm/Submit
+  Tab          Next field
+  Shift+Tab    Previous field
+
 TEXT INPUT (in modals)
   Ctrl+V       Paste from clipboard (recommended)
   Cmd+V        Paste from clipboard (macOS, may not work in Terminal.app)
@@ -1067,11 +1114,13 @@ TEXT INPUT (in modals)
   Ctrl+Y       Paste (alternative)
   Ctrl+K       Clear input
   Backspace    Delete character
+  Delete       Delete character forward
 
-OTHER
+HELP AND INFO
   ?            Show this help
   e            View full error details (when error in footer)
-  q            Quit
+  I            Show full status message
+  q            Quit application
 
 CLI MODE
   restcli <file>           Execute without profile (prompts for vars)
