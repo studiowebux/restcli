@@ -63,11 +63,26 @@ Maximum test duration. 0 = unlimited (stops when all requests complete).
 
 | Key            | Action                     |
 | -------------- | -------------------------- |
-| `↑/↓` or `j/k` | Navigate fields            |
-| `Enter`        | Edit field / move to next  |
+| `↑/↓`          | Navigate fields            |
+| `Enter`        | Confirm/select field       |
 | `Ctrl+S`       | Save config and start test |
 | `Ctrl+L`       | Load saved configuration   |
+| `Backspace`    | Delete character           |
+| `Delete`       | Delete forward             |
+| `Left/Right`   | Move cursor                |
+| `Home/End`     | Move to start/end          |
 | `ESC`          | Cancel                     |
+
+**Note:** Request File field uses picker navigation only (not text editable).
+
+### Load Config Modal
+
+| Key            | Action          |
+| -------------- | --------------- |
+| `↑/↓` or `j/k` | Navigate list   |
+| `Enter`        | Load config     |
+| `d`            | Delete config   |
+| `ESC` or `q`   | Cancel          |
 
 ## Running a Test
 
@@ -106,6 +121,14 @@ After pressing `Ctrl+S`, test starts immediately.
 ### Stopping a Test
 
 Press `ESC` to stop test early. Partial results will be saved.
+
+### Keyboard Shortcuts (Progress Mode)
+
+| Key          | Action         |
+| ------------ | -------------- |
+| `ESC` or `q` | Stop test      |
+
+Stopping sets flag and waits for graceful shutdown.
 
 ## Viewing Results
 
@@ -151,13 +174,35 @@ Press `S` to open stress test results (split view).
 
 ### Keyboard Shortcuts (Results Mode)
 
-| Key            | Action                      |
-| -------------- | --------------------------- |
-| `↑/↓` or `j/k` | Navigate test runs (list)   |
-| `TAB`          | Switch focus (list/details) |
-| `d`            | Delete selected run         |
-| `n`            | Create new stress test      |
-| `ESC` or `q`   | Close viewer                |
+#### Focus Control
+
+| Key   | Action                      |
+| ----- | --------------------------- |
+| `Tab` | Switch focus (list/details) |
+
+Focus indicated by border color (cyan = focused, gray = unfocused).
+
+#### Navigation (Context-Aware)
+
+| Key            | Action          | Scope        |
+| -------------- | --------------- | ------------ |
+| `↑/↓` or `j/k` | Navigate/scroll | Focused pane |
+| `PgUp/PgDn`    | Page up/down    | Details only |
+| `g`            | Go to top       | Details only |
+| `G`            | Go to bottom    | Details only |
+
+#### Actions
+
+| Key          | Action               | Scope     |
+| ------------ | -------------------- | --------- |
+| `Enter`      | View run details     | List pane |
+| `d`          | Delete run           | List pane |
+| `r`          | Re-run test          | List pane |
+| `l`          | Load saved config    | All       |
+| `n`          | Create new test      | All       |
+| `ESC` or `q` | Close viewer         | All       |
+
+**Note:** `r` (re-run) requires the test to have a saved configuration. Navigation is context-aware based on focused pane.
 
 ## Saved Configurations
 

@@ -1031,6 +1031,41 @@ TOOLS
   A            Analytics viewer
   S            Stress test results
 
+MOCK SERVER (when in modal)
+  s            Start/stop server
+  c            Clear logs
+  j/k          Scroll logs
+  g/G          Top/bottom
+  Esc, q       Close modal
+
+DEBUG PROXY (when in viewer)
+  s            Start/stop proxy
+  c            Clear logs
+  j/k          Navigate requests
+  Ctrl+D/U     Half page down/up
+  Enter        View details
+  Esc, q       Close viewer
+
+ANALYTICS (when in viewer)
+  Tab          Switch focus (list/details)
+  j/k          Navigate/scroll (focused pane)
+  Enter        Load request file
+  p            Toggle preview pane
+  t            Toggle grouping
+  C            Clear all analytics
+  Esc, q       Close viewer
+
+STRESS TESTING (when in results)
+  Tab          Switch focus (list/details)
+  j/k          Navigate/scroll (focused pane)
+  n            New stress test
+  r            Re-run test
+  d            Delete run
+  l            Load saved config
+  Ctrl+S       Save & start (in config)
+  Ctrl+L       Load config (in config)
+  Esc, q       Close viewer
+
 VARIABLE EDITOR (multi-value)
   m            Manage options for multi-value variable
   s            Set active option
@@ -1086,6 +1121,11 @@ OAUTH
   O            Configure OAuth
 
 WEBSOCKET
+  j/k, ↑/↓     Navigate messages or scroll history
+  gg           Go to top
+  G            Go to bottom
+  Ctrl+D       Page down
+  Ctrl+U       Page up
   Enter        Send selected message
   r            Connect/reconnect
   d            Disconnect
