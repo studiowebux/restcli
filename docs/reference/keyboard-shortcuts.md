@@ -110,6 +110,86 @@ Search is context-aware based on focused panel and supports Regexes.
 | `A` | Analytics viewer    |
 | `S` | Stress test results |
 
+### Mock Server Manager
+
+| Key          | Action             |
+| ------------ | ------------------ |
+| `M`          | Open manager       |
+| `s`          | Start/stop server  |
+| `c`          | Clear logs         |
+| `j`/`k`      | Scroll logs        |
+| `g`/`G`      | Top/bottom         |
+| `PgUp/PgDn`  | Page up/down       |
+| `Esc` or `q` | Close manager      |
+
+### Debug Proxy
+
+**Proxy Viewer:**
+
+| Key          | Action             |
+| ------------ | ------------------ |
+| `y`          | Open proxy viewer  |
+| `s`          | Start/stop proxy   |
+| `c`          | Clear logs         |
+| `j`/`k`      | Navigate requests  |
+| `Ctrl+d/u`   | Half page down/up  |
+| `g`/`G`      | Top/bottom         |
+| `Enter`      | View details       |
+| `Esc` or `q` | Close viewer       |
+
+**Detail View:**
+
+| Key          | Action          |
+| ------------ | --------------- |
+| `j`/`k`      | Scroll content  |
+| `Ctrl+d/u`   | Half page       |
+| `g`/`G`      | Top/bottom      |
+| `Esc` or `q` | Return to list  |
+
+### Analytics Viewer
+
+| Key          | Action                      |
+| ------------ | --------------------------- |
+| `A`          | Open analytics              |
+| `Tab`        | Switch focus (list/details) |
+| `j`/`k`      | Navigate/scroll             |
+| `Enter`      | Load request file           |
+| `p`          | Toggle preview pane         |
+| `t`          | Toggle grouping             |
+| `C`          | Clear analytics             |
+| `Esc` or `q` | Close viewer                |
+
+### Stress Testing
+
+**Results Viewer:**
+
+| Key          | Action                      |
+| ------------ | --------------------------- |
+| `S`          | Open results                |
+| `Tab`        | Switch focus (list/details) |
+| `j`/`k`      | Navigate/scroll             |
+| `n`          | New test                    |
+| `r`          | Re-run test                 |
+| `d`          | Delete run                  |
+| `l`          | Load config                 |
+| `Esc` or `q` | Close viewer                |
+
+**Config Modal:**
+
+| Key          | Action               |
+| ------------ | -------------------- |
+| `↑/↓`        | Navigate fields      |
+| `Enter`      | Confirm field        |
+| `Ctrl+S`     | Save & start         |
+| `Ctrl+L`     | Load saved config    |
+| `Esc`        | Cancel               |
+
+**Progress View:**
+
+| Key          | Action     |
+| ------------ | ---------- |
+| `Esc` or `q` | Stop test  |
+
 ## Authentication
 
 | Key | Action                   |
@@ -203,6 +283,53 @@ Search is context-aware based on focused panel and supports Regexes.
 | ------- | ----------- |
 | `j`/`k` | Scroll diff |
 | `Esc`   | Close diff  |
+
+## WebSocket Mode
+
+Interactive dual-pane mode for WebSocket connections.
+
+### Navigation
+
+| Key               | Action                           |
+| ----------------- | -------------------------------- |
+| `j`/`k` or `↑`/`↓` | Navigate messages or scroll history |
+| `Tab`             | Switch focus between panes       |
+| `gg`              | Jump to top                      |
+| `G`               | Jump to bottom                   |
+| `Ctrl+D`          | Page down                        |
+| `Ctrl+U`          | Page up                          |
+
+### Actions
+
+| Key     | Action                                |
+| ------- | ------------------------------------- |
+| `Enter` | Send selected message                 |
+| `r`     | Connect/reconnect                     |
+| `d`     | Disconnect                            |
+| `i`     | Compose custom message (when connected) |
+| `c`     | Copy last message to clipboard        |
+| `C`     | Clear message history (with confirmation) |
+| `e`     | Export message history to JSON        |
+| `/`     | Search messages                       |
+| `q`, `Esc` | Close WebSocket modal              |
+
+### Search Mode
+
+| Key         | Action                  |
+| ----------- | ----------------------- |
+| Type        | Filter messages         |
+| `Enter`     | Keep filter active      |
+| `Esc`       | Clear filter            |
+
+### Composer Mode
+
+| Key         | Action            |
+| ----------- | ----------------- |
+| Type        | Write message     |
+| `Enter`     | Send message      |
+| `Esc`       | Cancel            |
+| `Backspace` | Delete character  |
+| `Space`     | Insert space      |
 
 ## Quick Reference
 

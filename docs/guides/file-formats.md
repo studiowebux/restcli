@@ -264,6 +264,83 @@ JSON with comments support.
 }
 ```
 
+## WebSocket Format (.ws)
+
+WebSocket connection definitions with message sequences.
+
+### Basic Structure
+
+```websocket
+WEBSOCKET url
+Header: value
+# @subprotocol protocol-name
+
+### Message Name
+# @type text|json|binary
+# @timeout 30
+> send content
+< receive/expect
+```
+
+### Connection Level
+
+```websocket
+WEBSOCKET ws://localhost:8080
+Authorization: Bearer token123
+# @subprotocol chat
+# @tls.certFile path/to/cert.pem
+```
+
+- `WEBSOCKET url` - Connection URL (ws:// or wss://)
+- Headers sent during WebSocket handshake
+- `# @subprotocol` - Negotiate application protocol
+- TLS directives for wss:// connections
+
+### Message Level
+
+```websocket
+### Ping Message
+# @type json
+# @timeout 10
+> {"action": "ping"}
+<
+```
+
+- `###` separates messages
+- `>` sends message to server
+- `<` receives/expects response
+- `# @type` - Message type (text, json, binary)
+- `# @timeout` - Per-message timeout in seconds
+
+### Example
+
+```websocket
+WEBSOCKET ws://localhost:8080
+Authorization: Bearer {{token}}
+
+### Subscribe
+> {"action": "subscribe", "channel": "updates"}
+<
+
+### Send Data
+# @type json
+> {"message": "Hello, WebSocket!"}
+<
+
+### Disconnect
+> {"action": "disconnect"}
+```
+
+### TUI Behavior
+
+WebSocket files open in interactive dual-pane modal:
+- **Left pane:** Message history with timestamps
+- **Right pane:** Predefined messages (menu)
+- Real-time bidirectional communication
+- Variable resolution in message content
+
+See [WebSocket guide](websocket.md) for complete documentation.
+
 ## OpenAPI Format
 
 REST CLI can use OpenAPI spec directly (per endpoint) without conversion.
@@ -346,9 +423,10 @@ With variable:
 
 ## Format Selection
 
-Choose based on preference:
+Choose based on use case:
 
-1. `.http`: Quick, minimal, easy to read
-2. `.yaml`: Structured, good for complex requests
+1. `.http`: Quick, minimal, HTTP requests
+2. `.yaml`: Structured, complex HTTP requests
 3. `.json`: Strict schema, IDE validation
 4. `.jsonc`: JSON with comment support
+5. `.ws`: WebSocket connections with interactive TUI

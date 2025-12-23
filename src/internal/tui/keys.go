@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
@@ -105,6 +106,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleProxyViewerKeys(msg)
 	case ModeProxyDetail:
 		return m.handleProxyDetailKeys(msg)
+	case ModeWebSocket:
+		return m.handleWebSocketKeys(msg)
 	}
 
 	return nil
@@ -353,6 +356,15 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.statusMsg = "Request already in progress"
 			return nil
 		}
+
+		// Check if current file is a WebSocket file
+		if len(m.files) > 0 && m.fileIndex < len(m.files) {
+			if m.files[m.fileIndex].HTTPMethod == "WS" {
+				m.statusMsg = "Connecting to WebSocket..."
+				return m.executeWebSocket()
+			}
+		}
+
 		m.statusMsg = "Executing request..."
 		return m.executeRequest()
 	case "i":
@@ -1685,8 +1697,11 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			for i, file := range m.files {
 				if file.Path == stat.FilePath {
 					m.fileIndex = i
+					m.adjustScrollOffset()
+					m.focusedPanel = "sidebar"
 					m.mode = ModeNormal
 					m.loadRequestsFromCurrentFile()
+					m.statusMsg = fmt.Sprintf("Loaded %s from analytics", filepath.Base(file.Path))
 					fileFound = true
 					break
 				}

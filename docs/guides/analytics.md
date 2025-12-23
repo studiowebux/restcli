@@ -75,21 +75,37 @@ Scroll indicators (▲/▼) appear when content exceeds viewport height.
 
 ### Keyboard Shortcuts
 
-| Key                  | Action                                 |
-| -------------------- | -------------------------------------- |
-| `↑/↓` or `j/k`       | Navigate entries (left pane)           |
-| `Shift+↑/↓` or `J/K` | Scroll detail pane (right pane)        |
-| `gg`                 | Go to first entry                      |
-| `G`                  | Go to last entry                       |
-| `PgUp/PgDn`          | Page up/down                           |
-| `Ctrl+u/d`           | Half page up/down                      |
-| `Enter`              | Load associated request file           |
-| `p`                  | Toggle detail pane visibility          |
-| `t`                  | Toggle grouping (per-file <-> by path) |
-| `C`                  | Clear all analytics data               |
-| `ESC` or `q`         | Close viewer                           |
+#### Focus Control
 
-Footer shows scroll position: `[current/total] (percentage%)`
+| Key   | Action                      |
+| ----- | --------------------------- |
+| `Tab` | Switch focus (list/details) |
+
+Focus indicated by border color (cyan = focused, gray = unfocused).
+
+#### Navigation (Context-Aware)
+
+| Key            | Action                      | Scope        |
+| -------------- | --------------------------- | ------------ |
+| `↑/↓` or `j/k` | Navigate/scroll             | Focused pane |
+| `gg`           | Go to top                   | Focused pane |
+| `G`            | Go to bottom                | Focused pane |
+| `Ctrl+u/d`     | Half page up/down           | Focused pane |
+| `PgUp/PgDn`    | Page up/down                | Focused pane |
+| `Home`         | Go to top                   | Focused pane |
+| `End`          | Go to bottom                | Focused pane |
+
+#### Actions
+
+| Key          | Action                                 | Scope     |
+| ------------ | -------------------------------------- | --------- |
+| `Enter`      | Load associated request file           | List pane |
+| `p`          | Toggle detail pane visibility          | All       |
+| `t`          | Toggle grouping (per-file <-> by path) | All       |
+| `C`          | Clear all analytics data               | All       |
+| `ESC` or `q` | Close viewer                           | All       |
+
+**Note:** Navigation is context-aware. When list pane is focused, `j/k` navigate entries. When details pane is focused, `j/k` scroll content. Footer shows scroll position: `[current/total] (percentage%)`
 
 ## Grouping Modes
 

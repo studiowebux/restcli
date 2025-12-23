@@ -1,3 +1,9 @@
+---
+title: Debug Proxy
+tags:
+  - guide
+---
+
 # Debug Proxy
 
 HTTP debugging proxy for local development and troubleshooting.

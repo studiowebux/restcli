@@ -1,3 +1,7 @@
+---
+title: Table of Contents
+---
+
 # Rest CLI - Table of Content
 
 - [Home](index.md)
@@ -17,6 +21,7 @@
   - [Variables](guides/variables.md)
   - [Filtering](guides/filtering.md)
   - [Streaming](guides/streaming.md)
+  - [WebSocket](guides/websocket.md)
   - [GraphQL](guides/graphql.md)
   - [History](guides/history.md)
   - [Analytics](guides/analytics.md)

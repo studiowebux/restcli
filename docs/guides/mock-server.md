@@ -1,3 +1,9 @@
+---
+title: Mock Server
+tags:
+  - guide
+---
+
 # Mock Server
 
 Run a configurable HTTP mock server for testing.

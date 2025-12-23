@@ -74,6 +74,7 @@ const (
 	ModeMockServer
 	ModeProxyViewer
 	ModeProxyDetail
+	ModeWebSocket
 )
 
 // Model represents the TUI state
@@ -309,6 +310,31 @@ type Model struct {
 	jsonpathHistorySearch   string              // Search filter for bookmarks
 	jsonpathHistoryMatches  []jsonpath.Bookmark // Filtered bookmarks
 	jsonpathHistorySearching bool                // True when in search mode
+
+	// WebSocket state (Phase 2: Split-pane modal)
+	wsActive                bool                       // True when WebSocket connection is active
+	wsMessages              []types.ReceivedMessage    // Message history (left pane)
+	wsConnectionStatus      string                     // Connection status: "connecting", "connected", "disconnected", "error"
+	wsHistoryView           viewport.Model             // Left pane: message history viewport
+	wsMessageMenuView       viewport.Model             // Right pane: predefined message menu viewport
+	wsMessageChannel        chan types.ReceivedMessage // Channel for receiving messages from executor
+	wsSendChannel           chan string                // Channel for sending user messages
+	wsCancelFunc            context.CancelFunc         // Function to cancel WebSocket connection
+	wsURL                   string                     // WebSocket URL being connected to
+	wsError                 string                     // WebSocket error message if any
+	wsPredefinedMessages    []types.WebSocketMessage   // All predefined messages from .ws file
+	wsSendableMessages      []types.WebSocketMessage   // Filtered "send" messages for menu
+	wsSelectedMessageIndex  int                        // Selected message in right pane menu
+	wsFocusedPane           string                     // "history" or "menu" - which pane has focus
+	wsConn                  interface{}                // Active WebSocket connection (for persistent mode)
+	wsPendingMessageIndex   int                        // Message to send after connection completes (-1 = none)
+	wsLastKey               string                     // Last key pressed (for detecting gg)
+	wsShowClearConfirm      bool                       // True when showing clear history confirmation dialog
+	wsSearchMode            bool                       // True when in search mode
+	wsSearchQuery           string                     // Current search query
+	wsStatusMsg             string                     // WebSocket-specific status message for footer
+	wsComposerMode          bool                       // True when in custom message composer mode
+	wsComposerMessage       string                     // Custom message being composed
 }
 
 // Init initializes the TUI
@@ -450,6 +476,67 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fullErrorMsg = ""
 		m.statusMsg = "Stream completed"
 
+	case wsMessageReceivedMsg:
+		// Add message to list
+		if msg.message != nil {
+			m.wsMessages = append(m.wsMessages, *msg.message)
+
+			// Update history viewport with new message
+			modalWidth := m.width - 6
+			modalHeight := m.height - 3
+			paneHeight := modalHeight - 4
+			historyWidth := (modalWidth * 6) / 10
+			m.updateWebSocketHistoryView(historyWidth-4, paneHeight-2)
+
+			// Auto-scroll to bottom to show latest message
+			m.wsHistoryView.GotoBottom()
+
+			// Update connection status based on message type
+			if msg.message.Type == "system" {
+				if strings.Contains(msg.message.Content, "Connected to") {
+					m.wsConnectionStatus = "connected"
+
+					// Send pending message if any
+					if m.wsPendingMessageIndex >= 0 && m.wsPendingMessageIndex < len(m.wsSendableMessages) {
+						pendingMsg := m.wsSendableMessages[m.wsPendingMessageIndex]
+						if m.wsSendChannel != nil {
+							go func() {
+								select {
+								case m.wsSendChannel <- pendingMsg.Content:
+								default:
+								}
+							}()
+						}
+						m.wsPendingMessageIndex = -1 // Clear pending message
+					}
+				} else if strings.Contains(msg.message.Content, "Disconnected") || strings.Contains(msg.message.Content, "Error") {
+					m.wsActive = false
+					m.wsConnectionStatus = "disconnected"
+				}
+			}
+		}
+
+		// Wait for next message if connection still active
+		if m.wsActive {
+			return m, m.waitForWsMessage()
+		}
+
+	case wsConnectionStatusMsg:
+		m.wsConnectionStatus = msg.status
+		m.statusMsg = fmt.Sprintf("WebSocket: %s", msg.status)
+
+	case wsConnectionCompleteMsg:
+		m.wsActive = false
+		m.wsConnectionStatus = "disconnected"
+		m.wsMessageChannel = nil
+		m.wsCancelFunc = nil
+		if msg.err != nil {
+			m.wsError = msg.err.Error()
+			m.errorMsg = fmt.Sprintf("WebSocket error: %v", msg.err)
+		} else {
+			m.statusMsg = "WebSocket connection closed"
+		}
+
 	case oauthSuccessMsg:
 		m.statusMsg = fmt.Sprintf("OAuth successful! Token stored (expires in %d seconds)", msg.expiresIn)
 
@@ -579,6 +666,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errorMsg = ""
 		m.fullErrorMsg = ""
 
+	case clearWSStatusMsg:
+		m.wsStatusMsg = ""
+
+	case setWSStatusMsg:
+		m.wsStatusMsg = msg.message
+		// Auto-clear after 2 seconds
+		cmd = tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return clearWSStatusMsg{}
+		})
+
 	case errorMsg:
 		m.loading = false // Clear loading flag on error
 		fullMsg := string(msg)
@@ -693,6 +790,8 @@ func (m Model) View() string {
 		return m.renderBodyOverrideModal()
 	case ModeJSONPathHistory:
 		return m.renderJSONPathHistoryModal()
+	case ModeWebSocket:
+		return m.renderWebSocketModal()
 	default:
 		return m.renderMain()
 	}
@@ -741,6 +840,10 @@ type versionCheckMsg struct {
 
 type clearStatusMsg struct{}
 type clearErrorMsg struct{}
+type clearWSStatusMsg struct{}
+type setWSStatusMsg struct {
+	message string
+}
 
 type chainCompleteMsg struct {
 	success  bool
@@ -752,6 +855,20 @@ type mockServerTickMsg struct{}
 type mockLogReceivedMsg struct{}
 type proxyViewerTickMsg struct{}
 type proxyLogReceivedMsg struct{}
+
+// WebSocket message types
+type wsMessageReceivedMsg struct {
+	message *types.ReceivedMessage
+}
+
+type wsConnectionStatusMsg struct {
+	status string // "connecting", "connected", "disconnected", "error"
+}
+
+type wsConnectionCompleteMsg struct {
+	result *types.WebSocketResult
+	err    error
+}
 
 type errorMsg string
 
