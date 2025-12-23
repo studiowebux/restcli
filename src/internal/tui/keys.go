@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
@@ -1696,8 +1697,11 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			for i, file := range m.files {
 				if file.Path == stat.FilePath {
 					m.fileIndex = i
+					m.adjustScrollOffset()
+					m.focusedPanel = "sidebar"
 					m.mode = ModeNormal
 					m.loadRequestsFromCurrentFile()
+					m.statusMsg = fmt.Sprintf("Loaded %s from analytics", filepath.Base(file.Path))
 					fileFound = true
 					break
 				}
