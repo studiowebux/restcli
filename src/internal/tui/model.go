@@ -12,6 +12,7 @@ import (
 	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/jsonpath"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/mock"
 	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
@@ -84,6 +85,7 @@ type Model struct {
 	analyticsManager  *analytics.Manager
 	historyManager    *history.Manager
 	bookmarkManager   *jsonpath.BookmarkManager
+	keybinds          *keybinds.Registry
 	mode              Mode
 	version           string
 	updateAvailable   bool

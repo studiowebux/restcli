@@ -14,6 +14,7 @@ import (
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/jsonpath"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
@@ -47,12 +48,38 @@ func New(mgr *session.Manager, version string) (Model, error) {
 		fmt.Fprintf(os.Stderr, "warning: jsonpath bookmarks disabled: %v\n", err)
 	}
 
+	// Initialize keybindings (load user config or use defaults)
+	configPath, err := keybinds.GetDefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: using default keybindings: %v\n", err)
+		configPath = "" // Will trigger defaults
+	}
+
+	// Auto-create keybinds.json on first run if it doesn't exist
+	if configPath != "" {
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			// Create the config file with examples
+			if err := keybinds.CreateExampleConfig(configPath); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not create keybinds.json: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Created example keybinds configuration: %s\n", configPath)
+			}
+		}
+	}
+
+	keybindRegistry, err := keybinds.LoadOrDefault(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: keybinds config error, using defaults: %v\n", err)
+		keybindRegistry = keybinds.NewDefaultRegistry()
+	}
+
 	m := Model{
 		sessionMgr:            mgr,
 		analyticsManager:      analyticsManager,
 		historyManager:        historyManager,
 		stressTestManager:     stressTestManager,
 		bookmarkManager:       bookmarkManager,
+		keybinds:              keybindRegistry,
 		mode:                  ModeNormal,
 		version:               version,
 		files:                 files,
