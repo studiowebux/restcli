@@ -49,47 +49,43 @@ func (m *Model) renderWebSocketModal() string {
 	// Styles
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"}).
+		Background(colorCyan).
 		Padding(0, 1)
 
 	paneStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(colorGray).
 		Padding(0, 1)
 
 	focusedPaneStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(colorCyan).
 		Padding(0, 1)
 
 	statusStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
+		Foreground(colorGray)
 
 	// Build header
 	header := headerStyle.Render(fmt.Sprintf(" WebSocket: %s ", m.wsURL))
 
 	// Color-code status based on connection state
-	var statusColor string
+	var statusColorStyle lipgloss.Style
 	var statusIndicator string
 	switch m.wsConnectionStatus {
 	case "connected":
-		statusColor = "10" // Green
+		statusColorStyle = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
 		statusIndicator = "●"
 	case "connecting":
-		statusColor = "226" // Yellow
+		statusColorStyle = lipgloss.NewStyle().Foreground(colorYellow).Bold(true)
 		statusIndicator = "◐"
 	case "disconnected", "not connected":
-		statusColor = "241" // Gray
+		statusColorStyle = lipgloss.NewStyle().Foreground(colorGray).Bold(true)
 		statusIndicator = "○"
 	default:
-		statusColor = "9" // Red for errors
+		statusColorStyle = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
 		statusIndicator = "✖"
 	}
-
-	statusColorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(statusColor)).
-		Bold(true)
 
 	statusText := fmt.Sprintf(" Status: %s %s | Messages: %d/%d ",
 		statusIndicator,
@@ -104,7 +100,7 @@ func (m *Model) renderWebSocketModal() string {
 	// Build left pane: message history
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("15"))
+		Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"})
 
 	historyTitle := titleStyle.Render("Message History")
 
@@ -123,14 +119,14 @@ func (m *Model) renderWebSocketModal() string {
 	var historyContent string
 	if m.wsSearchMode {
 		searchStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("226")).
+			Foreground(colorYellow).
 			Bold(true)
 		searchBar := searchStyle.Render(fmt.Sprintf("Search: %s█", m.wsSearchQuery))
 		historyContent = lipgloss.JoinVertical(lipgloss.Left, historyTitle, searchBar, "", m.wsHistoryView.View())
 	} else if m.wsSearchQuery != "" {
 		// Show active filter (not in edit mode)
 		filterStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(colorGray)
 		filterBar := filterStyle.Render(fmt.Sprintf("Filter: %s (/ to edit, esc to clear)", m.wsSearchQuery))
 		historyContent = lipgloss.JoinVertical(lipgloss.Left, historyTitle, filterBar, "", m.wsHistoryView.View())
 	} else {
@@ -168,7 +164,7 @@ func (m *Model) renderWebSocketModal() string {
 	// Show WebSocket-specific status message if set
 	if m.wsStatusMsg != "" {
 		statusMsgStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")).
+			Foreground(colorGreen).
 			Bold(true)
 		footer = statusMsgStyle.Render(fmt.Sprintf(" %s ", m.wsStatusMsg))
 	} else if m.wsSearchMode {
@@ -204,18 +200,17 @@ func (m *Model) renderWebSocketModal() string {
 	if m.wsShowClearConfirm {
 		confirmStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("214")).
-			Background(lipgloss.Color("235")).
+			BorderForeground(colorYellow).
 			Padding(1, 2).
 			Width(50)
 
 		confirmTitle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("214")).
+			Foreground(colorYellow).
 			Render("Clear Message History")
 
 		confirmText := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).
+			Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"}).
 			Render(fmt.Sprintf("\nAre you sure you want to clear all %d messages?\n\n[y] Yes   [n] No", len(m.wsMessages)))
 
 		confirmContent := lipgloss.JoinVertical(lipgloss.Left, confirmTitle, confirmText)
@@ -229,24 +224,23 @@ func (m *Model) renderWebSocketModal() string {
 	if m.wsComposerMode {
 		composerStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62")).
-			Background(lipgloss.Color("235")).
+			BorderForeground(colorCyan).
 			Padding(1, 2).
 			Width(60)
 
 		composerTitle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("62")).
+			Foreground(colorCyan).
 			Render("Compose Custom Message")
 
 		inputStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
+			Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"}).
 			Bold(true)
 
 		composerInput := inputStyle.Render(fmt.Sprintf("\n> %s█\n", m.wsComposerMessage))
 
 		composerHint := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(colorGray).
 			Render("Press Enter to send, Esc to cancel")
 
 		composerContent := lipgloss.JoinVertical(lipgloss.Left, composerTitle, composerInput, composerHint)
@@ -266,20 +260,20 @@ func (m *Model) updateWebSocketHistoryView(width, height int) {
 	m.wsHistoryView.Height = height
 
 	sentStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("10"))
+		Foreground(colorGreen)
 
 	receivedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("12"))
+		Foreground(colorBlue)
 
 	systemStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214"))
+		Foreground(colorYellow)
 
 	timestampStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
+		Foreground(colorGray)
 
 	if len(m.wsMessages) == 0 {
 		emptyMsg := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(colorGray).
 			Render("No messages yet...")
 		m.wsHistoryView.SetContent(emptyMsg)
 		return
@@ -303,7 +297,7 @@ func (m *Model) updateWebSocketHistoryView(width, height int) {
 	// Show empty state if no matches
 	if len(filteredMessages) == 0 {
 		emptyMsg := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(colorGray).
 			Render(fmt.Sprintf("No messages matching '%s'...", m.wsSearchQuery))
 		m.wsHistoryView.SetContent(emptyMsg)
 		return
@@ -337,7 +331,19 @@ func (m *Model) updateWebSocketHistoryView(width, height int) {
 
 		// Format message content with word wrapping
 		content := msg.Content
-		maxWidth := width - 15 // Leave space for timestamp + direction
+
+		// Calculate actual prefix width (timestamp + direction + spaces)
+		prefix := fmt.Sprintf("%s %s ",
+			timestampStyle.Render(timestamp),
+			directionStyle.Render(directionLabel),
+		)
+		prefixWidth := lipgloss.Width(prefix)
+
+		// Calculate max width for content, ensuring minimum width
+		maxWidth := width - prefixWidth - 2 // 2 for padding
+		if maxWidth < 20 {
+			maxWidth = 20 // Minimum reasonable width
+		}
 
 		// Create a wrapped style for the content
 		contentStyle := lipgloss.NewStyle().
@@ -350,17 +356,16 @@ func (m *Model) updateWebSocketHistoryView(width, height int) {
 		contentLines := strings.Split(wrappedContent, "\n")
 
 		// First line includes timestamp and direction
-		firstLine := fmt.Sprintf("%s %s %s",
-			timestampStyle.Render(timestamp),
-			directionStyle.Render(directionLabel),
+		firstLine := fmt.Sprintf("%s%s",
+			prefix,
 			contentLines[0],
 		)
 		messages = append(messages, firstLine)
 
 		// Subsequent lines are indented to align with content
 		for i := 1; i < len(contentLines); i++ {
-			indentedLine := fmt.Sprintf("%s   %s",
-				strings.Repeat(" ", 8), // 8 spaces for timestamp
+			indentedLine := fmt.Sprintf("%s%s",
+				strings.Repeat(" ", prefixWidth),
 				contentLines[i],
 			)
 			messages = append(messages, indentedLine)
@@ -378,19 +383,19 @@ func (m *Model) updateWebSocketMenuView(width, height int) {
 	m.wsMessageMenuView.Height = height
 
 	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"}).
+		Background(colorCyan).
 		Bold(true)
 
 	normalStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
+		Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"})
 
 	typeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
+		Foreground(colorGray)
 
 	if len(m.wsPredefinedMessages) == 0 {
 		emptyMsg := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(colorGray).
 			Render("No predefined messages...")
 		m.wsMessageMenuView.SetContent(emptyMsg)
 		return
@@ -398,7 +403,7 @@ func (m *Model) updateWebSocketMenuView(width, height int) {
 
 	if len(m.wsSendableMessages) == 0 {
 		emptyMsg := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(colorGray).
 			Render("No sendable messages...")
 		m.wsMessageMenuView.SetContent(emptyMsg)
 		return

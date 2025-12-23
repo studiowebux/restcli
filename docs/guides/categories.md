@@ -1,3 +1,9 @@
+---
+title: Categories and Filtering
+tags:
+  - guide
+---
+
 # Categories and Filtering
 
 ## Overview

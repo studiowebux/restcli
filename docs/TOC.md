@@ -1,3 +1,7 @@
+---
+title: Table of Contents
+---
+
 # Rest CLI - Table of Content
 
 - [Home](index.md)

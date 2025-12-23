@@ -1,3 +1,10 @@
+---
+title: har2http Converter
+description: Convert HAR files from browser developer tools to REST CLI request files.
+tags:
+  - converter
+---
+
 # HAR to HTTP Converter
 
 Convert HTTP Archive (HAR) files exported from browser developer tools into editable `.http` request files.

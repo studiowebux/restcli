@@ -149,8 +149,12 @@ func (m *Model) renderCreateFileModal() string {
 
 	// Show cursor at correct position
 	inputWithCursor := m.createFileInput[:m.createFileCursor] + "█" + m.createFileInput[m.createFileCursor:]
-	content := fmt.Sprintf("Working directory: %s\n\nFilename: %s\n\nFile type: %s\n(Press TAB to cycle)",
-		workdir, inputWithCursor, fileTypeDisplay)
+
+	// Wrap working directory path if it's too long
+	wrappedWorkdir := wrapText(workdir, 64)
+
+	content := fmt.Sprintf("Working directory:\n%s\n\nFilename: %s\n\nFile type: %s\n(Press TAB to cycle)",
+		wrappedWorkdir, inputWithCursor, fileTypeDisplay)
 
 	// Show error if present (wrapped to modal width)
 	if m.errorMsg != "" {
@@ -158,7 +162,9 @@ func (m *Model) renderCreateFileModal() string {
 		content += "\n\n" + styleError.Render(wrappedError)
 	}
 
-	content += "\n\nEnter filename (with optional path), then press Enter to create, ESC to cancel"
+	// Wrap instruction text to modal width
+	instruction := wrapText("Enter filename (with optional path), then press Enter to create, ESC to cancel", 64)
+	content += "\n\n" + instruction
 
 	return m.renderModal("Create New File", content, 70, 18)
 }
