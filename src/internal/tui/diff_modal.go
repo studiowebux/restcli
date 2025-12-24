@@ -158,8 +158,8 @@ func (m *Model) renderDiffSplitView(modalWidth, modalHeight int) string {
 // renderDiffModal renders the diff comparison modal
 func (m *Model) renderDiffModal() string {
 	// Use nearly full screen
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	var content string
 
@@ -206,16 +206,16 @@ func (m *Model) updateDiffView() {
 
 	if m.diffViewMode == "split" {
 		// Split view mode - populate left and right viewports
-		modalWidth := m.width - 6
-		modalHeight := m.height - 3
-		paneWidth := (modalWidth - 3) / 2
-		paneHeight := modalHeight - 6
+		modalWidth := m.width - ModalWidthMargin
+		modalHeight := m.height - ModalHeightMargin
+		paneWidth := (modalWidth - SplitPaneBorderWidth) / 2
+		paneHeight := modalHeight - ModalOverheadLines
 
 		// Set viewport dimensions
-		m.diffLeftView.Width = paneWidth - 4
-		m.diffLeftView.Height = paneHeight - 2
-		m.diffRightView.Width = paneWidth - 4
-		m.diffRightView.Height = paneHeight - 2
+		m.diffLeftView.Width = paneWidth - ViewportPaddingHorizontal
+		m.diffLeftView.Height = paneHeight - ViewportPaddingVertical
+		m.diffRightView.Width = paneWidth - ViewportPaddingHorizontal
+		m.diffRightView.Height = paneHeight - ViewportPaddingVertical
 
 		// Generate diff-styled content with background highlighting
 		leftContent, rightContent := compareTextSplitView(
@@ -234,8 +234,8 @@ func (m *Model) updateDiffView() {
 	} else {
 		// Unified diff view mode
 		// Set viewport dimensions
-		m.diffView.Width = m.width - 10
-		m.diffView.Height = m.height - 7
+		m.diffView.Width = m.width - ModalWidthMarginNarrow
+		m.diffView.Height = m.height - ContentOffsetStandard
 
 		var content strings.Builder
 

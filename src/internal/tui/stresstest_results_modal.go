@@ -11,8 +11,8 @@ import (
 
 // renderStressTestResults renders the stress test results modal with split view
 func (m *Model) renderStressTestResults() string {
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 	paneHeight := modalHeight - 4
 
 	// Split view: list on left, details on right
@@ -61,7 +61,7 @@ func (m *Model) renderStressTestResults() string {
 		RightBorderColor: detailBorderColor,
 		RightIsFocused:   rightIsFocused,
 		Footer:           "n: New | r: Re-run | l: Load Config | TAB: Switch Focus | ↑/↓ j/k: Navigate | g/G: Top/Bottom | d: Delete | ESC/q: Close",
-		LeftWidthRatio:   0.5, // Equal split
+		LeftWidthRatio:   SplitViewEqual,
 	}
 
 	return renderSplitPaneModal(cfg, m.width, m.height)

@@ -423,9 +423,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.wsMessages = append(m.wsMessages, *msg.message)
 
 			// Update history viewport with new message
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
-			paneHeight := modalHeight - 4
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
+			paneHeight := modalHeight - ViewportPaddingHorizontal
 			historyWidth := (modalWidth * 6) / 10
 			m.updateWebSocketHistoryView(historyWidth-4, paneHeight-2)
 

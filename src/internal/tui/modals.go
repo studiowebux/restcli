@@ -29,8 +29,8 @@ func (m Model) renderHelp() string {
 	helpView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorBlue).
-		Width(m.width - 10).
-		Height(m.height - 4).
+		Width(m.width - ModalWidthMarginNarrow).
+		Height(m.height - ModalHeightMarginMed).
 		Padding(1, 2).
 		Render(fullContent)
 
@@ -47,8 +47,8 @@ func (m Model) renderHelp() string {
 // renderDocumentation renders the documentation viewer modal with collapsible tree structure
 func (m *Model) renderDocumentation() string {
 	// Use nearly full screen but leave small margin
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	// Footer with keybinds
 	// Note: viewport dimensions are set in updateDocumentationView()
@@ -85,8 +85,8 @@ func min(a, b int) int {
 // renderHistory renders the history viewer modal with split view (Telescope-style)
 func (m *Model) renderHistory() string {
 	// Use nearly full screen but leave small margin
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	// Build footer with instructions and scroll position
 	var footerText string
@@ -123,7 +123,7 @@ func (m *Model) renderHistory() string {
 		RightBorderColor: colorGreen,
 		RightIsFocused:   false,
 		Footer:           footerText,
-		LeftWidthRatio:   0.5, // Equal split
+		LeftWidthRatio:   SplitViewEqual,
 	}
 
 	return renderSplitPaneModal(cfg, m.width, m.height)
@@ -143,8 +143,8 @@ func (m *Model) renderModalWithFooter(title, content, footer string, width, heig
 // Pass selectedLine=-1 to preserve existing scroll position
 func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, width, height, selectedLine int) string {
 	// For small terminals, use almost full screen
-	maxWidth := m.width - 4   // Leave minimal margin
-	maxHeight := m.height - 2 // Leave minimal margin
+	maxWidth := m.width - ViewportPaddingHorizontal   // Leave minimal margin
+	maxHeight := m.height - ModalHeightMarginSmall // Leave minimal margin
 
 	// Adjust requested dimensions to fit screen
 	if width > maxWidth {
@@ -169,16 +169,16 @@ func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, wi
 	if footer != "" {
 		footerLines = 2
 	}
-	contentHeight := height - 6 - footerLines
+	contentHeight := height - ModalOverheadLines - footerLines
 	if contentHeight < 1 {
 		// For very small terminals, reduce overhead
-		contentHeight = height - 4 - footerLines // Just border and title
+		contentHeight = height - ModalOverheadMinimal - footerLines // Just border and title
 		if contentHeight < 1 {
 			contentHeight = 1
 		}
 	}
 
-	m.modalView.Width = width - 4 // Account for horizontal padding (1 left + 1 right) * 2 for border
+	m.modalView.Width = width - ViewportPaddingHorizontal // Account for horizontal padding (1 left + 1 right) * 2 for border
 	if m.modalView.Width < 10 {
 		m.modalView.Width = 10
 	}
@@ -255,8 +255,8 @@ func (m *Model) renderShellErrorsModal() string {
 	}
 
 	// Use existing modal helper with footer
-	width := m.width - 6
-	height := m.height - 4
+	width := m.width - ModalWidthMargin
+	height := m.height - ModalOverheadMinimal
 	if width < 40 {
 		width = 40
 	}
@@ -274,8 +274,8 @@ func (m *Model) updateShellErrorsView() {
 
 func (m *Model) renderErrorDetailModal() string {
 	// Wrap error message for better readability
-	width := m.width - 6
-	height := m.height - 4
+	width := m.width - ModalWidthMargin
+	height := m.height - ModalOverheadMinimal
 	if width < 50 {
 		width = 50
 	}
@@ -284,7 +284,7 @@ func (m *Model) renderErrorDetailModal() string {
 	}
 
 	// Wrap the error text to fit the modal width
-	contentWidth := width - 4 // Account for modal padding/borders
+	contentWidth := width - ViewportPaddingHorizontal // Account for modal padding/borders
 	wrappedError := wrapText(m.fullErrorMsg, contentWidth)
 	content := styleError.Render(wrappedError)
 
@@ -293,8 +293,8 @@ func (m *Model) renderErrorDetailModal() string {
 
 func (m *Model) renderStatusDetailModal() string {
 	// Wrap status message for better readability
-	width := m.width - 6
-	height := m.height - 2
+	width := m.width - ModalWidthMargin
+	height := m.height - ModalHeightMarginSmall
 	if width < 50 {
 		width = 50
 	}
@@ -303,7 +303,7 @@ func (m *Model) renderStatusDetailModal() string {
 	}
 
 	// Wrap the status text to fit the modal width
-	contentWidth := width - 4 // Account for modal padding/borders
+	contentWidth := width - ViewportPaddingHorizontal // Account for modal padding/borders
 	wrappedStatus := wrapText(m.fullStatusMsg, contentWidth)
 	content := wrappedStatus
 

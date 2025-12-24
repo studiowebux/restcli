@@ -23,9 +23,9 @@ func (m Model) renderProxyModal() string {
 	var content strings.Builder
 
 	// Calculate dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
-	contentWidth := modalWidth - 4
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
+	contentWidth := modalWidth - ViewportPaddingHorizontal
 
 	if !m.proxyServerState.IsRunning() || m.proxyServerState.GetServer() == nil {
 		content.WriteString(styleTitleFocused.Render("Debug Proxy") + "\n\n")

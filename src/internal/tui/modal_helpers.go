@@ -43,7 +43,7 @@ func renderSplitPaneModal(cfg SplitPaneConfig, totalWidth, totalHeight int) stri
 		// Calculate split widths
 		ratio := cfg.LeftWidthRatio
 		if ratio <= 0 || ratio >= 1 {
-			ratio = 0.5 // Default to equal split
+			ratio = SplitViewEqual // Default to equal split
 		}
 
 		listWidth := int(float64(cfg.ModalWidth-3) * ratio)

@@ -15,8 +15,8 @@ import (
 // updateWebSocketViews updates the viewport content (call this when data changes)
 func (m *Model) updateWebSocketViews(width, height int) {
 	// Calculate pane dimensions
-	modalWidth := width - 6
-	modalHeight := height - 3
+	modalWidth := width - ModalWidthMargin
+	modalHeight := height - ModalHeightMargin
 	paneHeight := modalHeight - 3 // Leave breathing room, matches analytics modal pattern
 
 	// Split width: 60% history, 40% menu
@@ -41,8 +41,8 @@ func (m *Model) updateWebSocketViews(width, height int) {
 // Right pane: predefined message menu
 func (m *Model) renderWebSocketModal() string {
 	// Calculate pane dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 	paneHeight := modalHeight - 3 // Leave breathing room for header, status, and footer
 
 	// Split width: 60% history, 40% menu
@@ -465,8 +465,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 		case keybinds.ActionConfirm:
 			// Clear history
 			m.wsMessages = []types.ReceivedMessage{}
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			m.updateWebSocketHistoryView(historyWidth-4, paneHeight-2)
@@ -487,8 +487,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Exit search mode
 			m.wsSearchMode = false
 			m.wsSearchQuery = ""
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			m.updateWebSocketHistoryView(historyWidth-4, paneHeight-2)
@@ -501,8 +501,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Remove last character
 			if len(m.wsSearchQuery) > 0 {
 				m.wsSearchQuery = m.wsSearchQuery[:len(m.wsSearchQuery)-1]
-				modalWidth := m.width - 6
-				modalHeight := m.height - 3
+				modalWidth := m.width - ModalWidthMargin
+				modalHeight := m.height - ModalHeightMargin
 				paneHeight := modalHeight - 3
 				historyWidth := (modalWidth * 6) / 10
 				m.updateWebSocketHistoryView(historyWidth-4, paneHeight-3)
@@ -512,8 +512,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Add character to search query
 			if len(key) == 1 {
 				m.wsSearchQuery += key
-				modalWidth := m.width - 6
-				modalHeight := m.height - 3
+				modalWidth := m.width - ModalWidthMargin
+				modalHeight := m.height - ModalHeightMargin
 				paneHeight := modalHeight - 3
 				historyWidth := (modalWidth * 6) / 10
 				m.updateWebSocketHistoryView(historyWidth-4, paneHeight-3)
@@ -667,8 +667,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Go to first menu item
 			m.wsSelectedMessageIndex = 0
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -686,8 +686,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				m.wsSelectedMessageIndex = len(m.wsSendableMessages) - 1
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -705,8 +705,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				m.wsSelectedMessageIndex--
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -724,8 +724,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				m.wsSelectedMessageIndex++
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -749,8 +749,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				m.wsSelectedMessageIndex = len(m.wsSendableMessages) - 1
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -774,8 +774,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				m.wsSelectedMessageIndex = 0
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3

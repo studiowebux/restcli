@@ -172,12 +172,12 @@ func (m Model) renderMain() string {
 
 	// Fullscreen mode - show only response
 	if m.fullscreen {
-		response := m.renderResponse(m.width-4, m.height-5)
+		response := m.renderResponse(m.width-ViewportPaddingHorizontal, m.height-MainViewHeightOffset)
 		responseBox := lipgloss.NewStyle().
 			Border(lipgloss.ThickBorder()).
 			BorderForeground(colorCyan). // Cyan for focused (fullscreen) panel
-			Width(m.width - 2).
-			Height(m.height - 3). // Leave room for status bar + top border visibility
+			Width(m.width - MinimalBorderMargin).
+			Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
 			Padding(0).           // No padding inside box border
 			AlignVertical(lipgloss.Top).
 			Render(response)
@@ -197,11 +197,11 @@ func (m Model) renderMain() string {
 	if m.width < 100 {
 		sidebarWidth = m.width / 2
 	}
-	responseWidth := m.width - sidebarWidth - 4 // Account for borders
+	responseWidth := m.width - sidebarWidth - ViewportPaddingHorizontal // Account for borders
 
 	// Render components with borders
-	sidebar := m.renderSidebar(sidebarWidth-2, m.height-5) // -5 = -1 (status) -2 (borders) -2 (top visibility)
-	response := m.renderResponse(responseWidth-2, m.height-5)
+	sidebar := m.renderSidebar(sidebarWidth-MinimalBorderMargin, m.height-MainViewHeightOffset) // -5 = -1 (status) -2 (borders) -2 (top visibility)
+	response := m.renderResponse(responseWidth-MinimalBorderMargin, m.height-MainViewHeightOffset)
 
 	// Add borders - highlight the focused panel with cyan, unfocused with gray
 	sidebarBorderColor := colorGray
@@ -216,7 +216,7 @@ func (m Model) renderMain() string {
 		Border(lipgloss.ThickBorder()).
 		BorderForeground(sidebarBorderColor).
 		Width(sidebarWidth).
-		Height(m.height - 3). // Leave room for status bar + top border visibility
+		Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
 		Padding(0).           // No padding inside box border
 		AlignVertical(lipgloss.Top).
 		Render(sidebar)
@@ -225,7 +225,7 @@ func (m Model) renderMain() string {
 		Border(lipgloss.ThickBorder()).
 		BorderForeground(responseBorderColor).
 		Width(responseWidth).
-		Height(m.height - 3). // Leave room for status bar + top border visibility
+		Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
 		Padding(0).           // No padding inside box border
 		AlignVertical(lipgloss.Top).
 		Render(response)
@@ -300,7 +300,7 @@ func (m Model) renderSidebar(width, height int) string {
 	lines = append(lines, "")
 
 	// File list
-	pageSize := height - 4 // Reserve space for title, blank lines, footer, and padding
+	pageSize := height - ViewportPaddingHorizontal // Reserve space for title, blank lines, footer, and padding
 	if pageSize < 1 {
 		pageSize = 1
 	}
@@ -634,7 +634,7 @@ func (m Model) getFileListHeight() int {
 	// Must match the actual pageSize calculation in renderSidebar
 	// renderSidebar receives: m.height - 5 (from renderMain line 146)
 	// pageSize = height - 4 = (m.height - 5) - 4 = m.height - 9
-	return m.height - 9
+	return m.height - ContentOffsetSidebar
 }
 
 // updateViewport updates the response viewport
@@ -644,36 +644,36 @@ func (m *Model) updateViewport() {
 	var responseWidth int
 	if m.fullscreen {
 		// In fullscreen, use full width
-		responseWidth = m.width - 2 // Just account for borders
+		responseWidth = m.width - MinimalBorderMargin // Just account for borders
 	} else {
 		// In split view, account for sidebar
 		sidebarWidth := max(40, m.width*40/100)
 		if m.width < 100 {
 			sidebarWidth = m.width / 2
 		}
-		responseWidth = m.width - sidebarWidth - 4 // Account for borders
+		responseWidth = m.width - sidebarWidth - ViewportPaddingHorizontal // Account for borders
 	}
 
 	// Viewport width = renderResponse width - content padding
-	m.responseView.Width = responseWidth - 4 // -2 for renderResponse param, -2 for " " prefix padding in content
+	m.responseView.Width = responseWidth - ViewportPaddingHorizontal // -2 for renderResponse param, -2 for " " prefix padding in content
 	// Viewport height calculation:
 	// renderResponse gets: m.height - 5
 	// Applies Height(height): m.height - 5
 	// Content has: title (1) + blank (1) + viewport
 	// So viewport = m.height - 5 - 2 = m.height - 7
-	m.responseView.Height = m.height - 7
+	m.responseView.Height = m.height - ContentOffsetStandard
 
 	// Initialize help viewport
 	// Modal width: m.width - 10, Padding: 2 horizontal each side = 4, Border: included
 	// So viewport width = (m.width - 10) - 4 (horizontal padding) = m.width - 14
-	m.helpView.Width = m.width - 14
+	m.helpView.Width = m.width - HelpViewWidthOffset
 	if m.helpView.Width < 10 {
 		m.helpView.Width = 10
 	}
 	// Modal height: m.height - 4, Padding: 1 vertical each side = 2
 	// Content: title (1) + blank (1) + viewport + blank (1) + footer (1) = viewport + 4
 	// So viewport height = (m.height - 4) - 2 (padding) - 4 (non-viewport lines) = m.height - 10
-	m.helpView.Height = m.height - 10
+	m.helpView.Height = m.height - ContentOffsetHelp
 	if m.helpView.Height < 5 {
 		m.helpView.Height = 5
 	}
@@ -1307,8 +1307,8 @@ func (m Model) renderConfigView() string {
 func (m *Model) updateDocumentationView() {
 	// Set viewport dimensions for the modal (nearly full screen: m.width-6, m.height-3)
 	// Account for: border (2), padding (2), title+blank (2), footer+blank (2) = 8 total
-	m.modalView.Width = m.width - 10  // Modal content width minus padding
-	m.modalView.Height = m.height - 9 // Modal content height with footer
+	m.modalView.Width = m.width - ModalWidthMarginNarrow  // Modal content width minus padding
+	m.modalView.Height = m.height - ContentOffsetSidebar // Modal content height with footer
 
 	// Check if we have a request and documentation
 	if m.currentRequest == nil {
@@ -1476,8 +1476,8 @@ func (m *Model) updateDocumentationView() {
 // updateInspectView updates the inspect viewport content
 func (m *Model) updateInspectView() {
 	// Set viewport dimensions for the modal (nearly full screen: m.width-6, m.height-3)
-	m.modalView.Width = m.width - 10  // Modal content width minus padding
-	m.modalView.Height = m.height - 9 // Modal content height minus padding, title lines, and footer
+	m.modalView.Width = m.width - ModalWidthMarginNarrow  // Modal content width minus padding
+	m.modalView.Height = m.height - ContentOffsetSidebar // Modal content height minus padding, title lines, and footer
 
 	if m.currentRequest == nil {
 		m.modalView.SetContent("No request selected\n\nPress ESC to close")
@@ -1770,29 +1770,29 @@ func (m *Model) updateInspectView() {
 // updateHistoryView updates the history viewport content for split view (Telescope-style)
 func (m *Model) updateHistoryView() {
 	// Calculate dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
-	paneHeight := modalHeight - 4 // Account for borders and padding
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
+	paneHeight := modalHeight - ViewportPaddingHorizontal // Account for borders and padding
 
 	// Adjust viewport widths based on preview visibility
 	if m.historyState.GetPreviewVisible() {
 		// Split view mode: calculate widths for both panes
-		listWidth := (modalWidth - 3) / 2          // Left pane width
-		previewWidth := modalWidth - listWidth - 3 // Right pane width
+		listWidth := (modalWidth - SplitPaneBorderWidth) / 2          // Left pane width
+		previewWidth := modalWidth - listWidth - SplitPaneBorderWidth // Right pane width
 
 		// Set viewport dimensions for left pane (history list)
-		m.modalView.Width = listWidth - 4   // Account for padding and borders
-		m.modalView.Height = paneHeight - 2 // Account for title
+		m.modalView.Width = listWidth - ViewportPaddingHorizontal   // Account for padding and borders
+		m.modalView.Height = paneHeight - ViewportPaddingVertical // Account for title
 
 		// Set viewport dimensions for right pane (response preview)
 		previewView := m.historyState.GetPreviewView()
-		previewView.Width = previewWidth - 4
-		previewView.Height = paneHeight - 2
+		previewView.Width = previewWidth - ViewportPaddingHorizontal
+		previewView.Height = paneHeight - ViewportPaddingVertical
 		m.historyState.SetPreviewView(previewView)
 	} else {
 		// Preview hidden: expand list to full width
-		m.modalView.Width = modalWidth - 4  // Account for padding and borders
-		m.modalView.Height = paneHeight - 2 // Account for title
+		m.modalView.Width = modalWidth - ViewportPaddingHorizontal  // Account for padding and borders
+		m.modalView.Height = paneHeight - ViewportPaddingVertical // Account for title
 	}
 
 	// Build content for left pane (history list)

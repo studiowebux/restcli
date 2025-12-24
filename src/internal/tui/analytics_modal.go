@@ -12,8 +12,8 @@ import (
 
 // renderAnalytics renders the analytics modal with telescope-style split view
 func (m *Model) renderAnalytics() string {
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	// Determine border colors based on focus
 	listBorderColor := colorGray
@@ -73,7 +73,7 @@ func (m *Model) renderAnalytics() string {
 		RightBorderColor: detailBorderColor,
 		RightIsFocused:   rightIsFocused,
 		Footer:           footerText,
-		LeftWidthRatio:   0.5, // Equal split
+		LeftWidthRatio:   SplitViewEqual,
 	}
 
 	return renderSplitPaneModal(cfg, m.width, m.height)
@@ -82,8 +82,8 @@ func (m *Model) renderAnalytics() string {
 // updateAnalyticsView updates the analytics viewport content for split view
 func (m *Model) updateAnalyticsView() {
 	// Calculate dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 	paneHeight := modalHeight - 4
 
 	// Adjust viewport widths based on preview visibility

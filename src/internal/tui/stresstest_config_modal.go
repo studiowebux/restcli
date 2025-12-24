@@ -11,7 +11,7 @@ import (
 
 // renderStressTestConfig renders the stress test configuration modal
 func (m *Model) renderStressTestConfig() string {
-	modalWidth := m.width - 10
+	modalWidth := m.width - ModalWidthMarginNarrow
 	if modalWidth > 80 {
 		modalWidth = 80
 	}
@@ -281,7 +281,7 @@ func (m *Model) applyStressTestConfigInput() error {
 
 // renderStressTestLoadConfig renders the load config selection modal
 func (m *Model) renderStressTestLoadConfig() string {
-	modalWidth := m.width - 10
+	modalWidth := m.width - ModalWidthMarginNarrow
 	if modalWidth > 80 {
 		modalWidth = 80
 	}

@@ -93,13 +93,13 @@ func (m *Model) renderMockServer() string {
 	}
 
 	// Calculate dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	// Set viewport dimensions BEFORE setting content
 	// Account for padding (1 top, 1 bottom) + title lines + footer
-	m.modalView.Width = modalWidth - 4  // Subtract horizontal padding
-	m.modalView.Height = modalHeight - 6 // Subtract vertical padding, title, footer
+	m.modalView.Width = modalWidth - ViewportPaddingHorizontal
+	m.modalView.Height = modalHeight - ModalOverheadLines
 
 	// Set modal content
 	m.modalView.SetContent(content.String())

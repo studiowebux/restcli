@@ -10,7 +10,7 @@ import (
 
 // renderStressTestProgress renders the stress test progress modal
 func (m *Model) renderStressTestProgress() string {
-	modalWidth := m.width - 10
+	modalWidth := m.width - ModalWidthMarginNarrow
 	if modalWidth > 90 {
 		modalWidth = 90
 	}

@@ -279,8 +279,8 @@ func (m *Model) connectWebSocket() tea.Cmd {
 	m.wsConnectionStatus = "connecting"
 
 	// Create channels for WebSocket communication
-	m.wsMessageChannel = make(chan types.ReceivedMessage, 100)
-	m.wsSendChannel = make(chan string, 10)
+	m.wsMessageChannel = make(chan types.ReceivedMessage, WebSocketMessageBuffer)
+	m.wsSendChannel = make(chan string, WebSocketSendBuffer)
 
 	// Create cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -548,7 +548,7 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 // executeStreamingRequest starts a streaming request in a goroutine with real-time updates
 func (m *Model) executeStreamingRequest(resolvedRequest *types.HttpRequest, tlsConfig *types.TLSConfig, warnings, shellErrs []string, profile *types.Profile) tea.Cmd {
 	// Create a channel for streaming chunks
-	m.streamChannel = make(chan streamChunkMsg, 100)
+	m.streamChannel = make(chan streamChunkMsg, StreamMessageBuffer)
 	m.streamedBody = ""
 
 	// Create a cancellable context for the request
