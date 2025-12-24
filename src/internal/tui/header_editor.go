@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // getSortedHeaderNames returns sorted header names
@@ -100,22 +101,31 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 	case ModeHeaderList:
 		sortedNames := getSortedHeaderNames(profile.Headers)
 
-		switch msg.String() {
-		case "esc":
+		action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextHeaderList, msg.String())
+		if partial {
+			return nil
+		}
+
+		if !ok {
+			m.gPressed = false
+			return nil
+		}
+
+		switch action {
+		case keybinds.ActionCloseModal:
 			m.mode = ModeNormal
 
-		case "up", "k":
+		case keybinds.ActionNavigateUp:
 			if m.headerEditIndex > 0 {
 				m.headerEditIndex--
 			}
 
-		case "down", "j":
+		case keybinds.ActionNavigateDown:
 			if m.headerEditIndex < len(sortedNames)-1 {
 				m.headerEditIndex++
 			}
 
-		// Page up/down - move cursor by page amount
-		case "pgup":
+		case keybinds.ActionPageUp:
 			pageSize := m.modalView.Height
 			if pageSize < 1 {
 				pageSize = 10
@@ -125,7 +135,7 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 				m.headerEditIndex = 0
 			}
 
-		case "pgdown":
+		case keybinds.ActionPageDown:
 			pageSize := m.modalView.Height
 			if pageSize < 1 {
 				pageSize = 10
@@ -138,37 +148,21 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 				m.headerEditIndex = 0
 			}
 
-		case "home":
+		case keybinds.ActionGoToTop:
 			m.headerEditIndex = 0
 
-		case "end":
+		case keybinds.ActionGoToBottom:
 			if len(sortedNames) > 0 {
 				m.headerEditIndex = len(sortedNames) - 1
 			}
 
-		case "g":
-			// Vim-style 'gg' to go to top
-			if m.gPressed {
-				m.gPressed = false
-				m.headerEditIndex = 0
-			} else {
-				m.gPressed = true
-			}
-			return nil // Don't reset gPressed
-
-		case "G":
-			// Vim-style 'G' to go to bottom
-			if len(sortedNames) > 0 {
-				m.headerEditIndex = len(sortedNames) - 1
-			}
-
-		case "a":
+		case keybinds.ActionHeaderAdd:
 			m.mode = ModeHeaderAdd
 			m.headerEditName = ""
 			m.headerEditValue = ""
 			m.headerEditCursor = 0
 
-		case "e":
+		case keybinds.ActionHeaderEdit:
 			if len(sortedNames) > 0 && m.headerEditIndex < len(sortedNames) {
 				m.mode = ModeHeaderEdit
 				name := sortedNames[m.headerEditIndex]
@@ -177,32 +171,36 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 				m.headerEditCursor = 0
 			}
 
-		case "d":
+		case keybinds.ActionHeaderDelete:
 			if len(sortedNames) > 0 && m.headerEditIndex < len(sortedNames) {
 				m.mode = ModeHeaderDelete
 				m.headerEditName = sortedNames[m.headerEditIndex]
 			}
 		}
 
+		m.gPressed = false
+
 	case ModeHeaderAdd, ModeHeaderEdit:
 		return m.handleHeaderInputKeys(msg)
 
 	case ModeHeaderDelete:
-		switch msg.String() {
-		case "y":
-			// Delete the header
+		action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
+		if !ok {
+			return nil
+		}
+
+		switch action {
+		case keybinds.ActionConfirm:
 			delete(profile.Headers, m.headerEditName)
 			m.sessionMgr.SaveProfiles()
 			m.mode = ModeHeaderList
 			m.statusMsg = fmt.Sprintf("Deleted header: %s", m.headerEditName)
 
-		case "n", "esc":
+		case keybinds.ActionCancel:
 			m.mode = ModeHeaderList
 		}
 	}
 
-	// Reset 'g' state on any key except 'g' itself
-	m.gPressed = false
 	return nil
 }
 
@@ -210,48 +208,55 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleHeaderInputKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 
-	switch msg.String() {
-	case "esc":
-		m.mode = ModeHeaderList
-
-	case "tab":
+	// Handle tab specially (field switching)
+	if msg.String() == "tab" {
 		m.headerEditCursor = (m.headerEditCursor + 1) % 2
+		return nil
+	}
 
-	case "enter":
-		if m.headerEditName == "" {
-			m.errorMsg = "Header name cannot be empty"
+	action, ok := m.keybinds.Match(keybinds.ContextHeaderEdit, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			m.mode = ModeHeaderList
+			return nil
+
+		case keybinds.ActionTextSubmit:
+			if m.headerEditName == "" {
+				m.errorMsg = "Header name cannot be empty"
+				return nil
+			}
+
+			// Create or update header
+			if profile.Headers == nil {
+				profile.Headers = make(map[string]string)
+			}
+
+			profile.Headers[m.headerEditName] = m.headerEditValue
+
+			m.sessionMgr.SaveProfiles()
+			m.mode = ModeHeaderList
+			m.statusMsg = fmt.Sprintf("Saved header: %s", m.headerEditName)
 			return nil
 		}
+	}
 
-		// Create or update header
-		if profile.Headers == nil {
-			profile.Headers = make(map[string]string)
+	// Handle common text input operations (paste, clear, backspace)
+	if m.headerEditCursor == 0 {
+		if _, shouldContinue := handleTextInput(&m.headerEditName, msg); shouldContinue {
+			return nil
 		}
-
-		profile.Headers[m.headerEditName] = m.headerEditValue
-
-		m.sessionMgr.SaveProfiles()
-		m.mode = ModeHeaderList
-		m.statusMsg = fmt.Sprintf("Saved header: %s", m.headerEditName)
-
-	default:
-		// Handle common text input operations (paste, clear, backspace)
-		if m.headerEditCursor == 0 {
-			if _, shouldContinue := handleTextInput(&m.headerEditName, msg); shouldContinue {
-				return nil
-			}
-			// Append character to name
-			if len(msg.String()) == 1 {
-				m.headerEditName += msg.String()
-			}
-		} else {
-			if _, shouldContinue := handleTextInput(&m.headerEditValue, msg); shouldContinue {
-				return nil
-			}
-			// Append character to value
-			if len(msg.String()) == 1 {
-				m.headerEditValue += msg.String()
-			}
+		// Append character to name
+		if len(msg.String()) == 1 {
+			m.headerEditName += msg.String()
+		}
+	} else {
+		if _, shouldContinue := handleTextInput(&m.headerEditValue, msg); shouldContinue {
+			return nil
+		}
+		// Append character to value
+		if len(msg.String()) == 1 {
+			m.headerEditValue += msg.String()
 		}
 	}
 

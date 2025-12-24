@@ -6,10 +6,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/filter"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // handleFilterKeys handles key input for filter modal
 func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle special keys not in registry
 	switch msg.String() {
 	case "ctrl+s":
 		// Save current expression as bookmark
@@ -49,7 +51,37 @@ func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 		// Otherwise, do nothing (no history navigation in input)
 		return nil
 
-	case "esc":
+	case "ctrl+w":
+		// Delete word before cursor
+		if m.filterCursor == 0 {
+			return nil
+		}
+		// Find start of current word
+		newCursor := m.filterCursor - 1
+		for newCursor > 0 && m.filterInput[newCursor] == ' ' {
+			newCursor--
+		}
+		for newCursor > 0 && m.filterInput[newCursor-1] != ' ' {
+			newCursor--
+		}
+		m.filterInput = m.filterInput[:newCursor] + m.filterInput[m.filterCursor:]
+		m.filterCursor = newCursor
+		return nil
+	}
+
+	// Use registry for text input actions
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if !ok {
+		// Handle character input
+		if len(msg.String()) == 1 {
+			m.filterInput = m.filterInput[:m.filterCursor] + msg.String() + m.filterInput[m.filterCursor:]
+			m.filterCursor++
+		}
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionTextCancel:
 		// Clear filter and return to normal mode
 		m.mode = ModeNormal
 		m.filterInput = ""
@@ -58,9 +90,8 @@ func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 		m.filteredResponse = ""
 		m.filterError = ""
 		m.statusMsg = "Filter cancelled"
-		return nil
 
-	case "enter":
+	case keybinds.ActionTextSubmit:
 		// Apply filter
 		if m.filterInput == "" {
 			m.filterError = "Filter expression cannot be empty"
@@ -93,77 +124,45 @@ func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 
 		// Update response view to show filtered content
 		m.updateResponseView()
-		return nil
 
-	case "left":
+	case keybinds.ActionTextMoveLeft:
 		if m.filterCursor > 0 {
 			m.filterCursor--
 		}
-		return nil
 
-	case "right":
+	case keybinds.ActionTextMoveRight:
 		if m.filterCursor < len(m.filterInput) {
 			m.filterCursor++
 		}
-		return nil
 
-	case "home", "ctrl+a":
+	case keybinds.ActionTextMoveHome:
 		m.filterCursor = 0
-		return nil
 
-	case "end", "ctrl+e":
+	case keybinds.ActionTextMoveEnd:
 		m.filterCursor = len(m.filterInput)
-		return nil
 
-	case "backspace":
+	case keybinds.ActionTextBackspace:
 		if m.filterCursor > 0 {
 			m.filterInput = m.filterInput[:m.filterCursor-1] + m.filterInput[m.filterCursor:]
 			m.filterCursor--
 		}
-		return nil
 
-	case "delete":
+	case keybinds.ActionTextDelete:
 		if m.filterCursor < len(m.filterInput) {
 			m.filterInput = m.filterInput[:m.filterCursor] + m.filterInput[m.filterCursor+1:]
 		}
-		return nil
 
-	case "ctrl+u":
-		// Clear from cursor to beginning
+	case keybinds.ActionTextClearBefore:
+		// Clear from cursor to beginning (ctrl+u)
 		m.filterInput = m.filterInput[m.filterCursor:]
 		m.filterCursor = 0
-		return nil
 
-	case "ctrl+k":
-		// Clear from cursor to end
+	case keybinds.ActionTextClearAfter:
+		// Clear from cursor to end (ctrl+k)
 		m.filterInput = m.filterInput[:m.filterCursor]
-		return nil
-
-	case "ctrl+w":
-		// Delete word before cursor
-		if m.filterCursor == 0 {
-			return nil
-		}
-		// Find start of current word
-		newCursor := m.filterCursor - 1
-		for newCursor > 0 && m.filterInput[newCursor] == ' ' {
-			newCursor--
-		}
-		for newCursor > 0 && m.filterInput[newCursor-1] != ' ' {
-			newCursor--
-		}
-		m.filterInput = m.filterInput[:newCursor] + m.filterInput[m.filterCursor:]
-		m.filterCursor = newCursor
-		return nil
-
-	default:
-		// Handle character input
-		if len(msg.String()) == 1 {
-			m.filterInput = m.filterInput[:m.filterCursor] + msg.String() + m.filterInput[m.filterCursor:]
-			m.filterCursor++
-		}
-		return nil
 	}
+
+	return nil
 }
 
 // renderFilterModal renders the filter input modal

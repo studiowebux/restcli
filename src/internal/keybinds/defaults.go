@@ -116,9 +116,9 @@ func registerNormalModeBindings(r *Registry) {
 	r.Register(ContextNormal, "h", ActionOpenHeaders)
 	r.Register(ContextNormal, "e", ActionOpenErrorDetail)
 	r.Register(ContextNormal, "E", ActionOpenBodyOverride)
-	r.Register(ContextNormal, "I", ActionOpenInteractive)
+	r.Register(ContextNormal, "I", ActionShowStatusDetail)
 	r.Register(ContextNormal, "p", ActionOpenProfiles)
-	r.Register(ContextNormal, "ctrl+r", ActionOpenRecentFiles)
+	r.Register(ContextNormal, "ctrl+p", ActionOpenRecentFiles)
 	r.Register(ContextNormal, "H", ActionOpenHistory)
 	r.Register(ContextNormal, "A", ActionOpenAnalytics)
 	r.Register(ContextNormal, "S", ActionOpenStressTest)
@@ -130,12 +130,12 @@ func registerNormalModeBindings(r *Registry) {
 	r.Register(ContextNormal, "o", ActionOpenOAuth)
 	r.Register(ContextNormal, "O", ActionOpenOAuthDetail)
 	r.Register(ContextNormal, "C", ActionOpenConfigView)
-	r.Register(ContextNormal, "P", ActionOpenProxy)
-	r.Register(ContextNormal, "ctrl+p", ActionOpenProfiles)
-	r.Register(ContextNormal, "ctrl+x", ActionOpenDocumentation)
 	r.Register(ContextNormal, "m", ActionOpenDocumentation)
 	r.Register(ContextNormal, "n", ActionSearchNext)
 	r.Register(ContextNormal, "N", ActionSearchPrevious)
+	r.Register(ContextNormal, "ctrl+r", ActionRefresh)
+	r.Register(ContextNormal, "P", ActionNoOp) // openProfilesInEditor - handled specially
+	r.Register(ContextNormal, "ctrl+x", ActionNoOp) // openSessionInEditor - handled specially
 }
 
 // registerSearchBindings sets up keybindings for search mode
@@ -323,11 +323,16 @@ func registerHelpBindings(r *Registry) {
 // registerInspectBindings sets up keybindings for request inspector
 func registerInspectBindings(r *Registry) {
 	r.RegisterMultiple(ContextInspect, []string{"esc", "i", "q"}, ActionCloseModal)
+	r.Register(ContextInspect, "enter", ActionExecute)
 	r.RegisterMultiple(ContextInspect, []string{"up", "k"}, ActionNavigateUp)
 	r.RegisterMultiple(ContextInspect, []string{"down", "j"}, ActionNavigateDown)
+	r.Register(ContextInspect, "pgup", ActionPageUp)
+	r.Register(ContextInspect, "pgdown", ActionPageDown)
 	r.Register(ContextInspect, "g", ActionGoToTopPrepare)
 	r.Register(ContextInspect, "gg", ActionGoToTop)
 	r.Register(ContextInspect, "G", ActionGoToBottom)
+	r.Register(ContextInspect, "home", ActionGoToTop)
+	r.Register(ContextInspect, "end", ActionGoToBottom)
 }
 
 // registerWebSocketBindings sets up keybindings for WebSocket interface

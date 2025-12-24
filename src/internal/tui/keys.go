@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/filter"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/stresstest"
 )
@@ -115,76 +115,126 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 
 // handleShellErrorsKeys handles keyboard input in shell errors modal
 func (m *Model) handleShellErrorsKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q", "enter":
+	// Handle enter specially (closes modal)
+	if msg.String() == "enter" {
 		m.mode = ModeNormal
 		m.shellErrors = nil
-	case "j", "down":
+		return nil
+	}
+
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+		m.shellErrors = nil
+
+	case keybinds.ActionNavigateDown:
 		m.modalView.LineDown(1)
-	case "k", "up":
+
+	case keybinds.ActionNavigateUp:
 		m.modalView.LineUp(1)
-	case "g":
+
+	case keybinds.ActionGoToTop:
 		m.modalView.GotoTop()
-	case "G":
+
+	case keybinds.ActionGoToBottom:
 		m.modalView.GotoBottom()
 	}
+
 	return nil
 }
 
 // handleErrorDetailKeys handles keyboard input in error detail modal
 func (m *Model) handleErrorDetailKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q", "enter":
+	// Handle enter specially (closes modal)
+	if msg.String() == "enter" {
 		m.mode = ModeNormal
-	case "j", "down":
+		return nil
+	}
+
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+
+	case keybinds.ActionNavigateDown:
 		m.modalView.LineDown(1)
-	case "k", "up":
+
+	case keybinds.ActionNavigateUp:
 		m.modalView.LineUp(1)
-	case "g":
+
+	case keybinds.ActionGoToTop:
 		m.modalView.GotoTop()
-	case "G":
+
+	case keybinds.ActionGoToBottom:
 		m.modalView.GotoBottom()
 	}
+
 	return nil
 }
 
 // handleStatusDetailKeys handles keyboard input in status detail modal
 func (m *Model) handleStatusDetailKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q", "enter":
+	// Handle enter specially (closes modal)
+	if msg.String() == "enter" {
+		m.mode = ModeNormal
+		return nil
+	}
+
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
 		m.mode = ModeNormal
 	}
+
 	return nil
 }
 
 // handleEditorConfigKeys handles keyboard input in editor config mode
 func (m *Model) handleEditorConfigKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
-		m.mode = ModeNormal
-		m.inputValue = ""
-		m.inputCursor = 0
+	// Check for text input actions
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			m.mode = ModeNormal
+			m.inputValue = ""
+			m.inputCursor = 0
+			return nil
 
-	case "enter":
-		// Save editor to profile
-		profile := m.sessionMgr.GetActiveProfile()
-		profile.Editor = m.inputValue
-		m.sessionMgr.SaveProfiles()
-		m.statusMsg = "Editor saved: " + m.inputValue
-		m.mode = ModeNormal
-		m.inputValue = ""
-		m.inputCursor = 0
-
-	default:
-		// Handle text input with cursor support
-		if _, shouldContinue := handleTextInputWithCursor(&m.inputValue, &m.inputCursor, msg); shouldContinue {
+		case keybinds.ActionTextSubmit:
+			profile := m.sessionMgr.GetActiveProfile()
+			profile.Editor = m.inputValue
+			m.sessionMgr.SaveProfiles()
+			m.statusMsg = "Editor saved: " + m.inputValue
+			m.mode = ModeNormal
+			m.inputValue = ""
+			m.inputCursor = 0
 			return nil
 		}
-		// Insert character at cursor position
-		if len(msg.String()) == 1 {
-			m.inputValue = m.inputValue[:m.inputCursor] + msg.String() + m.inputValue[m.inputCursor:]
-			m.inputCursor++
-		}
+	}
+
+	// Handle text input with cursor support
+	if _, shouldContinue := handleTextInputWithCursor(&m.inputValue, &m.inputCursor, msg); shouldContinue {
+		return nil
+	}
+
+	// Insert character at cursor position
+	if len(msg.String()) == 1 {
+		m.inputValue = m.inputValue[:m.inputCursor] + msg.String() + m.inputValue[m.inputCursor:]
+		m.inputCursor++
 	}
 
 	return nil
@@ -197,13 +247,26 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.handleFilterInlineKeys(msg)
 	}
 
-	switch msg.String() {
-	case "q":
+	// Match key to action using keybinds registry
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextNormal, msg.String())
+	if partial {
+		// This is a partial match (e.g., first 'g' in 'gg' sequence)
+		return nil
+	}
+
+	if !ok {
+		// No action bound, clear gPressed state and return
+		m.gPressed = false
+		return nil
+	}
+
+	// Handle actions
+	switch action {
+	case keybinds.ActionQuit:
 		m.Cleanup()
 		return tea.Quit
 
-	// Focus switching
-	case "tab":
+	case keybinds.ActionSwitchFocus:
 		// Toggle focus between sidebar and response
 		if m.focusedPanel == "sidebar" {
 			m.focusedPanel = "response"
@@ -216,48 +279,43 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.loadRequestsFromCurrentFile()
 		}
 
-	// Navigation - based on focused panel (EXCLUSIVE control)
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		if m.focusedPanel == "response" {
-			// Only scroll response if focused on response panel
 			if m.showBody && m.currentResponse != nil {
 				m.responseView.ScrollUp(1)
 			}
 		} else {
-			// Only navigate files if focused on sidebar
 			m.navigateFiles(-1)
 		}
-	case "down", "j":
+
+	case keybinds.ActionNavigateDown:
 		if m.focusedPanel == "response" {
-			// Only scroll response if focused on response panel
 			if m.showBody && m.currentResponse != nil {
 				m.responseView.ScrollDown(1)
 			}
 		} else {
-			// Only navigate files if focused on sidebar
 			m.navigateFiles(1)
 		}
-	case "pgup":
+
+	case keybinds.ActionPageUp:
 		if m.focusedPanel == "response" {
-			// Only scroll response if focused on response panel
 			if m.showBody && m.currentResponse != nil {
 				m.responseView.PageUp()
 			}
 		} else {
-			// Only navigate files if focused on sidebar
 			m.navigateFiles(-10)
 		}
-	case "pgdown":
+
+	case keybinds.ActionPageDown:
 		if m.focusedPanel == "response" {
-			// Only scroll response if focused on response panel
 			if m.showBody && m.currentResponse != nil {
 				m.responseView.PageDown()
 			}
 		} else {
-			// Only navigate files if focused on sidebar
 			m.navigateFiles(10)
 		}
-	case "ctrl+u":
+
+	case keybinds.ActionHalfPageUp:
 		// Vim-style half-page up
 		halfPage := m.getFileListHeight() / 2
 		if halfPage < 1 {
@@ -270,7 +328,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.navigateFiles(-halfPage)
 		}
-	case "ctrl+d":
+
+	case keybinds.ActionHalfPageDown:
 		// Vim-style half-page down
 		halfPage := m.getFileListHeight() / 2
 		if halfPage < 1 {
@@ -283,56 +342,21 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.navigateFiles(halfPage)
 		}
-	case "home":
+
+	case keybinds.ActionGoToTop:
 		if m.focusedPanel == "response" {
-			// Scroll to top of response
 			if m.showBody && m.currentResponse != nil {
 				m.responseView.GotoTop()
 			}
 		} else {
-			// Go to first file
 			if len(m.files) > 0 {
 				m.fileIndex = 0
 				m.fileOffset = 0
 				m.loadRequestsFromCurrentFile()
 			}
 		}
-	case "end":
-		if m.focusedPanel == "response" {
-			// Scroll to bottom of response
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.GotoBottom()
-			}
-		} else {
-			// Go to last file
-			if len(m.files) > 0 {
-				m.fileIndex = len(m.files) - 1
-				pageSize := m.getFileListHeight()
-				m.fileOffset = max(0, m.fileIndex-pageSize+1)
-				m.loadRequestsFromCurrentFile()
-			}
-		}
-	case "g":
-		// Vim-style 'gg' to go to top
-		if m.gPressed {
-			m.gPressed = false
-			if m.focusedPanel == "response" {
-				if m.showBody && m.currentResponse != nil {
-					m.responseView.GotoTop()
-				}
-			} else {
-				if len(m.files) > 0 {
-					m.fileIndex = 0
-					m.fileOffset = 0
-					m.loadRequestsFromCurrentFile()
-				}
-			}
-		} else {
-			m.gPressed = true
-		}
-		return nil // Don't reset gPressed
-	case "G":
-		// Vim-style 'G' to go to bottom
+
+	case keybinds.ActionGoToBottom:
 		if m.focusedPanel == "response" {
 			if m.showBody && m.currentResponse != nil {
 				m.responseView.GotoBottom()
@@ -345,12 +369,12 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 				m.loadRequestsFromCurrentFile()
 			}
 		}
-	case ":":
+
+	case keybinds.ActionOpenGoto:
 		m.mode = ModeGoto
 		m.gotoInput = ""
 
-	// File operations
-	case "enter":
+	case keybinds.ActionExecute:
 		// Block if request already in progress
 		if m.loading {
 			m.statusMsg = "Request already in progress"
@@ -367,40 +391,46 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 		m.statusMsg = "Executing request..."
 		return m.executeRequest()
-	case "i":
+
+	case keybinds.ActionOpenInspect:
 		if m.currentRequest == nil {
 			m.errorMsg = "No request loaded (select a file first)"
 			return nil
 		}
 		m.mode = ModeInspect
 		m.updateInspectView() // Set content once when entering modal
-	case "x":
+
+	case keybinds.ActionOpenEditor:
 		return m.openInEditor()
-	case "X":
+
+	case keybinds.ActionConfigureEditor:
 		// Configure editor
 		m.mode = ModeEditorConfig
 		profile := m.sessionMgr.GetActiveProfile()
 		m.inputValue = profile.Editor
 		m.inputCursor = len(m.inputValue)
-	// File operations (only when sidebar is focused)
-	case "d":
+
+	case keybinds.ActionDuplicateFile:
 		if m.focusedPanel == "sidebar" {
 			return m.duplicateFile()
 		}
-	case "D":
+
+	case keybinds.ActionDeleteFile:
 		if m.focusedPanel == "sidebar" {
 			// Delete file with confirmation
 			if len(m.files) > 0 {
 				m.mode = ModeDelete
 			}
 		}
-	case "R":
+
+	case keybinds.ActionRenameFile:
 		if m.focusedPanel == "sidebar" {
 			m.mode = ModeRename
 			m.renameInput = ""
 			m.renameCursor = 0
 		}
-	case "F":
+
+	case keybinds.ActionCreateFile:
 		if m.focusedPanel == "sidebar" {
 			// Create new file
 			m.mode = ModeCreateFile
@@ -409,26 +439,31 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.createFileType = 0 // Default to .http
 			m.errorMsg = ""
 		}
-	case "r":
+
+	case keybinds.ActionRefreshFiles:
 		if m.focusedPanel == "sidebar" {
 			return m.refreshFiles()
 		}
 
-	// Response operations
-	case "s":
+	case keybinds.ActionSaveResponse:
 		return m.saveResponse()
-	case "c":
+
+	case keybinds.ActionCopyToClipboard:
 		return m.copyToClipboard()
-	case "b":
+
+	case keybinds.ActionToggleBody:
 		m.showBody = !m.showBody
-	case "B":
+
+	case keybinds.ActionToggleHeaders:
 		m.showHeaders = !m.showHeaders
 		m.updateResponseView() // Regenerate response content
-	case "f":
+
+	case keybinds.ActionToggleFullscreen:
 		m.fullscreen = !m.fullscreen
 		m.updateViewport()       // Recalculate viewport width for fullscreen
 		m.updateResponseView()   // Regenerate content (wrapping changes based on fullscreen)
-	case "w":
+
+	case keybinds.ActionPinResponse:
 		// Pin current response for comparison
 		if m.currentResponse != nil {
 			m.pinnedResponse = m.currentResponse
@@ -437,7 +472,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.errorMsg = "No response to pin"
 		}
-	case "W":
+
+	case keybinds.ActionShowDiff:
 		// Show diff between pinned and current response
 		if m.pinnedResponse == nil {
 			m.errorMsg = "No pinned response (press 'w' to pin current response first)"
@@ -447,7 +483,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.mode = ModeDiff
 			m.updateDiffView()
 		}
-	case "J":
+
+	case keybinds.ActionFilterResponse:
 		// Filter response with JMESPath
 		if m.currentResponse != nil && m.currentResponse.Body != "" {
 			if m.filterActive {
@@ -471,21 +508,23 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.statusMsg = "No response to filter"
 		}
 
-	// Editors and modals
-	case "v":
+	case keybinds.ActionOpenVariables:
 		m.mode = ModeVariableList
 		m.varEditIndex = 0
 		m.modalView.SetYOffset(0)
-	case "h":
+
+	case keybinds.ActionOpenHeaders:
 		m.mode = ModeHeaderList
 		m.headerEditIndex = 0
 		m.modalView.SetYOffset(0)
-	case "e":
+
+	case keybinds.ActionOpenErrorDetail:
 		// Open error detail modal if there's an error
 		if m.fullErrorMsg != "" {
 			m.mode = ModeErrorDetail
 		}
-	case "E":
+
+	case keybinds.ActionOpenBodyOverride:
 		// Open body override editor
 		if m.currentRequest != nil {
 			// Initialize with current body resolved
@@ -504,15 +543,18 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.statusMsg = "No request selected"
 		}
-	case "I":
+
+	case keybinds.ActionShowStatusDetail:
 		// Open status detail modal if there's a status message
 		if m.fullStatusMsg != "" {
 			m.mode = ModeStatusDetail
 		}
-	case "p":
+
+	case keybinds.ActionOpenProfiles:
 		m.mode = ModeProfileSwitch
 		m.profileIndex = 0
-	case "n":
+
+	case keybinds.ActionSearchNext:
 		// If search is active, go to next match (vim-style)
 		if len(m.searchMatches) > 0 {
 			m.searchIndex = (m.searchIndex + 1) % len(m.searchMatches)
@@ -541,7 +583,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.mode = ModeProfileCreate
 			m.profileName = ""
 		}
-	case "N":
+
+	case keybinds.ActionSearchPrevious:
 		// Previous search result (vim-style)
 		if len(m.searchMatches) > 0 {
 			m.searchIndex--
@@ -569,28 +612,34 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
 			}
 		}
-	case "m":
+
+	case keybinds.ActionOpenDocumentation:
 		m.mode = ModeDocumentation
 		// Initialize caches for field trees (prevents rebuilding on every navigation)
 		m.docFieldTreeCache = make(map[int][]DocField)
 		m.docChildrenCache = make(map[int]map[string]bool)
 		m.updateDocumentationView() // Set content and initialize collapse state
 		m.docItemCount = m.countDocItems() // Cache item count
-	case "H":
+
+	case keybinds.ActionOpenHistory:
 		m.mode = ModeHistory
 		return m.loadHistory()
-	case "A":
+
+	case keybinds.ActionOpenAnalytics:
 		m.mode = ModeAnalytics
 		m.analyticsPreviewVisible = true
 		m.analyticsGroupByPath = false
 		return m.loadAnalytics()
-	case "S":
+
+	case keybinds.ActionOpenStressTest:
 		m.mode = ModeStressTestResults
 		m.stressTestFocusedPane = "list"
 		return m.loadStressTestRuns()
-	case "M":
+
+	case keybinds.ActionOpenMockServer:
 		m.mode = ModeMockServer
-	case "y":
+
+	case keybinds.ActionOpenProxy:
 		// Open proxy viewer (debug proxy)
 		m.mode = ModeProxyViewer
 		m.updateProxyView()
@@ -599,13 +648,15 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			return m.listenForProxyLogs()
 		}
 		return nil
-	case "t":
+
+	case keybinds.ActionOpenTagFilter:
 		// Category filter mode
 		m.mode = ModeTagFilter
 		m.inputValue = ""
 		m.inputCursor = 0
 		m.statusMsg = "Enter category to filter (press T to clear)"
-	case "T":
+
+	case keybinds.ActionClearTagFilter:
 		// Clear category filter (Shift+t)
 		if len(m.tagFilter) > 0 {
 			m.tagFilter = nil
@@ -614,26 +665,26 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.fileOffset = 0
 			m.statusMsg = "Category filter cleared"
 		}
-	case "?":
+
+	case keybinds.ActionOpenHelp:
 		m.mode = ModeHelp
 		m.updateHelpView()
 		return m.checkForUpdate()
 
-	// OAuth
-	case "o":
+	case keybinds.ActionOpenOAuth:
 		return m.startOAuthFlow()
-	case "O":
+
+	case keybinds.ActionOpenOAuthDetail:
 		m.mode = ModeOAuthConfig
 
-	// Search
-	case "/":
+	case keybinds.ActionOpenSearch:
 		m.mode = ModeSearch
 		m.searchQuery = ""
 		m.searchMatches = nil
 		m.searchIndex = 0
 
-	case "ctrl+r":
-		// Next search result
+	case keybinds.ActionRefresh:
+		// Next search result (ctrl+r alternative)
 		if len(m.searchMatches) > 0 {
 			m.searchIndex = (m.searchIndex + 1) % len(m.searchMatches)
 			m.fileIndex = m.searchMatches[m.searchIndex]
@@ -644,24 +695,26 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.statusMsg = "No active search - press / to search"
 		}
 
-	case "ctrl+p":
+	case keybinds.ActionOpenRecentFiles:
 		// Open MRU (Most Recently Used) files list
 		m.mode = ModeMRU
 		m.mruIndex = 0
 		m.errorMsg = ""
 
-	// View configuration
-	case "C":
+	case keybinds.ActionOpenConfigView:
 		m.mode = ModeConfigView
 
-	// External config editors
-	case "P":
-		return m.openProfilesInEditor()
-	case "ctrl+x":
-		return m.openSessionInEditor()
+	case keybinds.ActionNoOp:
+		// External config editors (mapped to different keys)
+		if msg.String() == "P" {
+			return m.openProfilesInEditor()
+		} else if msg.String() == "ctrl+x" {
+			return m.openSessionInEditor()
+		}
+	}
 
-	// Escape - cancel request, exit fullscreen, clear search, or clear errors/messages
-	case "esc":
+	// Handle escape separately since it has complex logic
+	if msg.String() == "esc" {
 		// First priority: Cancel running request
 		if m.loading {
 			if m.streamingActive && m.streamCancelFunc != nil {
@@ -699,8 +752,6 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Reset 'g' state on any key except 'g' itself (handled above with return)
-	m.gPressed = false
 	return nil
 }
 
@@ -828,84 +879,51 @@ func handleTextInputWithCursor(input *string, cursorPos *int, msg tea.KeyMsg) (m
 
 // handleSearchKeys handles keys in search mode
 func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
-		// Cancel search - clear query and matches
-		wasSearchingResponse := m.searchInResponseCtx
-		m.mode = ModeNormal
-		m.searchQuery = ""
-		m.searchMatches = nil
-		m.searchIndex = 0
-		m.searchInResponseCtx = false
-		// Clear highlighting from response if we were searching there
-		if wasSearchingResponse && m.currentResponse != nil {
-			m.updateResponseView()
-		}
+	// Check for text input actions
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			wasSearchingResponse := m.searchInResponseCtx
+			m.mode = ModeNormal
+			m.searchQuery = ""
+			m.searchMatches = nil
+			m.searchIndex = 0
+			m.searchInResponseCtx = false
+			if wasSearchingResponse && m.currentResponse != nil {
+				m.updateResponseView()
+			}
+			return nil
 
-	case "enter":
-		m.mode = ModeNormal
-		m.performSearch()
-
-	case "ctrl+r":
-		// Don't append ctrl+r to search, ignore it
-		return nil
-
-	default:
-		// Handle common text input operations
-		if _, shouldContinue := handleTextInput(&m.searchQuery, msg); shouldContinue {
+		case keybinds.ActionTextSubmit:
+			m.mode = ModeNormal
+			m.performSearch()
 			return nil
 		}
-		// Only append single printable characters
-		if len(msg.String()) == 1 {
-			m.searchQuery += msg.String()
-		}
 	}
+
+	// Ignore ctrl+r (don't append to search)
+	if msg.String() == "ctrl+r" {
+		return nil
+	}
+
+	// Handle common text input operations
+	if _, shouldContinue := handleTextInput(&m.searchQuery, msg); shouldContinue {
+		return nil
+	}
+
+	// Only append single printable characters
+	if len(msg.String()) == 1 {
+		m.searchQuery += msg.String()
+	}
+
 	return nil
 }
 
 // handleFilterInlineKeys handles keys when filter editing is active in footer
 func (m *Model) handleFilterInlineKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle special keys not in registry
 	switch msg.String() {
-	case "esc":
-		// Cancel filter editing
-		m.filterEditing = false
-		m.filterInput = ""
-		m.filterCursor = 0
-		m.filterError = ""
-		m.statusMsg = "Filter cancelled"
-		return nil
-
-	case "enter":
-		// Apply filter
-		if m.filterInput == "" {
-			m.filterError = "Filter expression cannot be empty"
-			return nil
-		}
-
-		if m.currentResponse == nil || m.currentResponse.Body == "" {
-			m.filterError = "No response to filter"
-			m.filterEditing = false
-			return nil
-		}
-
-		// Apply the filter/query
-		result, err := filter.Apply(m.currentResponse.Body, "", m.filterInput)
-		if err != nil {
-			m.filterError = fmt.Sprintf("Failed to apply filter: %s", err.Error())
-			return nil
-		}
-
-		// Store filtered result and show it
-		m.filteredResponse = result
-		m.filterActive = true
-		m.filterError = ""
-		m.filterEditing = false
-		m.statusMsg = fmt.Sprintf("Filter applied: %s", m.filterInput)
-
-		// Update response view to show filtered content
-		m.updateResponseView()
-		return nil
-
 	case "ctrl+s":
 		// Save current expression as bookmark
 		if m.filterInput == "" {
@@ -946,51 +964,105 @@ func (m *Model) handleFilterInlineKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		// Otherwise, do nothing (no history navigation in input)
 		return nil
+	}
 
-	default:
-		// Handle text input with cursor support
-		if _, shouldContinue := handleTextInputWithCursor(&m.filterInput, &m.filterCursor, msg); shouldContinue {
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			// Cancel filter editing
+			m.filterEditing = false
+			m.filterInput = ""
+			m.filterCursor = 0
+			m.filterError = ""
+			m.statusMsg = "Filter cancelled"
+			return nil
+
+		case keybinds.ActionTextSubmit:
+			// Apply filter
+			if m.filterInput == "" {
+				m.filterError = "Filter expression cannot be empty"
+				return nil
+			}
+
+			if m.currentResponse == nil || m.currentResponse.Body == "" {
+				m.filterError = "No response to filter"
+				m.filterEditing = false
+				return nil
+			}
+
+			// Apply the filter/query
+			result, err := filter.Apply(m.currentResponse.Body, "", m.filterInput)
+			if err != nil {
+				m.filterError = fmt.Sprintf("Failed to apply filter: %s", err.Error())
+				return nil
+			}
+
+			// Store filtered result and show it
+			m.filteredResponse = result
+			m.filterActive = true
+			m.filterError = ""
+			m.filterEditing = false
+			m.statusMsg = fmt.Sprintf("Filter applied: %s", m.filterInput)
+
+			// Update response view to show filtered content
+			m.updateResponseView()
 			return nil
 		}
-		// Only append single printable characters
-		if len(msg.String()) == 1 {
-			m.filterInput = m.filterInput[:m.filterCursor] + msg.String() + m.filterInput[m.filterCursor:]
-			m.filterCursor++
-		}
 	}
+
+	// Handle text input with cursor support
+	if _, shouldContinue := handleTextInputWithCursor(&m.filterInput, &m.filterCursor, msg); shouldContinue {
+		return nil
+	}
+	// Only append single printable characters
+	if len(msg.String()) == 1 {
+		m.filterInput = m.filterInput[:m.filterCursor] + msg.String() + m.filterInput[m.filterCursor:]
+		m.filterCursor++
+	}
+
 	return nil
 }
 
 // handleGotoKeys handles keys in goto mode
 func (m *Model) handleGotoKeys(msg tea.KeyMsg) tea.Cmd {
-	switch {
-	case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
-		m.mode = ModeNormal
-		m.gotoInput = ""
-	case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
-		m.mode = ModeNormal
-		m.performGoto()
-	default:
-		// Handle common text input operations (paste, clear, backspace)
-		if _, shouldContinue := handleTextInput(&m.gotoInput, msg); shouldContinue {
-			// For goto, filter to hex characters only after paste
-			filtered := ""
-			for _, ch := range m.gotoInput {
-				if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
-					filtered += string(ch)
-				}
-			}
-			m.gotoInput = filtered
+	// Check for text input actions
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			m.mode = ModeNormal
+			m.gotoInput = ""
+			return nil
+
+		case keybinds.ActionTextSubmit:
+			m.mode = ModeNormal
+			m.performGoto()
 			return nil
 		}
-		// Append hex character to goto input (0-9, a-f)
-		if len(msg.String()) == 1 {
-			ch := msg.String()[0]
+	}
+
+	// Handle common text input operations (paste, clear, backspace)
+	if _, shouldContinue := handleTextInput(&m.gotoInput, msg); shouldContinue {
+		// For goto, filter to hex characters only after paste
+		filtered := ""
+		for _, ch := range m.gotoInput {
 			if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
-				m.gotoInput += msg.String()
+				filtered += string(ch)
 			}
 		}
+		m.gotoInput = filtered
+		return nil
 	}
+
+	// Append hex character to goto input (0-9, a-f)
+	if len(msg.String()) == 1 {
+		ch := msg.String()[0]
+		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
+			m.gotoInput += msg.String()
+		}
+	}
+
 	return nil
 }
 
@@ -1026,78 +1098,64 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Normal help mode keys
-	switch msg.String() {
-	case "esc":
-		// If there's an active search filter, clear it first
-		if m.helpSearchQuery != "" {
-			m.helpSearchQuery = ""
-			m.updateHelpView() // Reset to full content
-		} else {
-			m.mode = ModeNormal
-		}
-
-	case "?", "q":
-		m.mode = ModeNormal
-		m.helpSearchQuery = ""
-		m.helpSearchActive = false
-
-	case "/":
-		m.helpSearchActive = true
-		m.helpSearchQuery = ""
-
-	case "up", "k":
-		m.helpView.ScrollUp(1)
-
-	case "down", "j":
-		m.helpView.ScrollDown(1)
-
-	case "pgup":
-		m.helpView.PageUp()
-
-	case "pgdown":
-		m.helpView.PageDown()
-
-	case "ctrl+u":
-		// Vim-style half-page up
-		halfPage := m.helpView.Height / 2
-		if halfPage < 1 {
-			halfPage = 5
-		}
-		m.helpView.ScrollUp(halfPage)
-
-	case "ctrl+d":
-		// Vim-style half-page down
-		halfPage := m.helpView.Height / 2
-		if halfPage < 1 {
-			halfPage = 5
-		}
-		m.helpView.ScrollDown(halfPage)
-
-	case "g":
-		// Vim-style 'gg' to go to top
-		if m.gPressed {
-			m.gPressed = false
-			m.helpView.GotoTop()
-		} else {
-			m.gPressed = true
-		}
-		return nil // Don't reset gPressed
-
-	case "G":
-		// Vim-style 'G' to go to bottom
-		m.helpView.GotoBottom()
-
-	case "home":
-		m.helpView.GotoTop()
-
-	case "end":
-		m.helpView.GotoBottom()
+	// Match key to action using keybinds registry
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextHelp, msg.String())
+	if partial {
+		// This is a partial match (e.g., first 'g' in 'gg' sequence)
+		return nil
 	}
 
-	// Reset gPressed on any key except 'g'
-	if msg.String() != "g" {
-		m.gPressed = false
+	if ok {
+		switch action {
+		case keybinds.ActionCloseModal, keybinds.ActionCloseModalAlt:
+			// If there's an active search filter, clear it first
+			if m.helpSearchQuery != "" {
+				m.helpSearchQuery = ""
+				m.updateHelpView() // Reset to full content
+			} else {
+				m.mode = ModeNormal
+				m.helpSearchQuery = ""
+				m.helpSearchActive = false
+			}
+
+		case keybinds.ActionOpenSearch:
+			m.helpSearchActive = true
+			m.helpSearchQuery = ""
+
+		case keybinds.ActionNavigateUp:
+			m.helpView.ScrollUp(1)
+
+		case keybinds.ActionNavigateDown:
+			m.helpView.ScrollDown(1)
+
+		case keybinds.ActionPageUp:
+			m.helpView.PageUp()
+
+		case keybinds.ActionPageDown:
+			m.helpView.PageDown()
+
+		case keybinds.ActionHalfPageUp:
+			// Vim-style half-page up
+			halfPage := m.helpView.Height / 2
+			if halfPage < 1 {
+				halfPage = 5
+			}
+			m.helpView.ScrollUp(halfPage)
+
+		case keybinds.ActionHalfPageDown:
+			// Vim-style half-page down
+			halfPage := m.helpView.Height / 2
+			if halfPage < 1 {
+				halfPage = 5
+			}
+			m.helpView.ScrollDown(halfPage)
+
+		case keybinds.ActionGoToTop:
+			m.helpView.GotoTop()
+
+		case keybinds.ActionGoToBottom:
+			m.helpView.GotoBottom()
+		}
 	}
 
 	return nil
@@ -1105,54 +1163,44 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) tea.Cmd {
 
 // handleDocumentationKeys handles keys in documentation viewer mode
 func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "m", "q":
-		m.mode = ModeNormal
-		m.docSelectedIdx = 0 // Reset selection
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextDocumentation, msg.String())
+	if partial {
+		return nil
+	}
 
-	// Navigation - update selection and regenerate view (fast when collapsed)
-	case "up", "k":
+	if !ok {
+		m.gPressed = false
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+		m.docSelectedIdx = 0
+
+	case keybinds.ActionNavigateUp:
 		if m.docSelectedIdx > 0 {
 			m.docSelectedIdx--
 			m.updateDocumentationView()
 		}
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		if m.docSelectedIdx < m.docItemCount-1 {
 			m.docSelectedIdx++
 			m.updateDocumentationView()
 		}
 
-	case "home":
+	case keybinds.ActionGoToTop:
 		m.docSelectedIdx = 0
 		m.updateDocumentationView()
 
-	case "end":
+	case keybinds.ActionGoToBottom:
 		if m.docItemCount > 0 {
 			m.docSelectedIdx = m.docItemCount - 1
 		}
 		m.updateDocumentationView()
 
-	case "g":
-		// Vim-style 'gg' to go to top
-		if m.gPressed {
-			m.gPressed = false
-			m.docSelectedIdx = 0
-			m.updateDocumentationView()
-		} else {
-			m.gPressed = true
-		}
-		return nil // Don't reset gPressed
-
-	case "G":
-		// Vim-style 'G' to go to bottom
-		if m.docItemCount > 0 {
-			m.docSelectedIdx = m.docItemCount - 1
-		}
-		m.updateDocumentationView()
-
-	// Page up/down - move cursor by page amount
-	case "pgup":
+	case keybinds.ActionPageUp:
 		pageSize := m.modalView.Height
 		if pageSize < 1 {
 			pageSize = 10
@@ -1163,7 +1211,7 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateDocumentationView()
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		pageSize := m.modalView.Height
 		if pageSize < 1 {
 			pageSize = 10
@@ -1177,8 +1225,7 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateDocumentationView()
 
-	case "ctrl+u":
-		// Vim-style half-page up
+	case keybinds.ActionHalfPageUp:
 		halfPage := m.modalView.Height / 2
 		if halfPage < 1 {
 			halfPage = 5
@@ -1189,8 +1236,7 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateDocumentationView()
 
-	case "ctrl+d":
-		// Vim-style half-page down
+	case keybinds.ActionHalfPageDown:
 		halfPage := m.modalView.Height / 2
 		if halfPage < 1 {
 			halfPage = 5
@@ -1204,12 +1250,10 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateDocumentationView()
 
-	// Toggle collapse/expand - this WILL regenerate (only on toggle, not on scroll)
-	case "enter", " ":
+	case keybinds.ActionTextSubmit:
 		m.toggleDocSection()
 	}
 
-	// Reset 'g' state on any key except 'g' itself
 	m.gPressed = false
 	return nil
 }
@@ -1390,7 +1434,6 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	if m.historySearchActive {
 		switch msg.String() {
 		case "esc":
-			// Clear search and show all entries
 			m.historySearchActive = false
 			m.historySearchQuery = ""
 			m.historyEntries = m.historyAllEntries
@@ -1399,7 +1442,6 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 			m.statusMsg = "Search cleared"
 			return nil
 		case "enter":
-			// Exit search mode, keep filtered results
 			m.historySearchActive = false
 			m.statusMsg = fmt.Sprintf("Filtered to %d entries", len(m.historyEntries))
 			return nil
@@ -1410,7 +1452,6 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 			return nil
 		default:
-			// Append character to search query
 			if len(msg.String()) == 1 {
 				m.historySearchQuery += msg.String()
 				m.filterHistoryEntries()
@@ -1419,69 +1460,75 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// Handle preview pane scrolling (not in keybinds registry)
 	switch msg.String() {
-	case "esc", "H", "q", "tab":
+	case "shift+up", "K":
+		if m.historyPreviewVisible {
+			m.historyPreviewView.LineUp(1)
+		}
+		return nil
+	case "shift+down", "J":
+		if m.historyPreviewVisible {
+			m.historyPreviewView.LineDown(1)
+		}
+		return nil
+	}
+
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextHistory, msg.String())
+	if partial {
+		return nil
+	}
+
+	if !ok {
+		m.gPressed = false
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
 		m.mode = ModeNormal
 
-	// Activate search mode
-	case "/":
+	case keybinds.ActionOpenSearch:
 		m.historySearchActive = true
 		m.historySearchQuery = ""
 		m.statusMsg = "Search history (ESC to cancel, Enter to apply)"
 		return nil
 
-	// Item selection (left pane)
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		if m.historyIndex > 0 {
 			m.historyIndex--
-			m.updateHistoryView() // Regenerate to update highlight and preview
+			m.updateHistoryView()
 		}
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		if m.historyIndex < len(m.historyEntries)-1 {
 			m.historyIndex++
-			m.updateHistoryView() // Regenerate to update highlight and preview
+			m.updateHistoryView()
 		}
 
-	// Scroll preview pane (right pane) when preview is visible
-	case "shift+up", "K":
-		if m.historyPreviewVisible {
-			m.historyPreviewView.LineUp(1)
-		}
-
-	case "shift+down", "J":
-		if m.historyPreviewVisible {
-			m.historyPreviewView.LineDown(1)
-		}
-
-	// Load selected history entry
-	case "enter":
+	case keybinds.ActionHistoryExecute:
 		if len(m.historyEntries) > 0 && m.historyIndex < len(m.historyEntries) {
 			return m.loadHistoryEntry(m.historyIndex)
 		}
 
-	// Replay selected history entry (re-execute the request)
-	case "r":
+	case keybinds.ActionHistoryRollback:
 		if len(m.historyEntries) > 0 && m.historyIndex < len(m.historyEntries) {
 			return m.replayHistoryEntry(m.historyIndex)
 		}
 
-	// Toggle response preview pane visibility
-	case "p":
+	case keybinds.ActionHistoryPaginate:
 		m.historyPreviewVisible = !m.historyPreviewVisible
 		if m.historyPreviewVisible {
 			m.statusMsg = "Preview pane shown"
 		} else {
 			m.statusMsg = "Preview pane hidden"
 		}
-		m.updateHistoryView() // Refresh to apply toggle
+		m.updateHistoryView()
 
-	// Clear all history with confirmation
-	case "C":
+	case keybinds.ActionHistoryClear:
 		m.mode = ModeHistoryClearConfirm
 
-	// Page up/down - move cursor by page amount
-	case "pgup":
+	case keybinds.ActionPageUp:
 		pageSize := m.modalView.Height
 		if pageSize < 1 {
 			pageSize = 10
@@ -1492,7 +1539,7 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateHistoryView()
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		pageSize := m.modalView.Height
 		if pageSize < 1 {
 			pageSize = 10
@@ -1506,8 +1553,7 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateHistoryView()
 
-	case "ctrl+u":
-		// Vim-style half-page up
+	case keybinds.ActionHalfPageUp:
 		halfPage := m.modalView.Height / 2
 		if halfPage < 1 {
 			halfPage = 5
@@ -1518,8 +1564,7 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateHistoryView()
 
-	case "ctrl+d":
-		// Vim-style half-page down
+	case keybinds.ActionHalfPageDown:
 		halfPage := m.modalView.Height / 2
 		if halfPage < 1 {
 			halfPage = 5
@@ -1533,93 +1578,98 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateHistoryView()
 
-	case "home":
+	case keybinds.ActionGoToTop:
 		if len(m.historyEntries) > 0 {
 			m.historyIndex = 0
 			m.updateHistoryView()
 		}
 
-	case "end":
-		if len(m.historyEntries) > 0 {
-			m.historyIndex = len(m.historyEntries) - 1
-			m.updateHistoryView()
-		}
-
-	case "g":
-		// Vim-style 'gg' to go to top
-		if m.gPressed {
-			m.gPressed = false
-			if len(m.historyEntries) > 0 {
-				m.historyIndex = 0
-				m.updateHistoryView()
-			}
-		} else {
-			m.gPressed = true
-		}
-		return nil // Don't reset gPressed
-
-	case "G":
-		// Vim-style 'G' to go to bottom
+	case keybinds.ActionGoToBottom:
 		if len(m.historyEntries) > 0 {
 			m.historyIndex = len(m.historyEntries) - 1
 			m.updateHistoryView()
 		}
 	}
 
-	// Reset 'g' state on any key except 'g' itself
 	m.gPressed = false
 	return nil
 }
 
 // handleConfigViewKeys handles keys in config view mode
 func (m *Model) handleConfigViewKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "C", "q":
+	// Handle 'C' specially (closes modal - same key that opens it)
+	if msg.String() == "C" {
+		m.mode = ModeNormal
+		return nil
+	}
+
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
 		m.mode = ModeNormal
 	}
+
 	return nil
 }
 
 // handleDeleteKeys handles keys in delete confirmation mode
 func (m *Model) handleDeleteKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "n", "N":
+	action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCancel:
 		m.mode = ModeNormal
 		m.statusMsg = "Delete cancelled"
 
-	case "y", "Y":
-		// Perform delete
+	case keybinds.ActionConfirm:
 		return m.deleteFile()
 	}
+
 	return nil
 }
 
 // handleConfirmExecutionKeys handles keys in execution confirmation mode
 func (m *Model) handleConfirmExecutionKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "n", "N":
+	action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCancel:
 		m.mode = ModeNormal
 		m.statusMsg = "Execution cancelled"
 		m.confirmationGiven = false
 
-	case "y", "Y":
-		// Set confirmation flag and execute request
+	case keybinds.ActionConfirm:
 		m.confirmationGiven = true
 		m.mode = ModeNormal
 		return m.executeRequest()
 	}
+
 	return nil
 }
 
 // handleHistoryClearConfirmKeys handles keys in history clear confirmation mode
 func (m *Model) handleHistoryClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "n", "N":
+	action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCancel:
 		m.mode = ModeHistory
 		m.statusMsg = "Clear history cancelled"
 
-	case "y", "Y":
-		// Clear all history
+	case keybinds.ActionConfirm:
 		if m.historyManager != nil {
 			if err := m.historyManager.Clear(); err != nil {
 				m.errorMsg = fmt.Sprintf("Failed to clear history: %v", err)
@@ -1633,18 +1683,27 @@ func (m *Model) handleHistoryClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 	}
+
 	return nil
 }
 
 // handleAnalyticsKeys handles key events in analytics mode
 func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "A", "q":
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextAnalytics, msg.String())
+	if partial {
+		return nil
+	}
+
+	if !ok {
+		m.gPressed = false
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
 		m.mode = ModeNormal
 
-	// Focus switching
-	case "tab":
-		// Toggle focus between list and details
+	case keybinds.ActionSwitchPane:
 		if m.analyticsFocusedPane == "list" {
 			m.analyticsFocusedPane = "details"
 			m.statusMsg = "Focus: Details panel (use TAB to switch back)"
@@ -1653,46 +1712,38 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			m.statusMsg = "Focus: List panel (use TAB to switch)"
 		}
 
-	// Navigation - based on focused panel
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		if m.analyticsFocusedPane == "details" {
-			// Scroll details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.LineUp(1)
 			}
 		} else {
-			// Navigate list if focused on list
 			if m.analyticsIndex > 0 {
 				m.analyticsIndex--
 				m.updateAnalyticsView()
 			}
 		}
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		if m.analyticsFocusedPane == "details" {
-			// Scroll details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.LineDown(1)
 			}
 		} else {
-			// Navigate list if focused on list
 			if m.analyticsIndex < len(m.analyticsStats)-1 {
 				m.analyticsIndex++
 				m.updateAnalyticsView()
 			}
 		}
 
-	// Load selected request file
-	case "enter":
+	case keybinds.ActionTextSubmit:
 		if len(m.analyticsStats) > 0 && m.analyticsIndex < len(m.analyticsStats) {
-			// Only works in per-file mode (not when grouping by normalized path)
 			if m.analyticsGroupByPath {
 				m.statusMsg = "Switch to per-file mode (press 't') to load a specific file"
 				return nil
 			}
 
 			stat := m.analyticsStats[m.analyticsIndex]
-			// Load the file associated with this stat
 			fileFound := false
 			for i, file := range m.files {
 				if file.Path == stat.FilePath {
@@ -1712,8 +1763,7 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
-	// Toggle preview pane visibility
-	case "p":
+	case keybinds.ActionAnalyticsPaginate:
 		m.analyticsPreviewVisible = !m.analyticsPreviewVisible
 		if m.analyticsPreviewVisible {
 			m.statusMsg = "Preview pane shown"
@@ -1722,8 +1772,7 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateAnalyticsView()
 
-	// Toggle grouping mode
-	case "t":
+	case keybinds.ActionOpenTagFilter:
 		m.analyticsGroupByPath = !m.analyticsGroupByPath
 		m.analyticsIndex = 0
 		if m.analyticsGroupByPath {
@@ -1733,20 +1782,16 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		return m.loadAnalytics()
 
-	// Clear all analytics with confirmation
-	case "C":
+	case keybinds.ActionAnalyticsClear:
 		m.mode = ModeAnalyticsClearConfirm
 		m.statusMsg = "Confirm clear all analytics"
 
-	// Page navigation - based on focused panel
-	case "pgup":
+	case keybinds.ActionPageUp:
 		if m.analyticsFocusedPane == "details" {
-			// Page up in details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.HalfViewUp()
 			}
 		} else {
-			// Page up in list if focused on list
 			pageSize := 10
 			m.analyticsIndex -= pageSize
 			if m.analyticsIndex < 0 {
@@ -1755,14 +1800,12 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			m.updateAnalyticsView()
 		}
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		if m.analyticsFocusedPane == "details" {
-			// Page down in details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.HalfViewDown()
 			}
 		} else {
-			// Page down in list if focused on list
 			pageSize := 10
 			m.analyticsIndex += pageSize
 			if m.analyticsIndex >= len(m.analyticsStats) {
@@ -1774,14 +1817,12 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			m.updateAnalyticsView()
 		}
 
-	case "ctrl+u":
+	case keybinds.ActionHalfPageUp:
 		if m.analyticsFocusedPane == "details" {
-			// Half page up in details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.HalfViewUp()
 			}
 		} else {
-			// Half page up in list if focused on list
 			halfPage := 5
 			m.analyticsIndex -= halfPage
 			if m.analyticsIndex < 0 {
@@ -1790,14 +1831,12 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			m.updateAnalyticsView()
 		}
 
-	case "ctrl+d":
+	case keybinds.ActionHalfPageDown:
 		if m.analyticsFocusedPane == "details" {
-			// Half page down in details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.HalfViewDown()
 			}
 		} else {
-			// Half page down in list if focused on list
 			halfPage := 5
 			m.analyticsIndex += halfPage
 			if m.analyticsIndex >= len(m.analyticsStats) {
@@ -1809,63 +1848,24 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			m.updateAnalyticsView()
 		}
 
-	// Vim-style navigation - based on focused panel
-	case "g":
-		// Vim-style 'gg' to go to top
-		if m.gPressed {
-			m.gPressed = false
-			if m.analyticsFocusedPane == "details" {
-				// Go to top of details pane if focused
-				if m.analyticsPreviewVisible {
-					m.analyticsDetailView.GotoTop()
-				}
-			} else {
-				// Go to top of list if focused on list
-				if len(m.analyticsStats) > 0 {
-					m.analyticsIndex = 0
-					m.updateAnalyticsView()
-				}
-			}
-		} else {
-			m.gPressed = true
-		}
-		return nil // Don't reset gPressed
-
-	case "G":
-		// Vim-style 'G' to go to bottom
+	case keybinds.ActionGoToTop:
 		if m.analyticsFocusedPane == "details" {
-			// Go to bottom of details pane if focused
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.GotoBottom()
-			}
-		} else {
-			// Go to bottom of list if focused on list
-			if len(m.analyticsStats) > 0 {
-				m.analyticsIndex = len(m.analyticsStats) - 1
-				m.updateAnalyticsView()
-			}
-		}
-
-	case "home":
-		if m.analyticsFocusedPane == "details" {
-			// Go to top of details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.GotoTop()
 			}
 		} else {
-			// Go to top of list if focused on list
-			m.analyticsIndex = 0
-			m.updateAnalyticsView()
+			if len(m.analyticsStats) > 0 {
+				m.analyticsIndex = 0
+				m.updateAnalyticsView()
+			}
 		}
 
-	case "end":
+	case keybinds.ActionGoToBottom:
 		if m.analyticsFocusedPane == "details" {
-			// Go to bottom of details pane if focused
 			if m.analyticsPreviewVisible {
 				m.analyticsDetailView.GotoBottom()
 			}
 		} else {
-			// Go to bottom of list if focused on list
 			if len(m.analyticsStats) > 0 {
 				m.analyticsIndex = len(m.analyticsStats) - 1
 				m.updateAnalyticsView()
@@ -1873,20 +1873,23 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Reset 'g' state on any key except 'g' itself
 	m.gPressed = false
 	return nil
 }
 
 // handleAnalyticsClearConfirmKeys handles keys in analytics clear confirmation mode
 func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "n", "N":
+	action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCancel:
 		m.mode = ModeAnalytics
 		m.statusMsg = "Clear analytics cancelled"
 
-	case "y", "Y":
-		// Clear all analytics
+	case keybinds.ActionConfirm:
 		if m.analyticsManager != nil {
 			if err := m.analyticsManager.Clear(); err != nil {
 				m.errorMsg = fmt.Sprintf("Failed to clear analytics: %v", err)
@@ -1894,46 +1897,37 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 			} else {
 				m.analyticsStats = nil
 				m.analyticsIndex = 0
-				m.analyticsFocusedPane = "list" // Reset focus to list
-				m.analyticsDetailView.SetContent("") // Clear details viewport
+				m.analyticsFocusedPane = "list"
+				m.analyticsDetailView.SetContent("")
 				m.mode = ModeAnalytics
 				m.statusMsg = "All analytics cleared"
-				m.updateAnalyticsView() // Refresh the viewport content
+				m.updateAnalyticsView()
 			}
 		}
 	}
+
 	return nil
 }
 
 // handleStressTestConfigKeys handles key events in stress test config mode
 func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
+	// Determine if we're in a text input field (not file picker)
+	inTextInput := m.stressTestConfigField != 1
+
+	// Handle special keys first (always active regardless of mode)
 	switch msg.String() {
-	case "esc":
-		// Cancel modal
-		m.mode = ModeNormal
-		m.stressTestConfigEdit = nil
-		m.stressTestConfigInput = ""
-		m.stressTestFilePickerActive = false
-		m.statusMsg = "Stress test configuration cancelled"
-
-	case "ctrl+l":
-		// Load saved config
-		return m.loadStressTestConfigs()
-
 	case "up":
-		// If on file field with picker active, ONLY navigate picker (locked)
+		// Field navigation up
 		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
 			if m.stressTestFilePickerIndex > 0 {
 				m.stressTestFilePickerIndex--
 			}
 			return nil
 		}
-		// If on file field but no file selected yet, block navigation
 		if m.stressTestConfigField == 1 && m.stressTestConfigInput == "" {
 			m.errorMsg = "Please select a file first (press Enter to confirm)"
 			return nil
 		}
-		// Otherwise navigate to previous field
 		if err := m.applyStressTestConfigInput(); err != nil {
 			m.errorMsg = err.Error()
 			return nil
@@ -1941,27 +1935,25 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.stressTestConfigField > 0 {
 			m.stressTestConfigField--
 			m.updateStressTestConfigInput()
-			// Activate picker if moving TO field 1
 			if m.stressTestConfigField == 1 {
 				m.loadStressTestFilePicker()
 				m.stressTestFilePickerActive = true
 			}
 		}
+		return nil
 
 	case "down":
-		// If on file field with picker active, ONLY navigate picker (locked)
+		// Field navigation down
 		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
 			if m.stressTestFilePickerIndex < len(m.stressTestFilePickerFiles)-1 {
 				m.stressTestFilePickerIndex++
 			}
 			return nil
 		}
-		// If on file field but no file selected yet, block navigation
 		if m.stressTestConfigField == 1 && m.stressTestConfigInput == "" {
 			m.errorMsg = "Please select a file first (press Enter to confirm)"
 			return nil
 		}
-		// Otherwise navigate to next field
 		if err := m.applyStressTestConfigInput(); err != nil {
 			m.errorMsg = err.Error()
 			return nil
@@ -1969,21 +1961,52 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.stressTestConfigField < 5 {
 			m.stressTestConfigField++
 			m.updateStressTestConfigInput()
-			// Activate picker if moving TO field 1
 			if m.stressTestConfigField == 1 {
 				m.loadStressTestFilePicker()
 				m.stressTestFilePickerActive = true
 			}
 		}
+		return nil
+
+	case "esc", "n", "N":
+		// Close modal
+		m.mode = ModeNormal
+		m.stressTestConfigEdit = nil
+		m.stressTestConfigInput = ""
+		m.stressTestFilePickerActive = false
+		m.statusMsg = "Stress test configuration cancelled"
+		return nil
+
+	case "ctrl+l":
+		// Load configs
+		return m.loadStressTestConfigs()
+
+	case "ctrl+s":
+		// Save config and start test
+		if err := m.applyStressTestConfigInput(); err != nil {
+			m.errorMsg = err.Error()
+			return nil
+		}
+		if err := m.stressTestConfigEdit.Validate(); err != nil {
+			m.errorMsg = fmt.Sprintf("Invalid configuration: %v", err)
+			return nil
+		}
+		if m.stressTestConfigEdit.Name != "" {
+			if err := m.stressTestManager.SaveConfig(m.stressTestConfigEdit); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to save config: %v", err)
+				return nil
+			}
+		}
+		return m.startStressTest()
 
 	case "enter":
-		// If on file field with picker, select file and close picker
+		// Submit/select
 		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
 			if len(m.stressTestFilePickerFiles) > 0 && m.stressTestFilePickerIndex < len(m.stressTestFilePickerFiles) {
 				selectedFile := m.stressTestFilePickerFiles[m.stressTestFilePickerIndex]
 				m.stressTestConfigInput = selectedFile.Path
 				m.stressTestConfigCursor = len(m.stressTestConfigInput)
-				m.stressTestFilePickerActive = false // Close picker after selection
+				m.stressTestFilePickerActive = false
 				if err := m.applyStressTestConfigInput(); err != nil {
 					m.errorMsg = err.Error()
 				} else {
@@ -1994,91 +2017,66 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 			return nil
 		}
-		// For other fields, just apply
 		if err := m.applyStressTestConfigInput(); err != nil {
 			m.errorMsg = err.Error()
 		}
+		return nil
+	}
 
-	case "ctrl+s":
-		// Save and start test
-		if err := m.applyStressTestConfigInput(); err != nil {
-			m.errorMsg = err.Error()
-			return nil
-		}
+	// If in text input field, use ContextTextInput for text editing (no ContextStressTest keybind conflicts)
+	if inTextInput {
+		action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+		if ok {
+			switch action {
+			case keybinds.ActionTextBackspace:
+				if m.stressTestConfigCursor > 0 {
+					input := m.stressTestConfigInput
+					m.stressTestConfigInput = input[:m.stressTestConfigCursor-1] + input[m.stressTestConfigCursor:]
+					m.stressTestConfigCursor--
+				}
 
-		// Validate and save config
-		if err := m.stressTestConfigEdit.Validate(); err != nil {
-			m.errorMsg = fmt.Sprintf("Invalid configuration: %v", err)
-			return nil
-		}
+			case keybinds.ActionTextDelete:
+				input := m.stressTestConfigInput
+				if m.stressTestConfigCursor < len(input) {
+					m.stressTestConfigInput = input[:m.stressTestConfigCursor] + input[m.stressTestConfigCursor+1:]
+				}
 
-		// Save config if it has a name
-		if m.stressTestConfigEdit.Name != "" {
-			if err := m.stressTestManager.SaveConfig(m.stressTestConfigEdit); err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to save config: %v", err)
-				return nil
+			case keybinds.ActionTextMoveLeft:
+				if m.stressTestConfigCursor > 0 {
+					m.stressTestConfigCursor--
+				}
+
+			case keybinds.ActionTextMoveRight:
+				if m.stressTestConfigCursor < len(m.stressTestConfigInput) {
+					m.stressTestConfigCursor++
+				}
+
+			case keybinds.ActionTextMoveHome:
+				if m.stressTestConfigCursor > 0 {
+					m.stressTestConfigCursor = 0
+				}
+
+			case keybinds.ActionTextMoveEnd:
+				m.stressTestConfigCursor = len(m.stressTestConfigInput)
 			}
-		}
-
-		// Start the stress test
-		return m.startStressTest()
-
-	case "backspace":
-		// Don't allow editing file field via backspace - use picker
-		if m.stressTestConfigField == 1 {
 			return nil
 		}
-		if m.stressTestConfigCursor > 0 {
-			input := m.stressTestConfigInput
-			m.stressTestConfigInput = input[:m.stressTestConfigCursor-1] + input[m.stressTestConfigCursor:]
-			m.stressTestConfigCursor--
-		}
 
-	case "delete":
-		// Don't allow editing file field via delete - use picker
-		if m.stressTestConfigField == 1 {
-			return nil
-		}
-		input := m.stressTestConfigInput
-		if m.stressTestConfigCursor < len(input) {
-			m.stressTestConfigInput = input[:m.stressTestConfigCursor] + input[m.stressTestConfigCursor+1:]
-		}
-
-	case "left":
-		// Don't allow cursor movement in file field - use picker
-		if m.stressTestConfigField == 1 {
-			return nil
-		}
-		if m.stressTestConfigCursor > 0 {
-			m.stressTestConfigCursor--
-		}
-
-	case "right":
-		// Don't allow cursor movement in file field - use picker
-		if m.stressTestConfigField == 1 {
-			return nil
-		}
-		if m.stressTestConfigCursor < len(m.stressTestConfigInput) {
-			m.stressTestConfigCursor++
-		}
-
-	case "home":
-		if m.stressTestConfigField != 1 && m.stressTestConfigCursor > 0 {
-			m.stressTestConfigCursor = 0
-		}
-
-	case "end":
-		if m.stressTestConfigField != 1 {
-			m.stressTestConfigCursor = len(m.stressTestConfigInput)
-		}
-
-	// Character input for the current field (except file field - use picker)
-	default:
-		if len(msg.String()) == 1 && m.stressTestConfigField != 1 {
-			// Insert character at cursor position
+		// Handle character input
+		if len(msg.String()) == 1 {
 			input := m.stressTestConfigInput
 			m.stressTestConfigInput = input[:m.stressTestConfigCursor] + msg.String() + input[m.stressTestConfigCursor:]
 			m.stressTestConfigCursor++
+		}
+		return nil
+	}
+
+	// If not in text input (file picker), handle other ContextStressTest actions
+	action, ok := m.keybinds.Match(keybinds.ContextStressTest, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionStressTestLoad:
+			return m.loadStressTestConfigs()
 		}
 	}
 
@@ -2087,14 +2085,16 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 
 // handleStressTestProgressKeys handles key events in stress test progress mode
 func (m *Model) handleStressTestProgressKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q":
-		// Set stopping flag to show feedback
+	action, ok := m.keybinds.Match(keybinds.ContextStressTest, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
 		if !m.stressTestStopping && m.stressTestExecutor != nil {
 			m.stressTestStopping = true
 			m.statusMsg = "Stopping stress test..."
-
-			// Stop in goroutine to keep UI responsive
 			return func() tea.Msg {
 				m.stressTestExecutor.Stop()
 				return stressTestStoppedMsg{}
@@ -2110,32 +2110,34 @@ type stressTestStoppedMsg struct{}
 
 // handleStressTestLoadConfigKeys handles key events in load config mode
 func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q":
+	action, ok := m.keybinds.Match(keybinds.ContextStressTest, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
 		m.mode = ModeStressTestConfig
-		// Reset picker state when returning to config
 		m.stressTestFilePickerActive = false
 		m.stressTestFilePickerFiles = nil
 		m.stressTestFilePickerIndex = 0
 		m.statusMsg = "Load cancelled"
 
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		if m.stressTestConfigIndex > 0 {
 			m.stressTestConfigIndex--
 		}
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		if m.stressTestConfigIndex < len(m.stressTestConfigs)-1 {
 			m.stressTestConfigIndex++
 		}
 
-	case "enter":
-		// Load selected config
+	case keybinds.ActionTextSubmit:
 		if len(m.stressTestConfigs) > 0 && m.stressTestConfigIndex < len(m.stressTestConfigs) {
 			config := m.stressTestConfigs[m.stressTestConfigIndex]
 			m.stressTestConfigEdit = config
 			m.mode = ModeStressTestConfig
-			// Reset picker state when loading config
 			m.stressTestFilePickerActive = false
 			m.stressTestFilePickerFiles = nil
 			m.stressTestFilePickerIndex = 0
@@ -2144,8 +2146,7 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			m.statusMsg = fmt.Sprintf("Loaded config: %s", config.Name)
 		}
 
-	case "d":
-		// Delete selected config
+	case keybinds.ActionStressTestDelete:
 		if len(m.stressTestConfigs) > 0 && m.stressTestConfigIndex < len(m.stressTestConfigs) {
 			config := m.stressTestConfigs[m.stressTestConfigIndex]
 			if err := m.stressTestManager.DeleteConfig(config.ID); err != nil {
@@ -2162,12 +2163,42 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 
 // handleStressTestResultsKeys handles key events in stress test results mode
 func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle special keys not in registry
 	switch msg.String() {
-	case "esc", "S", "q":
+	case "S":
+		m.mode = ModeNormal
+		return nil
+	case "n":
+		m.mode = ModeStressTestConfig
+		m.stressTestConfigEdit = &stresstest.Config{
+			Name:              "",
+			RequestFile:       "",
+			ConcurrentConns:   10,
+			TotalRequests:     100,
+			RampUpDurationSec: 0,
+			TestDurationSec:   0,
+		}
+		if len(m.files) > 0 && m.fileIndex < len(m.files) {
+			m.stressTestConfigEdit.RequestFile = m.files[m.fileIndex].Path
+		}
+		m.stressTestFilePickerActive = false
+		m.stressTestFilePickerFiles = nil
+		m.stressTestFilePickerIndex = 0
+		m.stressTestConfigField = 0
+		m.updateStressTestConfigInput()
+		return nil
+	}
+
+	action, ok := m.keybinds.Match(keybinds.ContextStressTest, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
 		m.mode = ModeNormal
 
-	case "tab":
-		// Toggle focus between list and details
+	case keybinds.ActionSwitchPane:
 		if m.stressTestFocusedPane == "list" {
 			m.stressTestFocusedPane = "details"
 			m.statusMsg = "Focus: Details panel (use TAB to switch back)"
@@ -2176,50 +2207,49 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 			m.statusMsg = "Focus: List panel (use TAB to switch)"
 		}
 
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		if m.stressTestFocusedPane == "details" {
 			m.stressTestDetailView.LineUp(1)
 		} else if m.stressTestFocusedPane == "list" {
 			if m.stressTestRunIndex > 0 {
 				m.stressTestRunIndex--
 				m.updateStressTestListView()
-				m.stressTestDetailView.GotoTop() // Reset scroll when switching runs
+				m.stressTestDetailView.GotoTop()
 			}
 		}
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		if m.stressTestFocusedPane == "details" {
 			m.stressTestDetailView.LineDown(1)
 		} else if m.stressTestFocusedPane == "list" {
 			if m.stressTestRunIndex < len(m.stressTestRuns)-1 {
 				m.stressTestRunIndex++
 				m.updateStressTestListView()
-				m.stressTestDetailView.GotoTop() // Reset scroll when switching runs
+				m.stressTestDetailView.GotoTop()
 			}
 		}
 
-	case "pgup":
+	case keybinds.ActionPageUp:
 		if m.stressTestFocusedPane == "details" {
 			m.stressTestDetailView.ViewUp()
 		}
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		if m.stressTestFocusedPane == "details" {
 			m.stressTestDetailView.ViewDown()
 		}
 
-	case "g":
+	case keybinds.ActionGoToTopPrepare:
 		if m.stressTestFocusedPane == "details" {
 			m.stressTestDetailView.GotoTop()
 		}
 
-	case "G":
+	case keybinds.ActionGoToBottom:
 		if m.stressTestFocusedPane == "details" {
 			m.stressTestDetailView.GotoBottom()
 		}
 
-	case "d":
-		// Delete selected run
+	case keybinds.ActionStressTestDelete:
 		if len(m.stressTestRuns) > 0 && m.stressTestRunIndex < len(m.stressTestRuns) {
 			run := m.stressTestRuns[m.stressTestRunIndex]
 			if err := m.stressTestManager.DeleteRun(run.ID); err != nil {
@@ -2230,60 +2260,25 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
-	case "l":
-		// Load saved config
+	case keybinds.ActionStressTestLoad:
 		return m.loadStressTestConfigs()
 
-	case "r":
-		// Re-run selected test
+	case keybinds.ActionRefresh:
 		if len(m.stressTestRuns) > 0 && m.stressTestRunIndex < len(m.stressTestRuns) {
 			run := m.stressTestRuns[m.stressTestRunIndex]
-
-			// Check if this run has a saved config
 			if run.ConfigID == nil {
 				m.errorMsg = "Cannot re-run: this test was not saved with a configuration"
 				return nil
 			}
-
-			// Load the config
 			config, err := m.stressTestManager.GetConfig(*run.ConfigID)
 			if err != nil {
 				m.errorMsg = fmt.Sprintf("Failed to load config: %v", err)
 				return nil
 			}
-
-			// Load the config into edit mode and start immediately
 			m.stressTestConfigEdit = config
 			m.statusMsg = fmt.Sprintf("Re-running test: %s", config.Name)
 			return m.startStressTest()
 		}
-
-	case "n":
-		// New stress test
-		m.mode = ModeStressTestConfig
-
-		// Initialize new config
-		m.stressTestConfigEdit = &stresstest.Config{
-			Name:              "",
-			RequestFile:       "",
-			ConcurrentConns:   10,
-			TotalRequests:     100,
-			RampUpDurationSec: 0,
-			TestDurationSec:   0,
-		}
-
-		// Pre-fill with current file if available
-		if len(m.files) > 0 && m.fileIndex < len(m.files) {
-			m.stressTestConfigEdit.RequestFile = m.files[m.fileIndex].Path
-		}
-
-		// Reset picker state
-		m.stressTestFilePickerActive = false
-		m.stressTestFilePickerFiles = nil
-		m.stressTestFilePickerIndex = 0
-
-		m.stressTestConfigField = 0
-		m.updateStressTestConfigInput()
 	}
 
 	return nil
@@ -2291,80 +2286,50 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 
 // handleTagFilterKeys handles keys in tag filter input mode
 func (m *Model) handleTagFilterKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
-		// Clear filter and return to normal mode
-		m.mode = ModeNormal
-		m.tagFilter = nil
-		m.files = m.allFiles
-		m.fileIndex = 0
-		m.fileOffset = 0
-		m.statusMsg = "Tag filter cleared"
-		m.inputValue = ""
-		m.inputCursor = 0
-
-	case "enter":
-		// Apply tag filter
-		if m.inputValue == "" {
-			// Empty input = clear filter
+	// Check for text input actions
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
 			m.mode = ModeNormal
 			m.tagFilter = nil
 			m.files = m.allFiles
 			m.fileIndex = 0
 			m.fileOffset = 0
 			m.statusMsg = "Tag filter cleared"
-		} else {
-			// Apply filter
-			m.tagFilter = []string{m.inputValue}
-			m.applyTagFilter()
-			m.mode = ModeNormal
-			m.statusMsg = fmt.Sprintf("Filtered by category: %s (%d files)", m.inputValue, len(m.files))
+			m.inputValue = ""
+			m.inputCursor = 0
+			return nil
+
+		case keybinds.ActionTextSubmit:
+			if m.inputValue == "" {
+				m.mode = ModeNormal
+				m.tagFilter = nil
+				m.files = m.allFiles
+				m.fileIndex = 0
+				m.fileOffset = 0
+				m.statusMsg = "Tag filter cleared"
+			} else {
+				m.tagFilter = []string{m.inputValue}
+				m.applyTagFilter()
+				m.mode = ModeNormal
+				m.statusMsg = fmt.Sprintf("Filtered by category: %s (%d files)", m.inputValue, len(m.files))
+			}
+			m.inputValue = ""
+			m.inputCursor = 0
+			return nil
 		}
-		m.inputValue = ""
-		m.inputCursor = 0
+	}
 
-	case "left":
-		if m.inputCursor > 0 {
-			m.inputCursor--
-		}
+	// Handle text input with cursor support
+	if _, shouldContinue := handleTextInputWithCursor(&m.inputValue, &m.inputCursor, msg); shouldContinue {
+		return nil
+	}
 
-	case "right":
-		if m.inputCursor < len(m.inputValue) {
-			m.inputCursor++
-		}
-
-	case "ctrl+a", "home":
-		m.inputCursor = 0
-
-	case "ctrl+e", "end":
-		m.inputCursor = len(m.inputValue)
-
-	case "backspace":
-		if m.inputCursor > 0 {
-			m.inputValue = m.inputValue[:m.inputCursor-1] + m.inputValue[m.inputCursor:]
-			m.inputCursor--
-		}
-
-	case "delete", "ctrl+d":
-		if m.inputCursor < len(m.inputValue) {
-			m.inputValue = m.inputValue[:m.inputCursor] + m.inputValue[m.inputCursor+1:]
-		}
-
-	case "ctrl+u":
-		// Delete from cursor to beginning
-		m.inputValue = m.inputValue[m.inputCursor:]
-		m.inputCursor = 0
-
-	case "ctrl+k":
-		// Delete from cursor to end
-		m.inputValue = m.inputValue[:m.inputCursor]
-
-	default:
-		// Insert character at cursor position
-		if len(msg.String()) == 1 {
-			m.inputValue = m.inputValue[:m.inputCursor] + msg.String() + m.inputValue[m.inputCursor:]
-			m.inputCursor++
-		}
+	// Insert character at cursor position
+	if len(msg.String()) == 1 {
+		m.inputValue = m.inputValue[:m.inputCursor] + msg.String() + m.inputValue[m.inputCursor:]
+		m.inputCursor++
 	}
 
 	return nil

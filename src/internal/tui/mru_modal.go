@@ -7,43 +7,15 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // handleMRUKeys handles keyboard input in MRU mode
 func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 	recentFiles := m.sessionMgr.GetRecentFiles()
 
+	// Handle quick select and enter before registry (special keys)
 	switch msg.String() {
-	case "esc", "q":
-		m.mode = ModeNormal
-		m.errorMsg = ""
-
-	case "j", "down":
-		if len(recentFiles) > 0 {
-			m.mruIndex = (m.mruIndex + 1) % len(recentFiles)
-		}
-
-	case "k", "up":
-		if len(recentFiles) > 0 {
-			m.mruIndex = (m.mruIndex - 1 + len(recentFiles)) % len(recentFiles)
-		}
-
-	case "g":
-		// Go to top
-		if m.gPressed {
-			m.mruIndex = 0
-			m.gPressed = false
-		} else {
-			m.gPressed = true
-		}
-
-	case "G":
-		// Go to bottom
-		if len(recentFiles) > 0 {
-			m.mruIndex = len(recentFiles) - 1
-		}
-		m.gPressed = false
-
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		// Quick select by number (1-9)
 		num := int(msg.String()[0] - '0') // Convert '1'-'9' to 1-9
@@ -99,12 +71,46 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeNormal
 		m.statusMsg = fmt.Sprintf("Opened: %s", filepath.Base(selectedFile))
 		m.errorMsg = ""
-
-	default:
-		// Reset 'g' press on any other key
-		m.gPressed = false
 	}
 
+	// Use registry for navigation
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextModal, msg.String())
+	if partial {
+		return nil
+	}
+	if !ok {
+		// Reset 'g' press on any other key
+		m.gPressed = false
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+		m.errorMsg = ""
+
+	case keybinds.ActionNavigateDown:
+		if len(recentFiles) > 0 {
+			m.mruIndex = (m.mruIndex + 1) % len(recentFiles)
+		}
+
+	case keybinds.ActionNavigateUp:
+		if len(recentFiles) > 0 {
+			m.mruIndex = (m.mruIndex - 1 + len(recentFiles)) % len(recentFiles)
+		}
+
+	case keybinds.ActionGoToTop:
+		// Go to top (triggered by gg)
+		m.mruIndex = 0
+
+	case keybinds.ActionGoToBottom:
+		// Go to bottom
+		if len(recentFiles) > 0 {
+			m.mruIndex = len(recentFiles) - 1
+		}
+	}
+
+	m.gPressed = false
 	return nil
 }
 

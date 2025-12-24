@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/proxy"
 )
 
@@ -160,10 +161,8 @@ func (m Model) renderProxyModal() string {
 
 // handleProxyViewerKeys handles key events in proxy viewer mode
 func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle special keys not in registry
 	switch msg.String() {
-	case "esc", "q":
-		m.mode = ModeNormal
-
 	case "s":
 		// Start or stop proxy
 		if m.proxyRunning && m.proxyServer != nil {
@@ -199,18 +198,37 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 			m.proxyLogs = nil
 			m.proxySelectedIndex = 0
 		}
+		return nil
 
-	case "j", "down":
+	case "enter":
+		if m.proxySelectedIndex >= 0 && m.proxySelectedIndex < len(m.proxyLogs) {
+			m.mode = ModeProxyDetail
+			m.updateProxyDetailView() // Set content once when entering modal
+		}
+		return nil
+	}
+
+	// Use registry for navigation
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+
+	case keybinds.ActionNavigateDown:
 		if len(m.proxyLogs) > 0 && m.proxySelectedIndex < len(m.proxyLogs)-1 {
 			m.proxySelectedIndex++
 		}
 
-	case "k", "up":
+	case keybinds.ActionNavigateUp:
 		if len(m.proxyLogs) > 0 && m.proxySelectedIndex > 0 {
 			m.proxySelectedIndex--
 		}
 
-	case "ctrl+d":
+	case keybinds.ActionHalfPageDown:
 		// Half page down
 		if len(m.proxyLogs) > 0 {
 			halfPage := m.modalView.Height / 2
@@ -220,7 +238,7 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
-	case "ctrl+u":
+	case keybinds.ActionHalfPageUp:
 		// Half page up
 		if len(m.proxyLogs) > 0 {
 			halfPage := m.modalView.Height / 2
@@ -230,29 +248,23 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
-	case "pgup":
+	case keybinds.ActionPageUp:
 		m.modalView.PageUp()
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		m.modalView.PageDown()
 
-	case "g":
+	case keybinds.ActionGoToTop:
 		if len(m.proxyLogs) > 0 {
 			m.proxySelectedIndex = 0
 		}
 		m.modalView.GotoTop()
 
-	case "G":
+	case keybinds.ActionGoToBottom:
 		if len(m.proxyLogs) > 0 {
 			m.proxySelectedIndex = len(m.proxyLogs) - 1
 		}
 		m.modalView.GotoBottom()
-
-	case "enter":
-		if m.proxySelectedIndex >= 0 && m.proxySelectedIndex < len(m.proxyLogs) {
-			m.mode = ModeProxyDetail
-			m.updateProxyDetailView() // Set content once when entering modal
-		}
 	}
 
 	return nil

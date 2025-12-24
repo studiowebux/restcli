@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // renderMockServer renders the mock server management modal
@@ -125,10 +126,8 @@ func (m *Model) renderMockServer() string {
 
 // handleMockServerKeys handles keyboard input in mock server modal
 func (m *Model) handleMockServerKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle special keys not in registry
 	switch msg.String() {
-	case "esc", "q":
-		m.mode = ModeNormal
-
 	case "s":
 		if m.mockServerRunning {
 			// Stop server
@@ -143,19 +142,35 @@ func (m *Model) handleMockServerKeys(msg tea.KeyMsg) tea.Cmd {
 			m.mockServer.ClearLogs()
 			m.statusMsg = "Mock server logs cleared"
 		}
+		return nil
+	}
 
-	// Viewport scrolling
-	case "up", "k":
+	// Use registry for navigation and close
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+
+	case keybinds.ActionNavigateUp:
 		m.modalView.LineUp(1)
-	case "down", "j":
+
+	case keybinds.ActionNavigateDown:
 		m.modalView.LineDown(1)
-	case "pgup":
+
+	case keybinds.ActionPageUp:
 		m.modalView.PageUp()
-	case "pgdown":
+
+	case keybinds.ActionPageDown:
 		m.modalView.PageDown()
-	case "g":
+
+	case keybinds.ActionGoToTop:
 		m.modalView.GotoTop()
-	case "G":
+
+	case keybinds.ActionGoToBottom:
 		m.modalView.GotoBottom()
 	}
 

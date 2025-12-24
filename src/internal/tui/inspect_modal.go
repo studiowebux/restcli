@@ -3,6 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // renderInspect renders the request inspection modal
@@ -34,31 +35,36 @@ func (m *Model) renderInspect() string {
 
 // handleInspectKeys handles keyboard input in inspect mode
 func (m *Model) handleInspectKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
+	// Match key to action using keybinds registry
+	action, ok := m.keybinds.Match(keybinds.ContextInspect, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal, keybinds.ActionCloseModalAlt:
 		m.mode = ModeNormal
 
-	case "enter":
+	case keybinds.ActionExecute:
 		m.mode = ModeNormal
 		return m.executeRequest()
 
-	// Viewport scrolling like help modal
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		m.modalView.ScrollUp(1)
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		m.modalView.ScrollDown(1)
 
-	case "pgup":
+	case keybinds.ActionPageUp:
 		m.modalView.PageUp()
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		m.modalView.PageDown()
 
-	case "home":
+	case keybinds.ActionGoToTop:
 		m.modalView.GotoTop()
 
-	case "end":
+	case keybinds.ActionGoToBottom:
 		m.modalView.GotoBottom()
 	}
 

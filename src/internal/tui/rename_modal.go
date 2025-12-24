@@ -8,103 +8,108 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/config"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // handleRenameKeys handles keyboard input in rename mode
 func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
-		m.mode = ModeNormal
-		m.renameInput = ""
-		m.errorMsg = ""
-
-	case "enter":
-		if m.renameInput == "" {
-			m.errorMsg = "Filename cannot be empty"
+	// Check for text input actions (cancel/submit)
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			m.mode = ModeNormal
+			m.renameInput = ""
+			m.errorMsg = ""
 			return nil
-		}
 
-		if len(m.files) == 0 {
-			m.errorMsg = "No file selected"
-			return nil
-		}
-
-		// Get absolute path of old file
-		oldPath := m.files[m.fileIndex].Path
-		if !filepath.IsAbs(oldPath) {
-			var err error
-			oldPath, err = filepath.Abs(oldPath)
-			if err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to get absolute path: %v", err)
+		case keybinds.ActionTextSubmit:
+			if m.renameInput == "" {
+				m.errorMsg = "Filename cannot be empty"
 				return nil
 			}
-		}
 
-		dir := filepath.Dir(oldPath)
-
-		// Ensure extension is preserved if not provided
-		newName := m.renameInput
-		if filepath.Ext(newName) == "" {
-			newName += filepath.Ext(oldPath)
-		}
-
-		// Expand tilde to home directory
-		if strings.HasPrefix(newName, "~/") {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to get home directory: %v", err)
+			if len(m.files) == 0 {
+				m.errorMsg = "No file selected"
 				return nil
 			}
-			newName = filepath.Join(homeDir, newName[2:])
+
+			// Get absolute path of old file
+			oldPath := m.files[m.fileIndex].Path
+			if !filepath.IsAbs(oldPath) {
+				var err error
+				oldPath, err = filepath.Abs(oldPath)
+				if err != nil {
+					m.errorMsg = fmt.Sprintf("Failed to get absolute path: %v", err)
+					return nil
+				}
+			}
+
+			dir := filepath.Dir(oldPath)
+
+			// Ensure extension is preserved if not provided
+			newName := m.renameInput
+			if filepath.Ext(newName) == "" {
+				newName += filepath.Ext(oldPath)
+			}
+
+			// Expand tilde to home directory
+			if strings.HasPrefix(newName, "~/") {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					m.errorMsg = fmt.Sprintf("Failed to get home directory: %v", err)
+					return nil
+				}
+				newName = filepath.Join(homeDir, newName[2:])
+			}
+
+			// Build absolute new path
+			var newPath string
+			if filepath.IsAbs(newName) {
+				newPath = newName
+			} else {
+				newPath = filepath.Join(dir, newName)
+			}
+
+			// Check if file already exists
+			if _, err := os.Stat(newPath); err == nil {
+				m.errorMsg = fmt.Sprintf("File '%s' already exists", newName)
+				return nil
+			}
+
+			// Create directories if the new path includes subdirectories
+			newDir := filepath.Dir(newPath)
+			if err := os.MkdirAll(newDir, config.DirPermissions); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to create directory: %v", err)
+				return nil
+			}
+
+			// Rename the file
+			if err := os.Rename(oldPath, newPath); err != nil {
+				m.errorMsg = fmt.Sprintf("Failed to rename file: %v", err)
+				return nil
+			}
+
+			m.mode = ModeNormal
+			m.statusMsg = fmt.Sprintf("Renamed to: %s", newName)
+			m.renameInput = ""
+
+			// Refresh file list
+			return m.refreshFiles()
 		}
+	}
 
-		// Build absolute new path
-		var newPath string
-		if filepath.IsAbs(newName) {
-			newPath = newName
-		} else {
-			newPath = filepath.Join(dir, newName)
-		}
+	// Clear error when user starts typing
+	m.errorMsg = ""
 
-		// Check if file already exists
-		if _, err := os.Stat(newPath); err == nil {
-			m.errorMsg = fmt.Sprintf("File '%s' already exists", newName)
-			return nil
-		}
-
-		// Create directories if the new path includes subdirectories
-		newDir := filepath.Dir(newPath)
-		if err := os.MkdirAll(newDir, config.DirPermissions); err != nil {
-			m.errorMsg = fmt.Sprintf("Failed to create directory: %v", err)
-			return nil
-		}
-
-		// Rename the file
-		if err := os.Rename(oldPath, newPath); err != nil {
-			m.errorMsg = fmt.Sprintf("Failed to rename file: %v", err)
-			return nil
-		}
-
-		m.mode = ModeNormal
-		m.statusMsg = fmt.Sprintf("Renamed to: %s", newName)
-		m.renameInput = ""
-
-		// Refresh file list
-		return m.refreshFiles()
-
-	default:
-		// Clear error when user starts typing
-		m.errorMsg = ""
-
-		// Handle text input with cursor support (arrow keys, etc.)
-		if _, shouldContinue := handleTextInputWithCursor(&m.renameInput, &m.renameCursor, msg); shouldContinue {
-			return nil
-		}
-		// Insert character at cursor position
-		if len(msg.String()) == 1 {
-			m.renameInput = m.renameInput[:m.renameCursor] + msg.String() + m.renameInput[m.renameCursor:]
-			m.renameCursor++
-		}
+	// Handle text input with cursor support (arrow keys, etc.)
+	if _, shouldContinue := handleTextInputWithCursor(&m.renameInput, &m.renameCursor, msg); shouldContinue {
+		return nil
+	}
+	// Insert character at cursor position
+	if len(msg.String()) == 1 {
+		m.renameInput = m.renameInput[:m.renameCursor] + msg.String() + m.renameInput[m.renameCursor:]
+		m.renameCursor++
 	}
 
 	return nil

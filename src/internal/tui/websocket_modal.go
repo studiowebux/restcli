@@ -8,6 +8,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -455,8 +456,13 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 
 	// Handle confirmation dialog if showing
 	if m.wsShowClearConfirm {
-		switch key {
-		case "y", "Y":
+		action, ok := m.keybinds.Match(keybinds.ContextConfirm, key)
+		if !ok {
+			return nil
+		}
+
+		switch action {
+		case keybinds.ActionConfirm:
 			// Clear history
 			m.wsMessages = []types.ReceivedMessage{}
 			modalWidth := m.width - 6
@@ -466,7 +472,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.updateWebSocketHistoryView(historyWidth-4, paneHeight-2)
 			m.wsShowClearConfirm = false
 			return nil
-		case "n", "N", "esc":
+		case keybinds.ActionCancel:
 			// Cancel
 			m.wsShowClearConfirm = false
 			return nil
@@ -558,57 +564,13 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	// Handle special keys not in registry (before registry matching)
 	switch key {
-	case "q", "esc":
-		// Close WebSocket modal
-		m.mode = ModeNormal
-		if m.wsCancelFunc != nil {
-			m.wsCancelFunc()
-		}
-		m.wsActive = false
-		m.wsConnectionStatus = "disconnected"
-		m.wsMessageChannel = nil
-		m.wsCancelFunc = nil
-		m.wsLastKey = ""
-		return nil
-
-	case "tab":
-		// Switch focused pane
-		if m.wsFocusedPane == "menu" {
-			m.wsFocusedPane = "history"
-		} else {
-			m.wsFocusedPane = "menu"
-		}
-		m.wsLastKey = ""
-		return nil
-
-	case "d":
-		// Disconnect WebSocket (keep modal open with history)
-		m.wsLastKey = ""
-		if m.wsActive {
-			if m.wsCancelFunc != nil {
-				m.wsCancelFunc()
-			}
-			m.wsActive = false
-			m.wsConnectionStatus = "disconnected"
-			m.wsMessageChannel = nil
-			m.wsCancelFunc = nil
-		}
-		return nil
-
 	case "r":
 		// Reconnect WebSocket
 		m.wsLastKey = ""
 		if !m.wsActive {
 			return m.connectWebSocket()
-		}
-		return nil
-
-	case "C":
-		// Show clear history confirmation
-		m.wsLastKey = ""
-		if len(m.wsMessages) > 0 {
-			m.wsShowClearConfirm = true
 		}
 		return nil
 
@@ -652,32 +614,80 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			return m.exportWebSocketMessages()
 		}
 		return nil
+	}
 
-	case "g":
-		// Check for gg (go to top)
-		if m.wsLastKey == "g" {
-			if m.wsFocusedPane == "menu" {
-				// Go to first menu item
-				m.wsSelectedMessageIndex = 0
-				// Update menu to show new highlighting
-				modalWidth := m.width - 6
-				modalHeight := m.height - 3
-				paneHeight := modalHeight - 3
-				historyWidth := (modalWidth * 6) / 10
-				menuWidth := modalWidth - historyWidth - 3
-				m.updateWebSocketMenuView(menuWidth-4, paneHeight-2)
-			} else {
-				// Go to top of history
-				m.wsHistoryView.GotoTop()
-			}
-			m.wsLastKey = ""
-		} else {
-			m.wsLastKey = "g"
-		}
+	// Use registry for WebSocket navigation and actions
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextWebSocket, key)
+	if partial {
 		return nil
+	}
 
-	case "G":
-		// Go to bottom
+	if !ok {
+		m.gPressed = false
+		m.wsLastKey = ""
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		// Close WebSocket modal
+		m.mode = ModeNormal
+		if m.wsCancelFunc != nil {
+			m.wsCancelFunc()
+		}
+		m.wsActive = false
+		m.wsConnectionStatus = "disconnected"
+		m.wsMessageChannel = nil
+		m.wsCancelFunc = nil
+		m.wsLastKey = ""
+
+	case keybinds.ActionSwitchPane:
+		// Switch focused pane
+		if m.wsFocusedPane == "menu" {
+			m.wsFocusedPane = "history"
+		} else {
+			m.wsFocusedPane = "menu"
+		}
+		m.wsLastKey = ""
+
+	case keybinds.ActionWSDisconnect:
+		// Disconnect WebSocket (keep modal open with history)
+		m.wsLastKey = ""
+		if m.wsActive {
+			if m.wsCancelFunc != nil {
+				m.wsCancelFunc()
+			}
+			m.wsActive = false
+			m.wsConnectionStatus = "disconnected"
+			m.wsMessageChannel = nil
+			m.wsCancelFunc = nil
+		}
+
+	case keybinds.ActionWSClear:
+		// Show clear history confirmation
+		m.wsLastKey = ""
+		if len(m.wsMessages) > 0 {
+			m.wsShowClearConfirm = true
+		}
+
+	case keybinds.ActionGoToTop:
+		if m.wsFocusedPane == "menu" {
+			// Go to first menu item
+			m.wsSelectedMessageIndex = 0
+			// Update menu to show new highlighting
+			modalWidth := m.width - 6
+			modalHeight := m.height - 3
+			paneHeight := modalHeight - 3
+			historyWidth := (modalWidth * 6) / 10
+			menuWidth := modalWidth - historyWidth - 3
+			m.updateWebSocketMenuView(menuWidth-4, paneHeight-2)
+		} else {
+			// Go to top of history
+			m.wsHistoryView.GotoTop()
+		}
+		m.wsLastKey = ""
+
+	case keybinds.ActionGoToBottom:
 		if m.wsFocusedPane == "menu" {
 			// Go to last menu item
 			if len(m.wsSendableMessages) > 0 {
@@ -695,9 +705,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.GotoBottom()
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu
 			if m.wsSelectedMessageIndex > 0 {
@@ -715,9 +724,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.LineUp(1)
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu
 			if m.wsSelectedMessageIndex < len(m.wsSendableMessages)-1 {
@@ -735,9 +743,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.LineDown(1)
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "ctrl+d":
+	case keybinds.ActionHalfPageDown:
 		// Page down (half page)
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu down by half viewport height
@@ -761,9 +768,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.HalfViewDown()
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "ctrl+u":
+	case keybinds.ActionHalfPageUp:
 		// Page up (half page)
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu up by half viewport height
@@ -787,20 +793,19 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.HalfViewUp()
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "enter":
+	case keybinds.ActionWSSend:
 		// Send selected message (only when menu is focused)
 		m.wsLastKey = ""
 		if m.wsFocusedPane == "menu" {
 			return m.sendWebSocketMessage(m.wsSelectedMessageIndex)
 		}
-		return nil
 
 	default:
-		// Clear last key for any other key
+		// Clear last key for any other action
 		m.wsLastKey = ""
 	}
 
+	m.gPressed = false
 	return nil
 }

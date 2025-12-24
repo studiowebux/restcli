@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/proxy"
 )
 
@@ -158,33 +159,39 @@ func (m *Model) buildProxyDetailContent() string {
 
 // handleProxyDetailKeys handles key events in proxy detail mode
 func (m *Model) handleProxyDetailKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q":
-		m.mode = ModeProxyViewer
+	// Use registry for all navigation and close
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
 		return nil
+	}
 
-	case "up", "k":
+	switch action {
+	case keybinds.ActionCloseModal:
+		// Go back to proxy viewer instead of normal mode
+		m.mode = ModeProxyViewer
+
+	case keybinds.ActionNavigateUp:
 		m.modalView.ScrollUp(1)
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		m.modalView.ScrollDown(1)
 
-	case "ctrl+u":
+	case keybinds.ActionHalfPageUp:
 		m.modalView.HalfViewUp()
 
-	case "ctrl+d":
+	case keybinds.ActionHalfPageDown:
 		m.modalView.HalfViewDown()
 
-	case "pgup":
+	case keybinds.ActionPageUp:
 		m.modalView.PageUp()
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		m.modalView.PageDown()
 
-	case "g", "home":
+	case keybinds.ActionGoToTop:
 		m.modalView.GotoTop()
 
-	case "G", "end":
+	case keybinds.ActionGoToBottom:
 		m.modalView.GotoBottom()
 	}
 

@@ -6,14 +6,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // handleDiffKeys handles keyboard input in diff mode
 func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle special keys not in registry
 	switch msg.String() {
-	case "esc", "q", "W":
-		m.mode = ModeNormal
-
 	case "tab":
 		// Toggle between unified and split view
 		if m.diffViewMode == "split" {
@@ -22,9 +21,30 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 			m.diffViewMode = "split"
 		}
 		m.updateDiffView() // Regenerate content for new mode
+		return nil
 
-	// Vim-style navigation
-	case "j", "down":
+	case "W":
+		// Close modal
+		m.mode = ModeNormal
+		return nil
+	}
+
+	// Use registry for navigation
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextModal, msg.String())
+	if partial {
+		return nil
+	}
+	if !ok {
+		m.gPressed = false
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+
+	case keybinds.ActionNavigateDown:
+		// Vim-style navigation
 		if m.diffViewMode == "split" {
 			// Synchronized scrolling for split view
 			m.diffLeftView.LineDown(1)
@@ -32,7 +52,8 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.diffView.LineDown(1)
 		}
-	case "k", "up":
+
+	case keybinds.ActionNavigateUp:
 		if m.diffViewMode == "split" {
 			// Synchronized scrolling for split view
 			m.diffLeftView.LineUp(1)
@@ -40,73 +61,59 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.diffView.LineUp(1)
 		}
-	case "ctrl+d":
+
+	case keybinds.ActionHalfPageDown:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.HalfViewDown()
 			m.diffRightView.HalfViewDown()
 		} else {
 			m.diffView.HalfViewDown()
 		}
-	case "ctrl+u":
+
+	case keybinds.ActionHalfPageUp:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.HalfViewUp()
 			m.diffRightView.HalfViewUp()
 		} else {
 			m.diffView.HalfViewUp()
 		}
-	case "ctrl+f", "pgdown":
+
+	case keybinds.ActionPageDown:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.ViewDown()
 			m.diffRightView.ViewDown()
 		} else {
 			m.diffView.ViewDown()
 		}
-	case "ctrl+b", "pgup":
+
+	case keybinds.ActionPageUp:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.ViewUp()
 			m.diffRightView.ViewUp()
 		} else {
 			m.diffView.ViewUp()
 		}
-	case "g":
-		if m.gPressed {
-			if m.diffViewMode == "split" {
-				m.diffLeftView.GotoTop()
-				m.diffRightView.GotoTop()
-			} else {
-				m.diffView.GotoTop()
-			}
-			m.gPressed = false
-		} else {
-			m.gPressed = true
-		}
-	case "G":
-		if m.diffViewMode == "split" {
-			m.diffLeftView.GotoBottom()
-			m.diffRightView.GotoBottom()
-		} else {
-			m.diffView.GotoBottom()
-		}
-		m.gPressed = false
-	case "home":
+
+	case keybinds.ActionGoToTop:
+		// Go to top (triggered by gg or home)
 		if m.diffViewMode == "split" {
 			m.diffLeftView.GotoTop()
 			m.diffRightView.GotoTop()
 		} else {
 			m.diffView.GotoTop()
 		}
-	case "end":
+
+	case keybinds.ActionGoToBottom:
+		// Go to bottom (G or end)
 		if m.diffViewMode == "split" {
 			m.diffLeftView.GotoBottom()
 			m.diffRightView.GotoBottom()
 		} else {
 			m.diffView.GotoBottom()
 		}
-
-	default:
-		m.gPressed = false
 	}
 
+	m.gPressed = false
 	return nil
 }
 
