@@ -307,6 +307,90 @@ func TestWebSocketState_Stop(t *testing.T) {
 	}
 }
 
+func TestWebSocketState_DroppedMessages(t *testing.T) {
+	state := &WebSocketState{}
+
+	// Initial count should be 0
+	if count := state.GetDroppedMessages(); count != 0 {
+		t.Errorf("Expected initial dropped count to be 0, got %d", count)
+	}
+
+	// Increment counter
+	state.IncrementDropped()
+	state.IncrementDropped()
+	state.IncrementDropped()
+
+	if count := state.GetDroppedMessages(); count != 3 {
+		t.Errorf("Expected dropped count to be 3, got %d", count)
+	}
+
+	// Reset counter
+	state.ResetDropped()
+
+	if count := state.GetDroppedMessages(); count != 0 {
+		t.Errorf("Expected dropped count to be 0 after reset, got %d", count)
+	}
+}
+
+func TestWebSocketState_DroppedMessagesResetOnStart(t *testing.T) {
+	state := &WebSocketState{}
+
+	// Increment counter
+	state.IncrementDropped()
+	state.IncrementDropped()
+
+	if count := state.GetDroppedMessages(); count != 2 {
+		t.Errorf("Expected dropped count to be 2, got %d", count)
+	}
+
+	// Start should reset counter
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	state.Start(cancel)
+
+	if count := state.GetDroppedMessages(); count != 0 {
+		t.Errorf("Expected dropped count to be 0 after Start(), got %d", count)
+	}
+}
+
+func TestWebSocketState_ConcurrentDroppedAccess(t *testing.T) {
+	state := &WebSocketState{}
+	done := make(chan bool)
+	increments := 100
+
+	// Multiple goroutines incrementing
+	for i := 0; i < 10; i++ {
+		go func() {
+			for j := 0; j < increments; j++ {
+				state.IncrementDropped()
+			}
+			done <- true
+		}()
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// Verify count
+	expected := int64(10 * increments)
+	if count := state.GetDroppedMessages(); count != expected {
+		t.Errorf("Expected dropped count to be %d, got %d", expected, count)
+	}
+
+	// Concurrent reads while writing
+	go func() {
+		for i := 0; i < 100; i++ {
+			state.IncrementDropped()
+		}
+	}()
+
+	for i := 0; i < 100; i++ {
+		_ = state.GetDroppedMessages()
+	}
+}
+
 // Benchmark concurrent access to verify performance
 func BenchmarkStreamState_ConcurrentReads(b *testing.B) {
 	state := &StreamState{}

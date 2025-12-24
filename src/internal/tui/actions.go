@@ -301,7 +301,10 @@ func (m *Model) connectWebSocket() tea.Cmd {
 			if message != nil {
 				select {
 				case msgChan <- *message:
+					// Message sent successfully
 				default:
+					// Channel full - drop message and increment counter
+					m.wsState.IncrementDropped()
 				}
 			}
 		}

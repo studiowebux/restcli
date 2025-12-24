@@ -78,9 +78,10 @@ func (r *RequestState) Clear() {
 
 // WebSocketState manages WebSocket connection state with thread safety
 type WebSocketState struct {
-	mu     sync.Mutex
-	active bool
-	cancel context.CancelFunc
+	mu              sync.Mutex
+	active          bool
+	cancel          context.CancelFunc
+	droppedMessages int64 // Count of messages dropped due to full channel
 }
 
 // IsActive returns whether WebSocket is connected
@@ -90,12 +91,13 @@ func (w *WebSocketState) IsActive() bool {
 	return w.active
 }
 
-// Start marks WebSocket as active
+// Start marks WebSocket as active and resets dropped messages counter
 func (w *WebSocketState) Start(cancel context.CancelFunc) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.active = true
 	w.cancel = cancel
+	w.droppedMessages = 0 // Reset counter on new connection
 }
 
 // Cancel disconnects the WebSocket
@@ -115,4 +117,25 @@ func (w *WebSocketState) Stop() {
 	defer w.mu.Unlock()
 	w.active = false
 	w.cancel = nil
+}
+
+// IncrementDropped increments the dropped messages counter
+func (w *WebSocketState) IncrementDropped() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.droppedMessages++
+}
+
+// GetDroppedMessages returns the count of dropped messages
+func (w *WebSocketState) GetDroppedMessages() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.droppedMessages
+}
+
+// ResetDropped resets the dropped messages counter
+func (w *WebSocketState) ResetDropped() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.droppedMessages = 0
 }

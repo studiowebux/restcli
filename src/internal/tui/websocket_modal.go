@@ -90,11 +90,23 @@ func (m *Model) renderWebSocketModal() string {
 		statusIndicator = "✖"
 	}
 
-	statusText := fmt.Sprintf(" Status: %s %s | Messages: %d/%d ",
-		statusIndicator,
-		m.wsConnectionStatus,
-		len(m.wsMessages),
-		len(m.wsSendableMessages))
+	// Include dropped messages count if any were dropped
+	droppedCount := m.wsState.GetDroppedMessages()
+	var statusText string
+	if droppedCount > 0 {
+		statusText = fmt.Sprintf(" Status: %s %s | Messages: %d/%d | Dropped: %d ",
+			statusIndicator,
+			m.wsConnectionStatus,
+			len(m.wsMessages),
+			len(m.wsSendableMessages),
+			droppedCount)
+	} else {
+		statusText = fmt.Sprintf(" Status: %s %s | Messages: %d/%d ",
+			statusIndicator,
+			m.wsConnectionStatus,
+			len(m.wsMessages),
+			len(m.wsSendableMessages))
+	}
 
 	status := statusColorStyle.Render(statusText)
 
