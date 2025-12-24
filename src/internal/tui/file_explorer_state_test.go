@@ -392,3 +392,81 @@ func BenchmarkFileExplorerState_Search(b *testing.B) {
 		state.Search("file", 10)
 	}
 }
+
+func TestFileExplorerState_GoToTop(t *testing.T) {
+	state := NewFileExplorerState()
+
+	files := []types.FileInfo{
+		{Name: "a.http", Path: "/test/a.http"},
+		{Name: "b.http", Path: "/test/b.http"},
+		{Name: "c.http", Path: "/test/c.http"},
+	}
+	state.SetFiles(files, files)
+
+	// Navigate to middle
+	state.Navigate(1, 10)
+	AssertModelField(t, "navigate to middle", state.GetCurrentIndex(), 1)
+
+	// GoToTop should jump to first file
+	state.GoToTop(10)
+	AssertModelField(t, "after GoToTop", state.GetCurrentIndex(), 0)
+
+	// Empty file list
+	state.SetFiles([]types.FileInfo{}, []types.FileInfo{})
+	state.GoToTop(10) // Should not panic
+	AssertModelField(t, "empty list", state.GetCurrentIndex(), 0)
+}
+
+func TestFileExplorerState_GoToBottom(t *testing.T) {
+	state := NewFileExplorerState()
+
+	files := []types.FileInfo{
+		{Name: "a.http", Path: "/test/a.http"},
+		{Name: "b.http", Path: "/test/b.http"},
+		{Name: "c.http", Path: "/test/c.http"},
+	}
+	state.SetFiles(files, files)
+
+	// Start at top
+	AssertModelField(t, "initial index", state.GetCurrentIndex(), 0)
+
+	// GoToBottom should jump to last file
+	state.GoToBottom(10)
+	AssertModelField(t, "after GoToBottom", state.GetCurrentIndex(), 2)
+
+	// Empty file list
+	state.SetFiles([]types.FileInfo{}, []types.FileInfo{})
+	state.GoToBottom(10) // Should not panic
+	AssertModelField(t, "empty list", state.GetCurrentIndex(), 0)
+}
+
+func TestFileExplorerState_NavigateToFile(t *testing.T) {
+	state := NewFileExplorerState()
+
+	files := []types.FileInfo{
+		{Name: "a.http", Path: "/test/a.http"},
+		{Name: "b.http", Path: "/test/b.http"},
+		{Name: "c.http", Path: "/test/c.http"},
+	}
+	state.SetFiles(files, files)
+
+	// Navigate to b.http
+	found := state.NavigateToFile("/test/b.http", 10)
+	AssertModelField(t, "found b.http", found, true)
+	AssertModelField(t, "navigated to b.http", state.GetCurrentIndex(), 1)
+
+	// Navigate to c.http
+	found = state.NavigateToFile("/test/c.http", 10)
+	AssertModelField(t, "found c.http", found, true)
+	AssertModelField(t, "navigated to c.http", state.GetCurrentIndex(), 2)
+
+	// Navigate to non-existent file
+	found = state.NavigateToFile("/test/d.http", 10)
+	AssertModelField(t, "not found d.http", found, false)
+	AssertModelField(t, "index unchanged", state.GetCurrentIndex(), 2)
+
+	// Empty file list
+	state.SetFiles([]types.FileInfo{}, []types.FileInfo{})
+	found = state.NavigateToFile("/test/a.http", 10)
+	AssertModelField(t, "empty list not found", found, false)
+}

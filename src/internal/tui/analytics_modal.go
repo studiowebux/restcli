@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/analytics"
 )
@@ -15,68 +14,33 @@ import (
 func (m *Model) renderAnalytics() string {
 	modalWidth := m.width - 6
 	modalHeight := m.height - 3
-	paneHeight := modalHeight - 4
 
-	var mainView string
+	// Determine border colors based on focus
+	listBorderColor := colorGray
+	detailBorderColor := colorGray
+	leftIsFocused := false
+	rightIsFocused := false
 
-	if m.analyticsState.GetPreviewVisible() {
-		// Split view mode: show both list and detail
-		listWidth := (modalWidth - 3) / 2
-		previewWidth := modalWidth - listWidth - 3
+	if m.analyticsState.GetFocusedPane() == "list" {
+		listBorderColor = colorCyan
+		leftIsFocused = true
+	} else if m.analyticsState.GetFocusedPane() == "details" {
+		detailBorderColor = colorCyan
+		rightIsFocused = true
+	}
 
-		// Determine border colors and title styles based on focus
-		listBorderColor := colorGray
-		detailBorderColor := colorGray
-		listTitleStyle := styleTitleUnfocused
-		detailTitleStyle := styleTitleUnfocused
-		if m.analyticsState.GetFocusedPane() == "list" {
-			listBorderColor = colorCyan
-			listTitleStyle = styleTitleFocused
-		} else if m.analyticsState.GetFocusedPane() == "details" {
-			detailBorderColor = colorCyan
-			detailTitleStyle = styleTitleFocused
-		}
+	// When in single pane mode, always use cyan
+	if !m.analyticsState.GetPreviewVisible() {
+		listBorderColor = colorCyan
+		leftIsFocused = true
+	}
 
-		// Left pane: Analytics list
-		leftPane := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(listBorderColor).
-			Width(listWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(listTitleStyle.Render("Analytics") + "\n" + m.analyticsState.GetListView().View())
-
-		// Right pane: Stats detail with scroll indicator
-		detailTitle := detailTitleStyle.Render("Details")
-		scrollIndicator := m.getAnalyticsDetailScrollIndicator()
-		if scrollIndicator != "" {
-			detailTitle = lipgloss.JoinHorizontal(lipgloss.Top, detailTitle, "  ", styleSubtle.Render(scrollIndicator))
-		}
-
-		rightPane := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(detailBorderColor).
-			Width(previewWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(detailTitle + "\n" + m.analyticsState.GetDetailView().View())
-
-		mainView = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			leftPane,
-			rightPane,
-		)
-	} else {
-		// Preview hidden: expand list to full width
-		listBorderColor := colorCyan // Always cyan when list is the only visible pane
-		listTitleStyle := styleTitleFocused // Always focused when it's the only pane
-		mainView = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(listBorderColor).
-			Width(modalWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(listTitleStyle.Render("Analytics") + "\n" + m.analyticsState.GetListView().View())
+	// Build detail title with scroll indicator
+	detailTitle := "Details"
+	scrollIndicator := m.getAnalyticsDetailScrollIndicator()
+	if scrollIndicator != "" {
+		// We'll render the title manually in the config to include the scroll indicator
+		detailTitle = "Details  " + scrollIndicator
 	}
 
 	// Build footer with instructions and scroll position
@@ -95,21 +59,24 @@ func (m *Model) renderAnalytics() string {
 		footerText += scrollInfo
 	}
 
-	footer := styleSubtle.Render(footerText)
+	// Configure split-pane modal
+	cfg := SplitPaneConfig{
+		ModalWidth:       modalWidth,
+		ModalHeight:      modalHeight,
+		IsSplitView:      m.analyticsState.GetPreviewVisible(),
+		LeftTitle:        "Analytics",
+		LeftContent:      m.analyticsState.GetListView().View(),
+		LeftBorderColor:  listBorderColor,
+		LeftIsFocused:    leftIsFocused,
+		RightTitle:       detailTitle,
+		RightContent:     m.analyticsState.GetDetailView().View(),
+		RightBorderColor: detailBorderColor,
+		RightIsFocused:   rightIsFocused,
+		Footer:           footerText,
+		LeftWidthRatio:   0.5, // Equal split
+	}
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		mainView,
-		"\n"+footer,
-	)
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		content,
-	)
+	return renderSplitPaneModal(cfg, m.width, m.height)
 }
 
 // updateAnalyticsView updates the analytics viewport content for split view

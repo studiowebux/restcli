@@ -140,13 +140,14 @@ func (m *Model) handleProfileCreateKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Handle common text input operations (paste, clear, backspace)
-	if _, shouldContinue := handleTextInput(&m.profileName, msg); shouldContinue {
+	// Handle text input with cursor support
+	if _, shouldContinue := handleTextInputWithCursor(&m.profileName, &m.profileNamePos, msg); shouldContinue {
 		return nil
 	}
-	// Append character to profile name
+	// Insert character at cursor position
 	if len(msg.String()) == 1 {
-		m.profileName += msg.String()
+		m.profileName = m.profileName[:m.profileNamePos] + msg.String() + m.profileName[m.profileNamePos:]
+		m.profileNamePos++
 	}
 
 	return nil

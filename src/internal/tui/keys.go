@@ -246,6 +246,53 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.handleFilterInlineKeys(msg)
 	}
 
+	// Handle ESC for cancellation BEFORE keybinds matching
+	// This allows ESC to cancel requests even though it's not bound in ContextNormal
+	if msg.String() == "esc" {
+		// First priority: Cancel running request
+		if m.loading {
+			if m.streamState.IsActive() {
+				// Cancel streaming request
+				m.streamState.Cancel()
+			} else {
+				// Cancel regular request or chain
+				m.requestState.Cancel()
+			}
+			m.loading = false
+			m.statusMsg = "Request cancelled by user"
+			m.updateResponseView() // Remove loading indicator
+			return nil
+		} else if m.fullscreen {
+			m.fullscreen = false
+			m.updateViewport()
+			m.updateResponseView()
+			return nil
+		} else {
+			// Check if there's an active search to clear
+			_, _, fileMatches := m.fileExplorer.GetSearchInfo()
+			hasResponseSearch := len(m.responseSearchMatches) > 0
+
+			if fileMatches > 0 || hasResponseSearch {
+				// Clear active search
+				wasSearchingResponse := m.searchInResponseCtx
+				m.fileExplorer.ClearSearch()
+				m.responseSearchMatches = nil
+				m.responseSearchIndex = 0
+				m.searchInResponseCtx = false
+				m.statusMsg = "Search cleared"
+				// Clear highlighting from response if we were searching there
+				if wasSearchingResponse && m.currentResponse != nil {
+					m.updateResponseView()
+				}
+				return nil
+			} else {
+				m.errorMsg = ""
+				m.statusMsg = ""
+				return nil
+			}
+		}
+	}
+
 	// Match key to action using keybinds registry
 	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextNormal, msg.String())
 	if partial {
@@ -348,14 +395,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 				m.responseView.GotoTop()
 			}
 		} else {
-			files := m.fileExplorer.GetFiles()
-			if len(files) > 0 {
-				// Navigate to first file
-				currentIdx := m.fileExplorer.GetCurrentIndex()
-				pageSize := m.getFileListHeight()
-				m.fileExplorer.Navigate(-currentIdx, pageSize)
-				m.loadRequestsFromCurrentFile()
-			}
+			// Navigate to first file atomically
+			pageSize := m.getFileListHeight()
+			m.fileExplorer.GoToTop(pageSize)
+			m.loadRequestsFromCurrentFile()
 		}
 
 	case keybinds.ActionGoToBottom:
@@ -364,15 +407,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 				m.responseView.GotoBottom()
 			}
 		} else {
-			files := m.fileExplorer.GetFiles()
-			if len(files) > 0 {
-				// Navigate to last file
-				currentIdx := m.fileExplorer.GetCurrentIndex()
-				delta := len(files) - 1 - currentIdx
-				pageSize := m.getFileListHeight()
-				m.fileExplorer.Navigate(delta, pageSize)
-				m.loadRequestsFromCurrentFile()
-			}
+			// Navigate to last file atomically
+			pageSize := m.getFileListHeight()
+			m.fileExplorer.GoToBottom(pageSize)
+			m.loadRequestsFromCurrentFile()
 		}
 
 	case keybinds.ActionOpenGoto:
@@ -398,8 +436,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionOpenInspect:
 		if m.currentRequest == nil {
-			m.errorMsg = "No request loaded (select a file first)"
-			return nil
+			return m.setErrorMessage("No request loaded (select a file first)")
 		}
 		m.mode = ModeInspect
 		m.updateInspectView() // Set content once when entering modal
@@ -468,24 +505,23 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionPinResponse:
 		// Pin current response for comparison
-		if m.currentResponse != nil {
-			m.pinnedResponse = m.currentResponse
-			m.pinnedRequest = m.currentRequest
-			m.statusMsg = "Response pinned for comparison (press W to view diff)"
-		} else {
-			m.errorMsg = "No response to pin"
+		if m.currentResponse == nil {
+			return m.setErrorMessage("No response to pin")
 		}
+		m.pinnedResponse = m.currentResponse
+		m.pinnedRequest = m.currentRequest
+		m.statusMsg = "Response pinned for comparison (press W to view diff)"
 
 	case keybinds.ActionShowDiff:
 		// Show diff between pinned and current response
 		if m.pinnedResponse == nil {
-			m.errorMsg = "No pinned response (press 'w' to pin current response first)"
-		} else if m.currentResponse == nil {
-			m.errorMsg = "No current response to compare"
-		} else {
-			m.mode = ModeDiff
-			m.updateDiffView()
+			return m.setErrorMessage("No pinned response (press 'w' to pin current response first)")
 		}
+		if m.currentResponse == nil {
+			return m.setErrorMessage("No current response to compare")
+		}
+		m.mode = ModeDiff
+		m.updateDiffView()
 
 	case keybinds.ActionFilterResponse:
 		// Filter response with JMESPath
@@ -723,88 +759,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Handle escape separately since it has complex logic
-	if msg.String() == "esc" {
-		// First priority: Cancel running request
-		if m.loading {
-			if m.streamState.IsActive() {
-				// Cancel streaming request
-				m.streamState.Cancel()
-			} else {
-				// Cancel regular request
-				m.requestState.Cancel()
-			}
-			m.loading = false
-			m.statusMsg = "Request cancelled by user"
-			m.updateResponseView() // Remove loading indicator
-		} else if m.fullscreen {
-			m.fullscreen = false
-			m.updateViewport()
-			m.updateResponseView()
-		} else {
-			// Check if there's an active search to clear
-			_, _, fileMatches := m.fileExplorer.GetSearchInfo()
-			hasResponseSearch := len(m.responseSearchMatches) > 0
-
-			if fileMatches > 0 || hasResponseSearch {
-				// Clear active search
-				wasSearchingResponse := m.searchInResponseCtx
-				m.fileExplorer.ClearSearch()
-				m.responseSearchMatches = nil
-				m.responseSearchIndex = 0
-				m.searchInResponseCtx = false
-				m.statusMsg = "Search cleared"
-				// Clear highlighting from response if we were searching there
-				if wasSearchingResponse && m.currentResponse != nil {
-					m.updateResponseView()
-				}
-			} else {
-				m.errorMsg = ""
-				m.statusMsg = ""
-			}
-		}
-		return nil
-	}
-
 	return nil
-}
-
-// handleTextInput handles common text input operations (paste, clear, backspace)
-// Returns: modified (bool), shouldContinue (bool)
-// Note: This is the old version that only appends. Use handleTextInputWithCursor for proper cursor support.
-func handleTextInput(input *string, msg tea.KeyMsg) (modified bool, shouldContinue bool) {
-	switch msg.String() {
-	case "ctrl+v", "shift+insert", "super+v":
-		// Paste from clipboard (Ctrl+V, Shift+Insert, or Cmd+V on macOS)
-		if text, err := clipboard.ReadAll(); err == nil {
-			*input += text
-			return true, true
-		}
-		// If clipboard read fails, don't block - just return
-		return false, true
-	case "ctrl+y":
-		// Alternative paste (common in some terminals)
-		if text, err := clipboard.ReadAll(); err == nil {
-			*input += text
-			return true, true
-		}
-		return false, true
-	case "ctrl+k":
-		// Clear input
-		if *input != "" {
-			*input = ""
-			return true, true
-		}
-		return false, true
-	case "backspace":
-		// Delete last character
-		if len(*input) > 0 {
-			*input = (*input)[:len(*input)-1]
-			return true, true
-		}
-		return false, true
-	}
-	return false, false
 }
 
 // handleTextInputWithCursor handles text input with cursor position support
@@ -919,14 +874,15 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Handle common text input operations
-	if _, shouldContinue := handleTextInput(&m.searchInput, msg); shouldContinue {
+	// Handle text input with cursor support
+	if _, shouldContinue := handleTextInputWithCursor(&m.searchInput, &m.searchCursor, msg); shouldContinue {
 		return nil
 	}
 
-	// Only append single printable characters
+	// Insert character at cursor position
 	if len(msg.String()) == 1 {
-		m.searchInput += msg.String()
+		m.searchInput = m.searchInput[:m.searchCursor] + msg.String() + m.searchInput[m.searchCursor:]
+		m.searchCursor++
 	}
 
 	return nil
@@ -1054,9 +1010,9 @@ func (m *Model) handleGotoKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Handle common text input operations (paste, clear, backspace)
-	if _, shouldContinue := handleTextInput(&m.gotoInput, msg); shouldContinue {
-		// For goto, filter to hex characters only after paste
+	// Handle text input with cursor support
+	if _, shouldContinue := handleTextInputWithCursor(&m.gotoInput, &m.gotoCursor, msg); shouldContinue {
+		// For goto, filter to hex characters only after paste/delete
 		filtered := ""
 		for _, ch := range m.gotoInput {
 			if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
@@ -1064,14 +1020,19 @@ func (m *Model) handleGotoKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 		m.gotoInput = filtered
+		// Ensure cursor is still valid after filtering
+		if m.gotoCursor > len(m.gotoInput) {
+			m.gotoCursor = len(m.gotoInput)
+		}
 		return nil
 	}
 
-	// Append hex character to goto input (0-9, a-f)
+	// Insert hex character at cursor position (0-9, a-f, A-F)
 	if len(msg.String()) == 1 {
 		ch := msg.String()[0]
 		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
-			m.gotoInput += msg.String()
+			m.gotoInput = m.gotoInput[:m.gotoCursor] + msg.String() + m.gotoInput[m.gotoCursor:]
+			m.gotoCursor++
 		}
 	}
 
@@ -1090,20 +1051,16 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) tea.Cmd {
 		case "enter":
 			m.helpSearchActive = false
 			// Keep search query and filtered results
-		case "backspace":
-			if len(m.helpSearchQuery) > 0 {
-				m.helpSearchQuery = m.helpSearchQuery[:len(m.helpSearchQuery)-1]
-				m.updateHelpView()
-			}
 		default:
-			// Handle common text input operations
-			if _, shouldContinue := handleTextInput(&m.helpSearchQuery, msg); shouldContinue {
+			// Handle text input with cursor support
+			if _, shouldContinue := handleTextInputWithCursor(&m.helpSearchQuery, &m.helpSearchCursor, msg); shouldContinue {
 				m.updateHelpView()
 				return nil
 			}
-			// Append character
+			// Insert character at cursor position
 			if len(msg.String()) == 1 {
-				m.helpSearchQuery += msg.String()
+				m.helpSearchQuery = m.helpSearchQuery[:m.helpSearchCursor] + msg.String() + m.helpSearchQuery[m.helpSearchCursor:]
+				m.helpSearchCursor++
 				m.updateHelpView()
 			}
 		}
@@ -1693,15 +1650,14 @@ func (m *Model) handleHistoryClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionConfirm:
 		if m.historyManager != nil {
 			if err := m.historyManager.Clear(); err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to clear history: %v", err)
 				m.mode = ModeHistory
-			} else {
-				m.historyState.SetEntries(nil)
-				m.historyState.SetIndex(0)
-				m.mode = ModeHistory
-				m.statusMsg = "All history cleared"
-				m.updateHistoryView()
+				return m.setErrorMessage(fmt.Sprintf("Failed to clear history: %v", err))
 			}
+			m.historyState.SetEntries(nil)
+			m.historyState.SetIndex(0)
+			m.mode = ModeHistory
+			m.statusMsg = "All history cleared"
+			m.updateHistoryView()
 		}
 	}
 
@@ -1765,25 +1721,16 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 
 			stat := m.analyticsState.GetStats()[m.analyticsState.GetIndex()]
-			fileFound := false
-			files := m.fileExplorer.GetFiles()
-			for i, file := range files {
-				if file.Path == stat.FilePath {
-					// Navigate to this file
-					currentIdx := m.fileExplorer.GetCurrentIndex()
-					delta := i - currentIdx
-					pageSize := m.getFileListHeight()
-					m.fileExplorer.Navigate(delta, pageSize)
-					m.focusedPanel = "sidebar"
-					m.mode = ModeNormal
-					m.loadRequestsFromCurrentFile()
-					m.statusMsg = fmt.Sprintf("Loaded %s from analytics", filepath.Base(file.Path))
-					fileFound = true
-					break
-				}
-			}
 
-			if !fileFound {
+			// Navigate to the file atomically
+			pageSize := m.getFileListHeight()
+			fileFound := m.fileExplorer.NavigateToFile(stat.FilePath, pageSize)
+			if fileFound {
+				m.focusedPanel = "sidebar"
+				m.mode = ModeNormal
+				m.loadRequestsFromCurrentFile()
+				m.statusMsg = fmt.Sprintf("Loaded %s from analytics", filepath.Base(stat.FilePath))
+			} else {
 				m.statusMsg = "File not found in current directory"
 			}
 		}
@@ -1921,17 +1868,16 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionConfirm:
 		if m.analyticsManager != nil {
 			if err := m.analyticsManager.Clear(); err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to clear analytics: %v", err)
 				m.mode = ModeAnalytics
-			} else {
-				m.analyticsState.SetStats(nil)
-				m.analyticsState.SetIndex(0)
-				m.analyticsState.SetFocusedPane("list")
-				detailView := m.analyticsState.GetDetailView(); detailView.SetContent(""); m.analyticsState.SetDetailView(detailView)
-				m.mode = ModeAnalytics
-				m.statusMsg = "All analytics cleared"
-				m.updateAnalyticsView()
+				return m.setErrorMessage(fmt.Sprintf("Failed to clear analytics: %v", err))
 			}
+			m.analyticsState.SetStats(nil)
+			m.analyticsState.SetIndex(0)
+			m.analyticsState.SetFocusedPane("list")
+			detailView := m.analyticsState.GetDetailView(); detailView.SetContent(""); m.analyticsState.SetDetailView(detailView)
+			m.mode = ModeAnalytics
+			m.statusMsg = "All analytics cleared"
+			m.updateAnalyticsView()
 		}
 	}
 
@@ -1963,17 +1909,14 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 		case keybinds.ActionStressTestSave:
 			// Save config and start test
 			if err := m.applyStressTestConfigInput(); err != nil {
-				m.errorMsg = err.Error()
-				return nil
+				return m.setErrorMessage(err.Error())
 			}
 			if err := m.stressTestState.GetConfigEdit().Validate(); err != nil {
-				m.errorMsg = fmt.Sprintf("Invalid configuration: %v", err)
-				return nil
+				return m.setErrorMessage(fmt.Sprintf("Invalid configuration: %v", err))
 			}
 			if m.stressTestState.GetConfigEdit().Name != "" {
 				if err := m.stressTestState.GetManager().SaveConfig(m.stressTestState.GetConfigEdit()); err != nil {
-					m.errorMsg = fmt.Sprintf("Failed to save config: %v", err)
-					return nil
+					return m.setErrorMessage(fmt.Sprintf("Failed to save config: %v", err))
 				}
 			}
 			return m.startStressTest()
@@ -1987,17 +1930,15 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 					m.stressTestState.SetConfigCursor(len(selectedFile.Path))
 					m.stressTestState.SetFilePickerActive(false)
 					if err := m.applyStressTestConfigInput(); err != nil {
-						m.errorMsg = err.Error()
-					} else {
-						m.statusMsg = "File selected - use arrows to navigate to next field"
+						return m.setErrorMessage(err.Error())
 					}
+					m.statusMsg = "File selected - use arrows to navigate to next field"
 				} else {
-					m.errorMsg = "No files available to select"
+					return m.setErrorMessage("No files available to select")
 				}
-				return nil
 			}
 			if err := m.applyStressTestConfigInput(); err != nil {
-				m.errorMsg = err.Error()
+				return m.setErrorMessage(err.Error())
 			}
 			return nil
 
@@ -2010,12 +1951,10 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 			if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
-				m.errorMsg = "Please select a file first (press Enter to confirm)"
-				return nil
+				return m.setErrorMessage("Please select a file first (press Enter to confirm)")
 			}
 			if err := m.applyStressTestConfigInput(); err != nil {
-				m.errorMsg = err.Error()
-				return nil
+				return m.setErrorMessage(err.Error())
 			}
 			if m.stressTestState.GetConfigField() > 0 {
 				m.stressTestState.NavigateConfigFields(-1, 6) // 6 fields total
@@ -2036,12 +1975,10 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 			if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
-				m.errorMsg = "Please select a file first (press Enter to confirm)"
-				return nil
+				return m.setErrorMessage("Please select a file first (press Enter to confirm)")
 			}
 			if err := m.applyStressTestConfigInput(); err != nil {
-				m.errorMsg = err.Error()
-				return nil
+				return m.setErrorMessage(err.Error())
 			}
 			if m.stressTestState.GetConfigField() < 5 {
 				m.stressTestState.NavigateConfigFields(1, 6) // 6 fields total
@@ -2184,11 +2121,10 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(m.stressTestState.GetConfigs()) > 0 && m.stressTestState.GetConfigIndex() < len(m.stressTestState.GetConfigs()) {
 			config := m.stressTestState.GetConfigs()[m.stressTestState.GetConfigIndex()]
 			if err := m.stressTestState.GetManager().DeleteConfig(config.ID); err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to delete config: %v", err)
-			} else {
-				m.statusMsg = "Configuration deleted"
-				return m.loadStressTestConfigs()
+				return m.setErrorMessage(fmt.Sprintf("Failed to delete config: %v", err))
 			}
+			m.statusMsg = "Configuration deleted"
+			return m.loadStressTestConfigs()
 		}
 	}
 
@@ -2300,11 +2236,10 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(m.stressTestState.GetRuns()) > 0 && m.stressTestState.GetRunIndex() < len(m.stressTestState.GetRuns()) {
 			run := m.stressTestState.GetRuns()[m.stressTestState.GetRunIndex()]
 			if err := m.stressTestState.GetManager().DeleteRun(run.ID); err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to delete run: %v", err)
-			} else {
-				m.statusMsg = "Stress test run deleted"
-				return m.loadStressTestRuns()
+				return m.setErrorMessage(fmt.Sprintf("Failed to delete run: %v", err))
 			}
+			m.statusMsg = "Stress test run deleted"
+			return m.loadStressTestRuns()
 		}
 
 	case keybinds.ActionStressTestLoad:
@@ -2314,13 +2249,11 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(m.stressTestState.GetRuns()) > 0 && m.stressTestState.GetRunIndex() < len(m.stressTestState.GetRuns()) {
 			run := m.stressTestState.GetRuns()[m.stressTestState.GetRunIndex()]
 			if run.ConfigID == nil {
-				m.errorMsg = "Cannot re-run: this test was not saved with a configuration"
-				return nil
+				return m.setErrorMessage("Cannot re-run: this test was not saved with a configuration")
 			}
 			config, err := m.stressTestState.GetManager().GetConfig(*run.ConfigID)
 			if err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to load config: %v", err)
-				return nil
+				return m.setErrorMessage(fmt.Sprintf("Failed to load config: %v", err))
 			}
 			m.stressTestState.SetConfigEdit(config)
 			m.statusMsg = fmt.Sprintf("Re-running test: %s", config.Name)

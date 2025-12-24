@@ -87,51 +87,8 @@ func (m *Model) renderHistory() string {
 	// Use nearly full screen but leave small margin
 	modalWidth := m.width - 6
 	modalHeight := m.height - 3
-	paneHeight := modalHeight - 4 // Account for borders and padding
 
-	var mainView string
-
-	if m.historyState.GetPreviewVisible() {
-		// Split view mode: show both list and preview
-		listWidth := (modalWidth - 3) / 2          // Left pane: history list
-		previewWidth := modalWidth - listWidth - 3 // Right pane: response preview
-
-		// Left pane: History list
-		leftPane := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
-			Width(listWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(styleTitle.Render("History") + "\n" + m.modalView.View())
-
-		// Right pane: Response preview (content populated by updateHistoryView)
-		rightPane := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorGreen).
-			Width(previewWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(styleTitle.Render("Response Preview") + "\n" + m.historyState.GetPreviewView().View())
-
-		// Join panes horizontally (Telescope-style split)
-		mainView = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			leftPane,
-			rightPane,
-		)
-	} else {
-		// Preview hidden: expand list to full width
-		mainView = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
-			Width(modalWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(styleTitle.Render("History") + "\n" + m.modalView.View())
-	}
-
-	// Add footer with instructions and scroll position
+	// Build footer with instructions and scroll position
 	var footerText string
 	if m.historyState.GetSearchActive() {
 		// Show search input when active
@@ -152,21 +109,24 @@ func (m *Model) renderHistory() string {
 		}
 	}
 
-	footer := styleSubtle.Render(footerText)
+	// Configure split-pane modal
+	cfg := SplitPaneConfig{
+		ModalWidth:       modalWidth,
+		ModalHeight:      modalHeight,
+		IsSplitView:      m.historyState.GetPreviewVisible(),
+		LeftTitle:        "History",
+		LeftContent:      m.modalView.View(),
+		LeftBorderColor:  colorBlue,
+		LeftIsFocused:    true,
+		RightTitle:       "Response Preview",
+		RightContent:     m.historyState.GetPreviewView().View(),
+		RightBorderColor: colorGreen,
+		RightIsFocused:   false,
+		Footer:           footerText,
+		LeftWidthRatio:   0.5, // Equal split
+	}
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		mainView,
-		"\n"+footer,
-	)
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		content,
-	)
+	return renderSplitPaneModal(cfg, m.width, m.height)
 }
 
 // renderModal renders a generic modal dialog with scrollable content

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/stresstest"
 )
@@ -20,18 +19,18 @@ func (m *Model) renderStressTestResults() string {
 	listWidth := (modalWidth - 3) / 2
 	detailWidth := modalWidth - listWidth - 3
 
-	// Determine border colors based on focus
+	// Determine border colors and focus based on focus state
 	listBorderColor := colorGray
 	detailBorderColor := colorGray
-	listTitleStyle := styleTitleUnfocused
-	detailTitleStyle := styleTitleUnfocused
+	leftIsFocused := false
+	rightIsFocused := false
 
 	if m.stressTestState.GetFocusedPane() == "list" {
 		listBorderColor = colorCyan
-		listTitleStyle = styleTitleFocused
+		leftIsFocused = true
 	} else if m.stressTestState.GetFocusedPane() == "details" {
 		detailBorderColor = colorCyan
-		detailTitleStyle = styleTitleFocused
+		rightIsFocused = true
 	}
 
 	// Set viewport dimensions
@@ -48,47 +47,24 @@ func (m *Model) renderStressTestResults() string {
 	// Update list content
 	m.updateStressTestListView()
 
-	// Left pane: Test runs list
-	leftPane := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(listBorderColor).
-		Width(listWidth).
-		Height(paneHeight).
-		Padding(0, 1).
-		Render(listTitleStyle.Render("Test Runs") + "\n" + m.stressTestState.GetListView().View())
+	// Configure split-pane modal
+	cfg := SplitPaneConfig{
+		ModalWidth:       modalWidth,
+		ModalHeight:      modalHeight,
+		IsSplitView:      true, // Stress test results always shows split view
+		LeftTitle:        "Test Runs",
+		LeftContent:      m.stressTestState.GetListView().View(),
+		LeftBorderColor:  listBorderColor,
+		LeftIsFocused:    leftIsFocused,
+		RightTitle:       "Details",
+		RightContent:     m.stressTestState.GetDetailView().View(),
+		RightBorderColor: detailBorderColor,
+		RightIsFocused:   rightIsFocused,
+		Footer:           "n: New | r: Re-run | l: Load Config | TAB: Switch Focus | ↑/↓ j/k: Navigate | g/G: Top/Bottom | d: Delete | ESC/q: Close",
+		LeftWidthRatio:   0.5, // Equal split
+	}
 
-	// Right pane: Test run details
-	rightPane := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(detailBorderColor).
-		Width(detailWidth).
-		Height(paneHeight).
-		Padding(0, 1).
-		Render(detailTitleStyle.Render("Details") + "\n" + m.stressTestState.GetDetailView().View())
-
-	mainView := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		leftPane,
-		rightPane,
-	)
-
-	// Footer
-	footer := "n: New | r: Re-run | l: Load Config | TAB: Switch Focus | ↑/↓ j/k: Navigate | g/G: Top/Bottom | d: Delete | ESC/q: Close"
-	footerContent := styleSubtle.Render(footer)
-
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		mainView,
-		"\n"+footerContent,
-	)
-
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		content,
-	)
+	return renderSplitPaneModal(cfg, m.width, m.height)
 }
 
 // updateStressTestListView updates the stress test runs list view

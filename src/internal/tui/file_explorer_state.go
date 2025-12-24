@@ -125,6 +125,54 @@ func (f *FileExplorerState) AdjustScrollOffset(pageSize int) {
 	f.adjustScrollOffsetLocked(pageSize)
 }
 
+// GoToTop navigates to the first file atomically
+func (f *FileExplorerState) GoToTop(pageSize int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if len(f.files) == 0 {
+		return
+	}
+
+	f.fileIndex = 0
+	f.adjustScrollOffsetLocked(pageSize)
+}
+
+// GoToBottom navigates to the last file atomically
+func (f *FileExplorerState) GoToBottom(pageSize int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if len(f.files) == 0 {
+		return
+	}
+
+	f.fileIndex = len(f.files) - 1
+	f.adjustScrollOffsetLocked(pageSize)
+}
+
+// NavigateToFile navigates to a file by path atomically
+// Returns true if file was found, false otherwise
+func (f *FileExplorerState) NavigateToFile(filePath string, pageSize int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if len(f.files) == 0 {
+		return false
+	}
+
+	// Find the file in the current list
+	for i, file := range f.files {
+		if file.Path == filePath {
+			f.fileIndex = i
+			f.adjustScrollOffsetLocked(pageSize)
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetScrollOffset returns the current scroll offset
 func (f *FileExplorerState) GetScrollOffset() int {
 	f.mu.RLock()

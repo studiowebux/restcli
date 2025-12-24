@@ -52,22 +52,12 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 		// Find the file in the current file list
-		found := false
-		files := m.fileExplorer.GetFiles()
-		for i, f := range files {
-			if f.Path == selectedFile {
-				// Navigate to this file
-				currentIdx := m.fileExplorer.GetCurrentIndex()
-				delta := i - currentIdx
-				pageSize := m.getFileListHeight()
-				m.fileExplorer.Navigate(delta, pageSize)
-				m.loadRequestsFromCurrentFile()
-				found = true
-				break
-			}
-		}
-
-		if !found {
+		// Navigate to the selected file atomically
+		pageSize := m.getFileListHeight()
+		found := m.fileExplorer.NavigateToFile(selectedFile, pageSize)
+		if found {
+			m.loadRequestsFromCurrentFile()
+		} else {
 			m.errorMsg = fmt.Sprintf("File not in current directory: %s", selectedFile)
 			return nil
 		}

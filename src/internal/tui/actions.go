@@ -644,10 +644,24 @@ func (m *Model) executeChain() tea.Cmd {
 	m.statusMsg = fmt.Sprintf("Executing chain: %d requests", len(executionOrder))
 	m.updateResponseView()
 
+	// Create a cancellable context for the entire chain
+	ctx, cancel := context.WithCancel(context.Background())
+	m.requestState.SetCancel(cancel)
+
 	// Execute chain asynchronously
 	return func() tea.Msg {
 		// Execute each request in order
 		for i, filePath := range executionOrder {
+			// Check for cancellation before each request
+			select {
+			case <-ctx.Done():
+				return chainCompleteMsg{
+					success: false,
+					message: fmt.Sprintf("Chain cancelled after %d/%d requests", i, len(executionOrder)),
+				}
+			default:
+				// Continue with request execution
+			}
 			// Parse the file
 			requests, err := parser.Parse(filePath)
 			if err != nil {
@@ -700,8 +714,8 @@ func (m *Model) executeChain() tea.Cmd {
 				tlsConfig = resolvedRequest.TLS
 			}
 
-			// Execute request
-			result, err := executor.Execute(resolvedRequest, tlsConfig, profile)
+			// Execute request with cancellation support
+			result, err := executor.ExecuteWithContext(ctx, resolvedRequest, tlsConfig, profile)
 			if err != nil {
 				return chainCompleteMsg{
 					success: false,
@@ -771,8 +785,7 @@ func (m *Model) executeChain() tea.Cmd {
 func (m *Model) openInEditor() tea.Cmd {
 	currentFile := m.fileExplorer.GetCurrentFile()
 	if currentFile == nil {
-		m.errorMsg = "No file selected"
-		return nil
+		return m.setErrorMessage("No file selected")
 	}
 
 	filePath := currentFile.Path

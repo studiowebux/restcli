@@ -96,7 +96,9 @@ type Model struct {
 	responseSearchIndex   int    // Current position in response search results
 	searchInResponseCtx   bool   // True if current search is in response context
 	gotoInput             string // Goto line input
+	gotoCursor            int    // Cursor position in goto input
 	searchInput           string // Temporary search input buffer while in ModeSearch
+	searchCursor          int    // Cursor position in search input
 
 	// Request/Response
 	currentRequests       []types.HttpRequest
@@ -193,6 +195,7 @@ type Model struct {
 
 	// Help search state
 	helpSearchQuery  string
+	helpSearchCursor int  // Cursor position in help search query
 	helpSearchActive bool
 
 	// Shell errors state
@@ -331,6 +334,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chainCompleteMsg:
 		m.loading = false
+		m.requestState.Clear() // Clear cancel function
 		if msg.success {
 			if msg.response != nil {
 				m.currentResponse = msg.response
