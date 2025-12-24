@@ -285,7 +285,7 @@ func registerAnalyticsBindings(r *Registry) {
 
 // registerStressTestBindings sets up keybindings for stress test modes
 func registerStressTestBindings(r *Registry) {
-	r.RegisterMultiple(ContextStressTest, []string{"esc", "n", "N"}, ActionCloseModal)
+	r.RegisterMultiple(ContextStressTest, []string{"esc", "q", "n", "N"}, ActionCloseModal)
 	r.RegisterMultiple(ContextStressTest, []string{"y", "Y"}, ActionConfirm)
 	r.Register(ContextStressTest, "ctrl+l", ActionStressTestLoad)
 	r.RegisterMultiple(ContextStressTest, []string{"up", "k"}, ActionNavigateUp)

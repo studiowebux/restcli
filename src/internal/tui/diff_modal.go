@@ -11,9 +11,8 @@ import (
 
 // handleDiffKeys handles keyboard input in diff mode
 func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
-	// Handle special keys not in registry
-	switch msg.String() {
-	case "tab":
+	// Handle tab key for view toggle (special feature, not a standard keybind)
+	if msg.String() == "tab" {
 		// Toggle between unified and split view
 		if m.diffViewMode == "split" {
 			m.diffViewMode = "unified"
@@ -22,14 +21,9 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateDiffView() // Regenerate content for new mode
 		return nil
-
-	case "W":
-		// Close modal
-		m.mode = ModeNormal
-		return nil
 	}
 
-	// Use registry for navigation
+	// Use registry for all other keys including close/navigation
 	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextModal, msg.String())
 	if partial {
 		return nil

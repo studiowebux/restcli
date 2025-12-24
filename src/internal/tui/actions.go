@@ -43,14 +43,16 @@ func (m *Model) executeRequest() tea.Cmd {
 		}
 	}
 
-	if m.currentRequest == nil {
+	// Create local copy to prevent nil pointer issues if model state changes
+	request := m.currentRequest
+	if request == nil {
 		return func() tea.Msg {
 			return errorMsg("No request selected")
 		}
 	}
 
 	// Check if request has dependencies - execute chain if needed
-	if chain.HasDependencies(m.currentRequest) {
+	if chain.HasDependencies(request) {
 		return m.executeChain()
 	}
 
@@ -74,12 +76,12 @@ func (m *Model) executeRequest() tea.Cmd {
 	}
 
 	// Check if request requires confirmation (and hasn't been confirmed yet)
-	if m.currentRequest.RequiresConfirmation && !m.confirmationGiven {
+	if request.RequiresConfirmation && !m.confirmationGiven {
 		// Clear loading flag since we're not executing yet (waiting for confirmation)
 		m.loading = false
 		// Show confirmation modal
 		m.mode = ModeConfirmExecution
-		m.statusMsg = fmt.Sprintf("Confirm execution of: %s", m.currentRequest.Name)
+		m.statusMsg = fmt.Sprintf("Confirm execution of: %s", request.Name)
 		return nil
 	}
 
@@ -96,14 +98,14 @@ func (m *Model) executeRequest() tea.Cmd {
 	m.updateResponseView()
 
 	// Create a copy of the request to avoid mutation
-	requestCopy := *m.currentRequest
+	requestCopy := *request
 	requestCopy.Headers = make(map[string]string)
 
 	// Merge headers into the copy
 	for k, v := range profile.Headers {
 		requestCopy.Headers[k] = v
 	}
-	for k, v := range m.currentRequest.Headers {
+	for k, v := range request.Headers {
 		requestCopy.Headers[k] = v
 	}
 

@@ -1943,113 +1943,116 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	// Determine if we're in a text input field (not file picker)
 	inTextInput := m.stressTestState.GetConfigField() != 1
 
-	// Handle special keys first (always active regardless of mode)
-	switch msg.String() {
-	case "up":
-		// Field navigation up
-		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
-			if m.stressTestState.GetFilePickerIndex() > 0 {
-				m.stressTestState.NavigateFilePicker(-1)
-			}
+	// Check keybinds registry first
+	action, ok := m.keybinds.Match(keybinds.ContextStressTest, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionCloseModal:
+			// Close modal
+			m.mode = ModeNormal
+			m.stressTestState.SetConfigEdit(nil)
+			m.stressTestState.SetConfigInput("")
+			m.stressTestState.SetFilePickerActive(false)
+			m.statusMsg = "Stress test configuration cancelled"
 			return nil
-		}
-		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
-			m.errorMsg = "Please select a file first (press Enter to confirm)"
-			return nil
-		}
-		if err := m.applyStressTestConfigInput(); err != nil {
-			m.errorMsg = err.Error()
-			return nil
-		}
-		if m.stressTestState.GetConfigField() > 0 {
-			m.stressTestState.NavigateConfigFields(-1, 6) // 6 fields total
-			m.updateStressTestConfigInput()
-			if m.stressTestState.GetConfigField() == 1 {
-				m.loadStressTestFilePicker()
-				m.stressTestState.SetFilePickerActive(true)
-			}
-		}
-		return nil
 
-	case "down":
-		// Field navigation down
-		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
-			if m.stressTestState.GetFilePickerIndex() < len(m.stressTestState.GetFilePickerFiles())-1 {
-				m.stressTestState.NavigateFilePicker(1)
-			}
-			return nil
-		}
-		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
-			m.errorMsg = "Please select a file first (press Enter to confirm)"
-			return nil
-		}
-		if err := m.applyStressTestConfigInput(); err != nil {
-			m.errorMsg = err.Error()
-			return nil
-		}
-		if m.stressTestState.GetConfigField() < 5 {
-			m.stressTestState.NavigateConfigFields(1, 6) // 6 fields total
-			m.updateStressTestConfigInput()
-			if m.stressTestState.GetConfigField() == 1 {
-				m.loadStressTestFilePicker()
-				m.stressTestState.SetFilePickerActive(true)
-			}
-		}
-		return nil
+		case keybinds.ActionStressTestLoad:
+			// Load configs
+			return m.loadStressTestConfigs()
 
-	case "esc", "n", "N":
-		// Close modal
-		m.mode = ModeNormal
-		m.stressTestState.SetConfigEdit(nil)
-		m.stressTestState.SetConfigInput("")
-		m.stressTestState.SetFilePickerActive(false)
-		m.statusMsg = "Stress test configuration cancelled"
-		return nil
-
-	case "ctrl+l":
-		// Load configs
-		return m.loadStressTestConfigs()
-
-	case "ctrl+s":
-		// Save config and start test
-		if err := m.applyStressTestConfigInput(); err != nil {
-			m.errorMsg = err.Error()
-			return nil
-		}
-		if err := m.stressTestState.GetConfigEdit().Validate(); err != nil {
-			m.errorMsg = fmt.Sprintf("Invalid configuration: %v", err)
-			return nil
-		}
-		if m.stressTestState.GetConfigEdit().Name != "" {
-			if err := m.stressTestState.GetManager().SaveConfig(m.stressTestState.GetConfigEdit()); err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to save config: %v", err)
+		case keybinds.ActionStressTestSave:
+			// Save config and start test
+			if err := m.applyStressTestConfigInput(); err != nil {
+				m.errorMsg = err.Error()
 				return nil
 			}
-		}
-		return m.startStressTest()
-
-	case "enter":
-		// Submit/select
-		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
-			if len(m.stressTestState.GetFilePickerFiles()) > 0 && m.stressTestState.GetFilePickerIndex() < len(m.stressTestState.GetFilePickerFiles()) {
-				selectedFile := m.stressTestState.GetFilePickerFiles()[m.stressTestState.GetFilePickerIndex()]
-				m.stressTestState.SetConfigInput(selectedFile.Path)
-				m.stressTestState.SetConfigCursor(len(selectedFile.Path))
-				m.stressTestState.SetFilePickerActive(false)
-				if err := m.applyStressTestConfigInput(); err != nil {
-					m.errorMsg = err.Error()
-				} else {
-					m.statusMsg = "File selected - use arrows to navigate to next field"
+			if err := m.stressTestState.GetConfigEdit().Validate(); err != nil {
+				m.errorMsg = fmt.Sprintf("Invalid configuration: %v", err)
+				return nil
+			}
+			if m.stressTestState.GetConfigEdit().Name != "" {
+				if err := m.stressTestState.GetManager().SaveConfig(m.stressTestState.GetConfigEdit()); err != nil {
+					m.errorMsg = fmt.Sprintf("Failed to save config: %v", err)
+					return nil
 				}
-			} else {
-				m.errorMsg = "No files available to select"
+			}
+			return m.startStressTest()
+
+		case keybinds.ActionTextSubmit:
+			// Submit/select (enter key)
+			if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
+				if len(m.stressTestState.GetFilePickerFiles()) > 0 && m.stressTestState.GetFilePickerIndex() < len(m.stressTestState.GetFilePickerFiles()) {
+					selectedFile := m.stressTestState.GetFilePickerFiles()[m.stressTestState.GetFilePickerIndex()]
+					m.stressTestState.SetConfigInput(selectedFile.Path)
+					m.stressTestState.SetConfigCursor(len(selectedFile.Path))
+					m.stressTestState.SetFilePickerActive(false)
+					if err := m.applyStressTestConfigInput(); err != nil {
+						m.errorMsg = err.Error()
+					} else {
+						m.statusMsg = "File selected - use arrows to navigate to next field"
+					}
+				} else {
+					m.errorMsg = "No files available to select"
+				}
+				return nil
+			}
+			if err := m.applyStressTestConfigInput(); err != nil {
+				m.errorMsg = err.Error()
+			}
+			return nil
+
+		case keybinds.ActionNavigateUp:
+			// Field navigation up
+			if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
+				if m.stressTestState.GetFilePickerIndex() > 0 {
+					m.stressTestState.NavigateFilePicker(-1)
+				}
+				return nil
+			}
+			if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
+				m.errorMsg = "Please select a file first (press Enter to confirm)"
+				return nil
+			}
+			if err := m.applyStressTestConfigInput(); err != nil {
+				m.errorMsg = err.Error()
+				return nil
+			}
+			if m.stressTestState.GetConfigField() > 0 {
+				m.stressTestState.NavigateConfigFields(-1, 6) // 6 fields total
+				m.updateStressTestConfigInput()
+				if m.stressTestState.GetConfigField() == 1 {
+					m.loadStressTestFilePicker()
+					m.stressTestState.SetFilePickerActive(true)
+				}
+			}
+			return nil
+
+		case keybinds.ActionNavigateDown:
+			// Field navigation down
+			if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
+				if m.stressTestState.GetFilePickerIndex() < len(m.stressTestState.GetFilePickerFiles())-1 {
+					m.stressTestState.NavigateFilePicker(1)
+				}
+				return nil
+			}
+			if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
+				m.errorMsg = "Please select a file first (press Enter to confirm)"
+				return nil
+			}
+			if err := m.applyStressTestConfigInput(); err != nil {
+				m.errorMsg = err.Error()
+				return nil
+			}
+			if m.stressTestState.GetConfigField() < 5 {
+				m.stressTestState.NavigateConfigFields(1, 6) // 6 fields total
+				m.updateStressTestConfigInput()
+				if m.stressTestState.GetConfigField() == 1 {
+					m.loadStressTestFilePicker()
+					m.stressTestState.SetFilePickerActive(true)
+				}
 			}
 			return nil
 		}
-		if err := m.applyStressTestConfigInput(); err != nil {
-			m.errorMsg = err.Error()
-		}
-		return nil
 	}
 
 	// If in text input field, use ContextTextInput for text editing (no ContextStressTest keybind conflicts)
@@ -2106,15 +2109,6 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// If not in text input (file picker), handle other ContextStressTest actions
-	action, ok := m.keybinds.Match(keybinds.ContextStressTest, msg.String())
-	if ok {
-		switch action {
-		case keybinds.ActionStressTestLoad:
-			return m.loadStressTestConfigs()
-		}
-	}
-
 	return nil
 }
 
@@ -2128,12 +2122,17 @@ func (m *Model) handleStressTestProgressKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionCloseModal:
 		if !m.stressTestState.GetStopping() && m.stressTestState.GetExecutor() != nil {
+			// Stress test is running - stop it first
 			m.stressTestState.SetStopping(true)
 			m.statusMsg = "Stopping stress test..."
 			return func() tea.Msg {
 				m.stressTestState.GetExecutor().Stop()
 				return stressTestStoppedMsg{}
 			}
+		} else {
+			// No active stress test or already stopping - just close modal
+			m.mode = ModeNormal
+			m.stressTestState.SetStopping(false)
 		}
 	}
 
@@ -2198,12 +2197,8 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 
 // handleStressTestResultsKeys handles key events in stress test results mode
 func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
-	// Handle special keys not in registry
-	switch msg.String() {
-	case "S":
-		m.mode = ModeNormal
-		return nil
-	case "n":
+	// Handle "n" key for new stress test config (special action)
+	if msg.String() == "n" {
 		m.mode = ModeStressTestConfig
 		m.stressTestState.SetConfigEdit(&stresstest.Config{
 			Name:              "",
