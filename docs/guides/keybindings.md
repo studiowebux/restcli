@@ -21,14 +21,16 @@ Auto-created on first launch with default mappings.
 {
   "version": "1.0",
   "global": {
-    "quit_force": "ctrl+c"
+    "ctrl+c": "quit_force"
   },
   "normal": {
-    "quit": "q",
-    "execute": "enter"
+    "q": "quit",
+    "enter": "execute"
   }
 }
 ```
+
+Format: `"key": "action"` - the key triggers the action.
 
 ## Contexts
 
@@ -54,13 +56,13 @@ Keybindings organized by context:
 
 ## Key Format
 
-Single keys: `"q"`, `"enter"`, `"esc"`
+Single keys: `"q": "quit"`, `"enter": "execute"`, `"esc": "cancel"`
 
-Multiple keys (any triggers action): `"esc,q"`
+Multiple keys (all map to same action): Multiple entries like `"esc": "close_modal"` and `"q": "close_modal"`
 
-Modifiers: `"ctrl+c"`, `"shift+up"`, `"alt+x"`
+Modifiers: `"ctrl+c": "quit_force"`, `"shift+up": "navigate_up"`, `"alt+x": "some_action"`
 
-Multi-key sequences: `"gg"` (press g twice)
+Multi-key sequences: `"gg": "go_to_top"` (press g twice rapidly)
 
 ## Action Reference
 
@@ -172,13 +174,15 @@ Edit `~/.restcli/keybinds.json`:
 {
   "version": "1.0",
   "normal": {
-    "quit": "ctrl+q",
-    "execute": "space"
+    "ctrl+q": "quit",
+    "space": "execute"
   }
 }
 ```
 
 Only override the keys you want to change. Unspecified keys use defaults.
+
+Note: You must map the key to the action, not the action to the key.
 
 ## Vim-style Example
 
@@ -186,15 +190,15 @@ Only override the keys you want to change. Unspecified keys use defaults.
 {
   "version": "1.0",
   "normal": {
-    "navigate_up": "k",
-    "navigate_down": "j",
-    "go_to_top": "gg",
-    "go_to_bottom": "G",
-    "half_page_up": "ctrl+u",
-    "half_page_down": "ctrl+d",
-    "open_search": "/",
-    "search_next": "n",
-    "search_previous": "N"
+    "k": "navigate_up",
+    "j": "navigate_down",
+    "gg": "go_to_top",
+    "G": "go_to_bottom",
+    "ctrl+u": "half_page_up",
+    "ctrl+d": "half_page_down",
+    "/": "open_search",
+    "n": "search_next",
+    "N": "search_previous"
   }
 }
 ```
@@ -205,18 +209,18 @@ Only override the keys you want to change. Unspecified keys use defaults.
 {
   "version": "1.0",
   "normal": {
-    "navigate_up": "ctrl+p",
-    "navigate_down": "ctrl+n",
-    "open_search": "ctrl+s",
-    "quit": "ctrl+x,ctrl+c"
+    "ctrl+p": "navigate_up",
+    "ctrl+n": "navigate_down",
+    "ctrl+s": "open_search",
+    "ctrl+x": "quit"
   },
   "text_input": {
-    "text_move_left": "ctrl+b",
-    "text_move_right": "ctrl+f",
-    "text_move_home": "ctrl+a",
-    "text_move_end": "ctrl+e",
-    "text_clear_before": "ctrl+u",
-    "text_clear_after": "ctrl+k"
+    "ctrl+b": "text_move_left",
+    "ctrl+f": "text_move_right",
+    "ctrl+a": "text_move_home",
+    "ctrl+e": "text_move_end",
+    "ctrl+u": "text_clear_before",
+    "ctrl+k": "text_clear_after"
   }
 }
 ```
@@ -246,14 +250,14 @@ Bind actions to multi-key sequences:
 ```json
 {
   "normal": {
-    "go_to_top": "gg"
+    "gg": "go_to_top"
   }
 }
 ```
 
-Press `g` twice to trigger `go_to_top`.
+Press `g` twice rapidly to trigger `go_to_top`.
 
-Currently supported: `gg` sequence.
+Supported sequences: `gg` (go to top)
 
 ## Conflicts
 
@@ -266,22 +270,46 @@ Example conflict (invalid):
 ```json
 {
   "normal": {
-    "quit": "q",
-    "close_modal": "q"
+    "q": "quit",
+    "q": "close_modal"
   }
 }
 ```
 
-Fix by choosing different keys or using multiple triggers:
+This is invalid because the same key `q` is bound twice in the same context.
+
+Fix by choosing different keys:
 
 ```json
 {
   "normal": {
-    "quit": "q",
-    "close_modal": "esc"
+    "q": "quit",
+    "esc": "close_modal"
   }
 }
 ```
+
+Or bind multiple keys to the same action:
+
+```json
+{
+  "normal": {
+    "q": "close_modal",
+    "esc": "close_modal"
+  }
+}
+```
+
+## Text Input Context Switching
+
+When typing in text input fields, the system automatically switches to the `text_input` context to prevent single-letter keybinds from intercepting your typing.
+
+For example:
+- In stress test config modal, when typing a name, keys like `d`, `l`, `r` are typed as characters
+- In profile editor, when typing editor name, space bar inserts a space character
+- Special navigation keys (up/down arrows, enter, esc) remain active for field navigation
+
+This context switching is automatic and requires no configuration.
 
 ## Implementation Notes
 
@@ -290,3 +318,5 @@ Keybinding system uses action-based registry with context hierarchy.
 User config overlays default mappings.
 
 No runtime rebinding. Requires restart to apply changes.
+
+Text input fields automatically switch to `text_input` context to prevent conflicts.
