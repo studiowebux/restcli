@@ -106,6 +106,13 @@ type Model struct {
 	currentResponse       *types.RequestResult
 	responseView          viewport.Model
 	responseContent       string // Full formatted response content for searching
+
+	// Response content cache tracking
+	cachedResponsePtr    *types.RequestResult // Pointer to response that was cached
+	cachedViewWidth      int                  // Viewport width used for cached content
+	cachedFilterActive   bool                 // Filter state when cached
+	cachedSearchActive   bool                 // Search highlight state when cached
+
 	helpView              viewport.Model
 	modalView             viewport.Model // For scrollable modal content
 
@@ -396,6 +403,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentResponse = &types.RequestResult{}
 		}
 		m.currentResponse.Body = m.streamedBody
+		m.cachedResponsePtr = nil // Invalidate cache since body changed in place
 		m.statusMsg = "Streaming... (press 'q' to stop)"
 		m.updateResponseView()
 		m.focusedPanel = "response"

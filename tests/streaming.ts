@@ -112,4 +112,51 @@ app.get("/stream", (c) => {
   });
 });
 
+// Generate a very large JSON response for performance testing
+app.get("/large-json", (c) => {
+  const count = parseInt(c.req.query("count") || "100000");
+
+  const generateRandomString = (length: number): string => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
+  const generateRandomObject = (id: number) => ({
+    id,
+    uuid: crypto.randomUUID(),
+    name: generateRandomString(20),
+    email: `${generateRandomString(10)}@${generateRandomString(8)}.com`,
+    age: Math.floor(Math.random() * 80) + 18,
+    salary: Math.floor(Math.random() * 200000) + 30000,
+    active: Math.random() > 0.5,
+    createdAt: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString(),
+    tags: Array.from({ length: Math.floor(Math.random() * 10) + 1 }, () => generateRandomString(8)),
+    metadata: {
+      department: generateRandomString(15),
+      location: generateRandomString(12),
+      manager: generateRandomString(18),
+      projects: Array.from({ length: Math.floor(Math.random() * 5) + 1 }, (_, i) => ({
+        id: `proj-${i}`,
+        name: generateRandomString(25),
+        budget: Math.floor(Math.random() * 1000000),
+        status: ["active", "pending", "completed", "cancelled"][Math.floor(Math.random() * 4)],
+      })),
+    },
+    description: generateRandomString(200),
+    notes: Array.from({ length: Math.floor(Math.random() * 5) }, () => generateRandomString(100)),
+  });
+
+  const data = {
+    total: count,
+    generatedAt: new Date().toISOString(),
+    records: Array.from({ length: count }, (_, i) => generateRandomObject(i + 1)),
+  };
+
+  return c.json(data);
+});
+
 Deno.serve(app.fetch);

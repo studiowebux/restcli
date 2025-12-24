@@ -1,0 +1,14 @@
+### Large JSON - Default (100k records, ~150-200MB)
+GET http://localhost:8000/large-json
+
+### Large JSON - Small (10k records, ~15-20MB)
+GET http://localhost:8000/large-json?count=10000
+
+### Large JSON - Medium (50k records, ~75-100MB)
+GET http://localhost:8000/large-json?count=50000
+
+### Large JSON - Extra Large (200k records, ~300-400MB)
+GET http://localhost:8000/large-json?count=200000
+
+### Large JSON - Tiny for quick test (1k records, ~1.5-2MB)
+GET http://localhost:8000/large-json?count=1000

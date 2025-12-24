@@ -708,6 +708,22 @@ func (m *Model) updateResponseView() {
 		return
 	}
 
+	// Check if we can use cached content (performance optimization for large responses)
+	cacheValid := m.cachedResponsePtr == m.currentResponse &&
+		m.cachedViewWidth == m.responseView.Width &&
+		m.cachedFilterActive == m.filterActive &&
+		m.cachedSearchActive == m.searchInResponseCtx
+
+	if cacheValid && !m.loading {
+		// Use cached content, just need to apply search highlighting if needed
+		contentStr := m.responseContent
+		if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
+			contentStr = m.highlightSearchMatches(contentStr)
+		}
+		m.responseView.SetContent(contentStr)
+		return
+	}
+
 	// Request section with resolved values
 	if m.currentRequest != nil {
 		profile := m.sessionMgr.GetActiveProfile()
@@ -909,6 +925,12 @@ func (m *Model) updateResponseView() {
 
 	contentStr := content.String()
 	m.responseContent = contentStr
+
+	// Update cache tracking
+	m.cachedResponsePtr = m.currentResponse
+	m.cachedViewWidth = m.responseView.Width
+	m.cachedFilterActive = m.filterActive
+	m.cachedSearchActive = m.searchInResponseCtx
 
 	// Apply search highlighting if we're searching in response
 	if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
