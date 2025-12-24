@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -2063,8 +2065,12 @@ func (m *Model) handleStressTestProgressKeys(msg tea.KeyMsg) tea.Cmd {
 			m.stressTestState.SetStopping(true)
 			m.statusMsg = "Stopping stress test..."
 			return func() tea.Msg {
-				m.stressTestState.GetExecutor().Stop()
-				return stressTestStoppedMsg{}
+				// Use context with 5-second timeout for proper resource cleanup
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				err := m.stressTestState.GetExecutor().StopWithContext(ctx)
+				return stressTestStoppedMsg{err: err}
 			}
 		} else {
 			// No active stress test or already stopping - just close modal
@@ -2077,7 +2083,9 @@ func (m *Model) handleStressTestProgressKeys(msg tea.KeyMsg) tea.Cmd {
 }
 
 // stressTestStoppedMsg indicates the stress test has finished stopping
-type stressTestStoppedMsg struct{}
+type stressTestStoppedMsg struct {
+	err error // Optional error if stop timed out
+}
 
 // handleStressTestLoadConfigKeys handles key events in load config mode
 func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {

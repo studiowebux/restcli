@@ -549,7 +549,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stressTestState.SetExecutor(nil)
 		m.stressTestState.SetActiveRequest(nil)
 		m.stressTestState.SetStopping(false)
-		m.statusMsg = "Stress test cancelled"
+
+		// Check if stop timed out
+		if msg.err != nil {
+			m.statusMsg = "Stress test cancelled (cleanup timeout - some resources may not have been released)"
+			m.errorMsg = fmt.Sprintf("Stop timeout: %v", msg.err)
+		} else {
+			m.statusMsg = "Stress test cancelled"
+		}
+
 		m.mode = ModeStressTestResults
 		return m, m.loadStressTestRuns()
 

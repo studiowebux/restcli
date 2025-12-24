@@ -183,6 +183,34 @@ func (e *Executor) Stop() {
 	e.finalize("cancelled")
 }
 
+// StopWithContext cancels the stress test execution with a timeout
+// Returns an error if cleanup doesn't complete within the context deadline
+func (e *Executor) StopWithContext(ctx context.Context) error {
+	// Signal cancellation
+	e.cancelFunc()
+
+	// Wait for workers with timeout
+	done := make(chan struct{})
+	go func() {
+		e.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Workers completed successfully
+		e.closeResultChan()
+		e.finalize("cancelled")
+		return nil
+	case <-ctx.Done():
+		// Timeout - workers didn't finish
+		// Still close channels to prevent leaks, but don't wait further
+		e.closeResultChan()
+		e.finalize("cancelled (timeout)")
+		return ctx.Err()
+	}
+}
+
 // closeResultChan safely closes the result channel (only once)
 func (e *Executor) closeResultChan() {
 	e.closeOnce.Do(func() {
