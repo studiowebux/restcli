@@ -1144,7 +1144,7 @@ func (m *Model) searchInResponse() {
 
 // searchInResponseSubstring performs case-insensitive substring search in response
 func (m *Model) searchInResponseSubstring(lines []string) {
-	query, _, _ := m.fileExplorer.GetSearchInfo()
+	query := m.searchInput
 	queryLower := strings.ToLower(query)
 
 	for lineNum, line := range lines {

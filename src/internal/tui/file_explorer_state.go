@@ -275,6 +275,13 @@ func (f *FileExplorerState) GetSearchInfo() (query string, currentMatch, totalMa
 	return f.searchQuery, f.searchIndex + 1, len(f.searchMatches)
 }
 
+// GetSearchMatches returns the indices of files matching the current search
+func (f *FileExplorerState) GetSearchMatches() []int {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.searchMatches
+}
+
 // ClearSearch clears the current search
 func (f *FileExplorerState) ClearSearch() {
 	f.mu.Lock()

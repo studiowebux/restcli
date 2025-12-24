@@ -108,10 +108,12 @@ type Model struct {
 	responseContent       string // Full formatted response content for searching
 
 	// Response content cache tracking
-	cachedResponsePtr    *types.RequestResult // Pointer to response that was cached
-	cachedViewWidth      int                  // Viewport width used for cached content
-	cachedFilterActive   bool                 // Filter state when cached
-	cachedSearchActive   bool                 // Search highlight state when cached
+	cachedResponsePtr      *types.RequestResult // Pointer to response that was cached
+	cachedViewWidth        int                  // Viewport width used for cached content
+	cachedFilterActive     bool                 // Filter state when cached
+	cachedSearchActive     bool                 // Search highlight state when cached
+	cachedHighlightedBody  string               // Pre-highlighted body to avoid re-rendering
+	cachedSearchMatchCount int                  // Number of matches used for cached highlighting
 
 	helpView              viewport.Model
 	modalView             viewport.Model // For scrollable modal content

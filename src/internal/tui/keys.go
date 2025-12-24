@@ -725,10 +725,23 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionOpenSearch:
 		m.mode = ModeSearch
+		// Clear search input text for new search
+		m.searchInput = ""
+		m.searchCursor = 0
 		// Clear both file and response search state
 		m.fileExplorer.ClearSearch()
 		m.responseSearchMatches = nil
 		m.responseSearchIndex = 0
+		// Clear cached highlighting
+		m.cachedHighlightedBody = ""
+		m.cachedSearchMatchCount = 0
+		// Clear search context flag and update response view to remove highlighting
+		if m.searchInResponseCtx {
+			m.searchInResponseCtx = false
+			if m.currentResponse != nil {
+				m.updateResponseView()
+			}
+		}
 
 	case keybinds.ActionRefresh:
 		// Next search result (ctrl+r alternative)
@@ -858,7 +871,11 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 			wasSearchingResponse := m.searchInResponseCtx
 			m.mode = ModeNormal
 			m.searchInput = ""
+			m.searchCursor = 0
 			m.searchInResponseCtx = false
+			// Clear cached highlighting
+			m.cachedHighlightedBody = ""
+			m.cachedSearchMatchCount = 0
 			if wasSearchingResponse && m.currentResponse != nil {
 				m.updateResponseView()
 			}

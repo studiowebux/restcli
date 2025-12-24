@@ -57,6 +57,9 @@ var (
 	styleWarning = lipgloss.NewStyle().
 			Foreground(colorYellow)
 
+	styleSearchMatch = lipgloss.NewStyle().
+			Foreground(colorYellow)
+
 	styleSubtle = lipgloss.NewStyle().
 			Foreground(colorGray)
 
@@ -369,11 +372,20 @@ func (m Model) renderSidebar(width, height int) string {
 
 		// Apply styling - selected gets green, search matches get yellow
 		fileIndex := m.fileExplorer.GetCurrentIndex()
+		searchMatches := m.fileExplorer.GetSearchMatches()
+		isMatch := false
+		for _, matchIdx := range searchMatches {
+			if matchIdx == i {
+				isMatch = true
+				break
+			}
+		}
+
 		if i == fileIndex {
 			line = styleSelected.Render(line)
+		} else if isMatch {
+			line = styleSearchMatch.Render(line)
 		}
-		// Note: Search highlighting removed as FileExplorerState doesn't expose match indices
-		// Consider adding GetSearchMatches() method if this feature is needed
 
 		lines = append(lines, line)
 	}
@@ -715,11 +727,22 @@ func (m *Model) updateResponseView() {
 		m.cachedSearchActive == m.searchInResponseCtx
 
 	if cacheValid && !m.loading {
-		// Use cached content, just need to apply search highlighting if needed
+		// Use cached content
 		contentStr := m.responseContent
+
+		// Check if we need to re-highlight or can use cached highlighted version
 		if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
-			contentStr = m.highlightSearchMatches(contentStr)
+			// Only re-highlight if search matches have changed
+			if len(m.responseSearchMatches) != m.cachedSearchMatchCount || m.cachedHighlightedBody == "" {
+				contentStr = m.highlightSearchMatches(contentStr)
+				m.cachedHighlightedBody = contentStr
+				m.cachedSearchMatchCount = len(m.responseSearchMatches)
+			} else {
+				// Reuse cached highlighted content
+				contentStr = m.cachedHighlightedBody
+			}
 		}
+
 		m.responseView.SetContent(contentStr)
 		return
 	}
@@ -935,6 +958,12 @@ func (m *Model) updateResponseView() {
 	// Apply search highlighting if we're searching in response
 	if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
 		contentStr = m.highlightSearchMatches(contentStr)
+		m.cachedHighlightedBody = contentStr
+		m.cachedSearchMatchCount = len(m.responseSearchMatches)
+	} else {
+		// Clear cached highlighting when not searching
+		m.cachedHighlightedBody = ""
+		m.cachedSearchMatchCount = 0
 	}
 
 	m.responseView.SetContent(contentStr)
