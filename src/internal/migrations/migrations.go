@@ -71,6 +71,26 @@ var AllMigrations = []Migration{
 			-- Leaving column in place for backward compatibility
 		`,
 	},
+	{
+		Version: 5,
+		Name:    "Add composite indexes for analytics query optimization",
+		Up: `
+			-- Composite index for profile filtering + timestamp ordering (GetStatsPerFile ORDER BY)
+			CREATE INDEX IF NOT EXISTS idx_analytics_profile_timestamp ON analytics(profile_name, timestamp DESC);
+
+			-- Composite index for GROUP BY operations (file_path, normalized_path, method)
+			CREATE INDEX IF NOT EXISTS idx_analytics_grouping ON analytics(file_path, normalized_path, method);
+
+			-- Covering index for the main query (includes commonly accessed columns)
+			-- This helps with the WHERE + GROUP BY + aggregate functions
+			CREATE INDEX IF NOT EXISTS idx_analytics_profile_grouping ON analytics(profile_name, file_path, normalized_path, method, status_code, duration_ms, timestamp);
+		`,
+		Down: `
+			DROP INDEX IF EXISTS idx_analytics_profile_timestamp;
+			DROP INDEX IF EXISTS idx_analytics_grouping;
+			DROP INDEX IF EXISTS idx_analytics_profile_grouping;
+		`,
+	},
 }
 
 // InitSchema creates all tables required across all modules

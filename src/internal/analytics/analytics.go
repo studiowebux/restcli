@@ -45,7 +45,8 @@ type Stats struct {
 }
 
 type Manager struct {
-	db *sql.DB
+	db    *sql.DB
+	cache *statsCache
 }
 
 func NewManager(dbPath string) (*Manager, error) {
@@ -63,7 +64,10 @@ func NewManager(dbPath string) (*Manager, error) {
 		return nil, fmt.Errorf("failed to connect to analytics database: %w", err)
 	}
 
-	m := &Manager{db: db}
+	m := &Manager{
+		db:    db,
+		cache: newStatsCache(5 * time.Second), // 5-second cache TTL
+	}
 
 	// Run database migrations (includes schema initialization)
 	if err := migrations.Run(db); err != nil {
@@ -98,6 +102,9 @@ func (m *Manager) Save(entry Entry) error {
 	if err != nil {
 		return fmt.Errorf("failed to save analytics entry: %w", err)
 	}
+
+	// Invalidate cache for this profile since data has changed
+	m.cache.invalidateProfile(entry.ProfileName)
 
 	return nil
 }
@@ -203,6 +210,12 @@ func (m *Manager) scanEntries(rows *sql.Rows) ([]Entry, error) {
 }
 
 func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
+	// Check cache first
+	if cached, found := m.cache.getPerFile(profileName); found {
+		return cached, nil
+	}
+
+	// Cache miss, query database
 	// Use a subquery with JSON aggregation to get status codes in a single query
 	query := `
 		WITH status_codes_agg AS (
@@ -314,10 +327,23 @@ func (m *Manager) GetStatsPerFile(profileName string) ([]Stats, error) {
 		statsList = append(statsList, s)
 	}
 
-	return statsList, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Cache the results
+	m.cache.setPerFile(profileName, statsList)
+
+	return statsList, nil
 }
 
 func (m *Manager) GetStatsPerNormalizedPath(profileName string) ([]Stats, error) {
+	// Check cache first
+	if cached, found := m.cache.getPerPath(profileName); found {
+		return cached, nil
+	}
+
+	// Cache miss, query database
 	// Use a subquery with JSON aggregation to get status codes in a single query
 	query := `
 		WITH status_codes_agg AS (
@@ -425,7 +451,14 @@ func (m *Manager) GetStatsPerNormalizedPath(profileName string) ([]Stats, error)
 		statsList = append(statsList, s)
 	}
 
-	return statsList, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Cache the results
+	m.cache.setPerPath(profileName, statsList)
+
+	return statsList, nil
 }
 
 func (m *Manager) getStatusCodesForFile(filePath string, profileName string) (map[int]int, error) {
@@ -485,6 +518,10 @@ func (m *Manager) Clear() error {
 	if err != nil {
 		return fmt.Errorf("failed to clear analytics: %w", err)
 	}
+
+	// Invalidate entire cache since all data was deleted
+	m.cache.invalidate()
+
 	return nil
 }
 
@@ -493,6 +530,10 @@ func (m *Manager) ClearForFile(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to clear analytics for file: %w", err)
 	}
+
+	// Invalidate entire cache as stats aggregations are affected
+	m.cache.invalidate()
+
 	return nil
 }
 
