@@ -277,7 +277,8 @@ func (p *Proxy) ClearLogs() {
 
 // ExportHAR exports captured traffic to HAR format
 func (p *Proxy) ExportHAR(filename string) error {
-	// TODO: Implement HAR export similar to HAR import converter
+	// TODO(#TODO-004): Implement HAR export similar to HAR import converter
+	// See TODO.md for HAR 1.2 spec and implementation details
 	return fmt.Errorf("HAR export not yet implemented")
 }
 

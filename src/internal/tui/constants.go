@@ -43,4 +43,8 @@ const (
 
 	// Split Pane Layout
 	SplitPaneBorderWidth = 3 // Border width between split panes
+
+	// WebSocket Modal Layout
+	WebSocketHistoryWidthRatio = 0.6 // 60% for history pane, 40% for menu pane
+	WebSocketPaneHeightOffset  = 3   // Breathing room for header, status, footer
 )

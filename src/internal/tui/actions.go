@@ -333,8 +333,9 @@ func (m *Model) connectWebSocket() tea.Cmd {
 			}
 		}
 
-		// TODO: OAuth auto-injection - fetch token if profile.OAuth.Enabled and inject as Authorization header
+		// TODO(#TODO-001): OAuth auto-injection - fetch token if profile.OAuth.Enabled and inject as Authorization header
 		// For now, users can manually add "Authorization: Bearer <token>" in profile or .ws file headers
+		// See TODO.md for details and implementation plan
 
 		// Execute PERSISTENT WebSocket connection
 		err := executor.ExecuteWebSocketInteractive(

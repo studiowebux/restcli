@@ -17,22 +17,20 @@ func (m *Model) updateWebSocketViews(width, height int) {
 	// Calculate pane dimensions
 	modalWidth := width - ModalWidthMargin
 	modalHeight := height - ModalHeightMargin
-	paneHeight := modalHeight - 3 // Leave breathing room, matches analytics modal pattern
+	paneHeight := modalHeight - WebSocketPaneHeightOffset // Leave breathing room for header, status, footer
 
 	// Split width: 60% history, 40% menu
-	historyWidth := (modalWidth * 6) / 10
-	menuWidth := modalWidth - historyWidth - 3 // -3 for border/padding
+	historyWidth := int(float64(modalWidth) * WebSocketHistoryWidthRatio)
+	menuWidth := modalWidth - historyWidth - SplitPaneBorderWidth
 
 	// Update history viewport
-	historyContentWidth := historyWidth - 4
-	// paneHeight includes borders, subtract 2 for border lines
-	historyContentHeight := paneHeight - 2
+	historyContentWidth := historyWidth - ViewportPaddingHorizontal
+	historyContentHeight := paneHeight - ViewportPaddingVertical
 	m.updateWebSocketHistoryView(historyContentWidth, historyContentHeight)
 
 	// Update menu viewport
-	menuContentWidth := menuWidth - 4
-	// paneHeight includes borders, subtract 2 for border lines
-	menuContentHeight := paneHeight - 2
+	menuContentWidth := menuWidth - ViewportPaddingHorizontal
+	menuContentHeight := paneHeight - ViewportPaddingVertical
 	m.updateWebSocketMenuView(menuContentWidth, menuContentHeight)
 }
 
@@ -43,11 +41,11 @@ func (m *Model) renderWebSocketModal() string {
 	// Calculate pane dimensions
 	modalWidth := m.width - ModalWidthMargin
 	modalHeight := m.height - ModalHeightMargin
-	paneHeight := modalHeight - 3 // Leave breathing room for header, status, and footer
+	paneHeight := modalHeight - WebSocketPaneHeightOffset // Leave breathing room for header, status, and footer
 
 	// Split width: 60% history, 40% menu
-	historyWidth := (modalWidth * 6) / 10
-	menuWidth := modalWidth - historyWidth - 3 // -3 for border/padding
+	historyWidth := int(float64(modalWidth) * WebSocketHistoryWidthRatio)
+	menuWidth := modalWidth - historyWidth - SplitPaneBorderWidth
 
 	// Styles
 	headerStyle := lipgloss.NewStyle().

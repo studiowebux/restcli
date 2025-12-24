@@ -253,7 +253,7 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 			files = append(files, types.FileInfo{
 				Path:         path,
 				Name:         relPath,
-				RequestCount: 0, // TODO: Count requests in file
+				RequestCount: 0, // TODO(#TODO-002): Count requests in file - See TODO.md for details
 				ModifiedTime: info.ModTime(),
 				HTTPMethod:   httpMethod,
 				Tags:         tags,
