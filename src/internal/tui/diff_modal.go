@@ -174,15 +174,24 @@ func (m *Model) renderDiffModal() string {
 		content = m.renderDiffSplitView(modalWidth, modalHeight)
 	} else {
 		// Unified diff view (default)
+		// Footer outside viewport
+		footer := styleSubtle.Render("Tab: Toggle View | ↑/↓ j/k: Scroll | gg/G: Top/Bottom | ESC/W: Close")
+
+		// Viewport with content (footer is separate)
 		diffView := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBlue).
 			Width(modalWidth).
-			Height(modalHeight).
+			Height(modalHeight - 2). // Reduce height to account for footer
 			Padding(1, 2).
 			Render(styleTitle.Render("Response Comparison") + "\n\n" + m.diffView.View())
 
-		content = diffView
+		// Combine viewport and footer
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			diffView,
+			"\n"+footer,
+		)
 	}
 
 	return lipgloss.Place(
@@ -289,7 +298,7 @@ func (m *Model) updateDiffView() {
 		bodyDiff := compareTextLineByLine(m.pinnedResponse.Body, m.currentResponse.Body)
 		content.WriteString(bodyDiff)
 
-		content.WriteString("\n\n" + styleSubtle.Render("Tab: Toggle View | ↑/↓ j/k: Scroll | gg/G: Top/Bottom | ESC/W: Close"))
+		// Footer is now outside viewport, don't add it to content
 
 		m.diffView.SetContent(content.String())
 		m.diffView.GotoTop()

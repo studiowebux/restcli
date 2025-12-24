@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,10 +12,7 @@ import (
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/jsonpath"
 	"github.com/studiowebux/restcli/internal/keybinds"
-	"github.com/studiowebux/restcli/internal/mock"
-	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
-	"github.com/studiowebux/restcli/internal/stresstest"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -92,21 +88,15 @@ type Model struct {
 	latestVersion     string
 	updateURL         string
 
-	// File list
-	files         []types.FileInfo
-	fileIndex     int    // Current selected file
-	fileOffset          int    // Scroll offset for file list
-	searchQuery         string // Search query (files or response based on focus)
-	searchMatches       []int  // Indices of files matching search OR line numbers in response
-	searchIndex         int    // Current position in searchMatches
-	searchInResponseCtx bool   // True if current search is in response context
-	gotoInput           string // Goto line input
+	// File explorer state (encapsulates file navigation, search, and filtering)
+	fileExplorer *FileExplorerState
 
-	// Collections and tag filtering
-	allFiles          []types.FileInfo    // Unfiltered file list
-	activeCollection  *types.Collection   // Currently active collection filter
-	tagFilter         []string            // Active tag filters
-	collectionIndex   int                 // Selected collection in browser
+	// Response-specific search/navigation (not part of file explorer)
+	responseSearchMatches []int  // Line numbers in response matching search
+	responseSearchIndex   int    // Current position in response search results
+	searchInResponseCtx   bool   // True if current search is in response context
+	gotoInput             string // Goto line input
+	searchInput           string // Temporary search input buffer while in ModeSearch
 
 	// Request/Response
 	currentRequests       []types.HttpRequest
@@ -116,18 +106,14 @@ type Model struct {
 	responseContent       string // Full formatted response content for searching
 	helpView              viewport.Model
 	modalView             viewport.Model // For scrollable modal content
-	historyPreviewView    viewport.Model // For history response preview in split view
-	analyticsListView     viewport.Model // For analytics list in split view
-	analyticsDetailView   viewport.Model // For analytics detail in split view
 
 	// Streaming state
-	streamingActive       bool                  // True when streaming is in progress
+	streamState           *StreamState          // Thread-safe streaming state management
 	streamedBody          string                // Accumulated streamed response body
 	streamChannel         chan streamChunkMsg   // Channel for receiving stream chunks
-	streamCancelFunc      context.CancelFunc    // Function to cancel the streaming request
 
 	// Request cancellation (for regular non-streaming requests)
-	requestCancelFunc     context.CancelFunc    // Function to cancel the current request
+	requestState          *RequestState         // Thread-safe request cancellation
 
 	// UI state
 	width        int
@@ -165,78 +151,29 @@ type Model struct {
 	profileCursor int
 	profileNamePos int // Cursor position in profile name
 
-	// Profile edit state
-	profileEditField            int    // 0=name, 1=workdir, 2=editor, 3=output, 4=history, 5=analytics
-	profileEditName             string
-	profileEditWorkdir          string
-	profileEditEditor           string
-	profileEditOutput           string
-	profileEditHistoryEnabled   *bool  // nil=default, true/false=override
-	profileEditAnalyticsEnabled *bool  // nil=default (false), true/false=override
-	profileEditNamePos          int
-	profileEditWorkdirPos       int
-	profileEditEditorPos        int
-	profileEditOutputPos        int
+	// Profile edit state (encapsulates all profile editing UI state)
+	profileEditState *ProfileEditState
 
-	// Documentation viewer state
-	docCollapsed      map[int]bool
-	docSelectedIdx    int                     // Currently selected item in doc viewer
-	docItemCount      int                     // Cached total navigable items count
-	docFieldTreeCache map[int][]DocField      // Cached field trees per response index
-	docChildrenCache  map[int]map[string]bool // Cached hasChildren results per response index
+	// Documentation viewer state (encapsulates all documentation UI state)
+	docState *DocumentationState
 
-	// History state
-	historyEntries        []types.HistoryEntry
-	historyAllEntries     []types.HistoryEntry // Unfiltered entries for search
-	historyIndex          int
-	historyPreviewVisible bool // Toggle for showing/hiding response preview pane
-	historySearchActive   bool // True when search input is active
-	historySearchQuery    string // Search query for filtering history
+	// History state (encapsulates all history UI state)
+	historyState *HistoryState
 
-	// Analytics state
-	analyticsStats        []analytics.Stats
-	analyticsIndex        int
-	analyticsPreviewVisible bool // Toggle for showing/hiding stats detail pane
-	analyticsGroupByPath  bool // Toggle between per-file and normalized-path grouping
-	analyticsFocusedPane  string // "list" or "details" - which pane has focus in split view
+	// Analytics state (encapsulates all analytics UI state)
+	analyticsState *AnalyticsState
 
-	// Stress test state
-	stressTestManager       *stresstest.Manager
-	stressTestExecutor      *stresstest.Executor
-	stressTestActiveRequest *types.HttpRequest // The request currently being tested
-	stressTestConfigs       []*stresstest.Config
-	stressTestConfigIndex   int
-	stressTestRuns          []*stresstest.Run
-	stressTestRunIndex      int
-	stressTestListView      viewport.Model
-	stressTestDetailView    viewport.Model
-	stressTestFocusedPane   string // "list" or "details"
-	stressTestConfigEdit          *stresstest.Config // Config being edited
-	stressTestConfigField         int // Which field is being edited
+	// Stress test state (encapsulates all stress test UI state)
+	stressTestState *StressTestState
 
-	// Mock server state
-	mockServer        *mock.Server
-	mockServerRunning bool
-	mockConfigPath    string
-	mockLogs          []mock.RequestLog
+	// Mock server state (encapsulates all mock server state)
+	mockServerState *MockServerState
 
-	// Proxy server state
-	proxyServer        *proxy.Proxy
-	proxyRunning       bool
-	proxyLogs          []*proxy.ProxyLog
-	proxySelectedIndex int
+	// Proxy server state (encapsulates all proxy server state)
+	proxyServerState *ProxyServerState
 
-	stressTestConfigInput         string // Input buffer for config fields
-	stressTestConfigCursor        int // Cursor position in input
-	stressTestConfigInsertMode    bool // True when actively typing (disables vim navigation)
-	stressTestFilePickerActive    bool // True when file picker dropdown is shown
-	stressTestFilePickerFiles     []types.FileInfo // Available files for selection
-	stressTestFilePickerIndex     int // Selected index in file picker
-	stressTestStopping            bool // True when test is being canceled/stopped
-
-	// Rename state
-	renameInput  string
-	renameCursor int
+	// Rename state (encapsulates file rename input state)
+	renameState *RenameState
 
 	// OAuth config state
 	oauthField  int
@@ -314,14 +251,13 @@ type Model struct {
 	jsonpathHistorySearching bool                // True when in search mode
 
 	// WebSocket state (Phase 2: Split-pane modal)
-	wsActive                bool                       // True when WebSocket connection is active
+	wsState                 *WebSocketState            // Thread-safe WebSocket state management
 	wsMessages              []types.ReceivedMessage    // Message history (left pane)
 	wsConnectionStatus      string                     // Connection status: "connecting", "connected", "disconnected", "error"
 	wsHistoryView           viewport.Model             // Left pane: message history viewport
 	wsMessageMenuView       viewport.Model             // Right pane: predefined message menu viewport
 	wsMessageChannel        chan types.ReceivedMessage // Channel for receiving messages from executor
 	wsSendChannel           chan string                // Channel for sending user messages
-	wsCancelFunc            context.CancelFunc         // Function to cancel WebSocket connection
 	wsURL                   string                     // WebSocket URL being connected to
 	wsError                 string                     // WebSocket error message if any
 	wsPredefinedMessages    []types.WebSocketMessage   // All predefined messages from .ws file
@@ -356,8 +292,8 @@ func (m *Model) Cleanup() {
 			fmt.Fprintf(os.Stderr, "error closing history database: %v\n", err)
 		}
 	}
-	if m.stressTestManager != nil {
-		if err := m.stressTestManager.Close(); err != nil {
+	if m.stressTestState != nil && m.stressTestState.GetManager() != nil {
+		if err := m.stressTestState.GetManager().Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "error closing stress test database: %v\n", err)
 		}
 	}
@@ -388,7 +324,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateViewport()
 
 	case fileListLoadedMsg:
-		m.files = msg.files
+		m.fileExplorer.SetFiles(msg.files, msg.files)
 		m.statusMsg = "Files loaded"
 		// Reload current file's requests to reflect any changes
 		m.loadRequestsFromCurrentFile()
@@ -417,7 +353,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case requestExecutedMsg:
 		m.loading = false // Clear loading flag
-		m.requestCancelFunc = nil // Clear cancel function
+		m.requestState.Clear() // Clear cancel function
 		m.currentResponse = msg.result
 		// Clear any previous errors since request completed successfully
 		m.errorMsg = ""
@@ -470,9 +406,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Stream complete
 		m.loading = false // Clear loading flag
-		m.streamingActive = false
+		m.streamState.Stop()
 		m.streamChannel = nil
-		m.streamCancelFunc = nil
 		// Clear any previous errors since stream completed successfully
 		m.errorMsg = ""
 		m.fullErrorMsg = ""
@@ -512,14 +447,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.wsPendingMessageIndex = -1 // Clear pending message
 					}
 				} else if strings.Contains(msg.message.Content, "Disconnected") || strings.Contains(msg.message.Content, "Error") {
-					m.wsActive = false
+					m.wsState.Stop()
 					m.wsConnectionStatus = "disconnected"
 				}
 			}
 		}
 
 		// Wait for next message if connection still active
-		if m.wsActive {
+		if m.wsState.IsActive() {
 			return m, m.waitForWsMessage()
 		}
 
@@ -528,10 +463,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("WebSocket: %s", msg.status)
 
 	case wsConnectionCompleteMsg:
-		m.wsActive = false
+		m.wsState.Stop()
 		m.wsConnectionStatus = "disconnected"
 		m.wsMessageChannel = nil
-		m.wsCancelFunc = nil
 		if msg.err != nil {
 			m.wsError = msg.err.Error()
 			m.errorMsg = fmt.Sprintf("WebSocket error: %v", msg.err)
@@ -543,19 +477,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("OAuth successful! Token stored (expires in %d seconds)", msg.expiresIn)
 
 	case historyLoadedMsg:
-		m.historyEntries = msg.entries
-		m.historyAllEntries = msg.entries // Store unfiltered for search
-		m.historyIndex = 0
-		m.historySearchQuery = "" // Reset search on load
-		m.historySearchActive = false
+		m.historyState.SetEntries(msg.entries)
+		m.historyState.SetAllEntries(msg.entries) // Store unfiltered for search
+		m.historyState.SetIndex(0)
+		m.historyState.SetSearchQuery("") // Reset search on load
+		m.historyState.SetSearchActive(false)
 		if len(msg.entries) > 0 {
 			m.statusMsg = fmt.Sprintf("Loaded %d history entries", len(msg.entries))
 		}
 		m.updateHistoryView() // Update viewport content with loaded history
 
 	case analyticsLoadedMsg:
-		m.analyticsStats = msg.stats
-		m.analyticsIndex = 0
+		m.analyticsState.SetStats(msg.stats)
+		m.analyticsState.SetIndex(0)
 		if len(msg.stats) > 0 {
 			m.statusMsg = fmt.Sprintf("Loaded %d analytics entries", len(msg.stats))
 		}
@@ -570,17 +504,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case stressTestRunsLoadedMsg:
-		m.stressTestRuns = msg.runs
-		m.stressTestRunIndex = 0
+		m.stressTestState.SetRuns(msg.runs)
+		m.stressTestState.SetRunIndex(0)
 		if len(msg.runs) > 0 {
 			m.statusMsg = fmt.Sprintf("Loaded %d stress test runs", len(msg.runs))
 		}
 		m.updateStressTestListView()
-		m.stressTestDetailView.GotoTop() // Reset scroll position for new load
+		detailView := m.stressTestState.GetDetailView()
+		detailView.GotoTop() // Reset scroll position for new load
+		m.stressTestState.SetDetailView(detailView)
 
 	case stressTestConfigsLoadedMsg:
-		m.stressTestConfigs = msg.configs
-		m.stressTestConfigIndex = 0
+		m.stressTestState.SetConfigs(msg.configs)
+		m.stressTestState.SetConfigIndex(0)
 		m.mode = ModeStressTestLoadConfig
 		if len(msg.configs) > 0 {
 			m.statusMsg = fmt.Sprintf("Loaded %d stress test configurations", len(msg.configs))
@@ -594,21 +530,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stressTestCompletedMsg:
 		// Stress test completed
-		if m.stressTestExecutor != nil {
-			m.stressTestExecutor.Wait()
-			m.stressTestExecutor = nil
+		if m.stressTestState.GetExecutor() != nil {
+			m.stressTestState.GetExecutor().Wait()
+			m.stressTestState.SetExecutor(nil)
 		}
-		m.stressTestActiveRequest = nil
-		m.stressTestStopping = false
+		m.stressTestState.SetActiveRequest(nil)
+		m.stressTestState.SetStopping(false)
 		m.statusMsg = "Stress test completed"
 		m.mode = ModeStressTestResults
 		return m, m.loadStressTestRuns()
 
 	case stressTestStoppedMsg:
 		// Stress test stopped by user
-		m.stressTestExecutor = nil
-		m.stressTestActiveRequest = nil
-		m.stressTestStopping = false
+		m.stressTestState.SetExecutor(nil)
+		m.stressTestState.SetActiveRequest(nil)
+		m.stressTestState.SetStopping(false)
 		m.statusMsg = "Stress test cancelled"
 		m.mode = ModeStressTestResults
 		return m, m.loadStressTestRuns()
@@ -623,29 +559,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.initInteractiveVarPrompt()
 
 	case mockServerStartedMsg:
-		m.mockServer = msg.server
-		m.mockConfigPath = msg.configPath
-		m.mockServerRunning = true
+		m.mockServerState.Start(msg.server, msg.configPath)
 		m.statusMsg = fmt.Sprintf("Mock server started at %s", msg.address)
 		// Start ticker for refreshing logs
 		cmd = m.tickMockServer()
 
 	case mockServerStoppedMsg:
-		m.mockServerRunning = false
-		m.mockServer = nil
-		m.mockConfigPath = ""
+		m.mockServerState.Stop()
 		m.statusMsg = "Mock server stopped"
 
 	case mockServerTickMsg:
 		// Refresh mock server view if in that mode and server is running
-		if m.mode == ModeMockServer && m.mockServerRunning {
+		if m.mode == ModeMockServer && m.mockServerState.IsRunning() {
 			// Return another tick to keep refreshing
 			cmd = m.tickMockServer()
 		}
 
 	case proxyViewerTickMsg:
 		// Refresh proxy viewer if in that mode and proxy is running
-		if m.mode == ModeProxyViewer && m.proxyRunning {
+		if m.mode == ModeProxyViewer && m.proxyServerState.IsRunning() {
 			m.updateProxyView()
 			// Return another tick to keep refreshing
 			cmd = m.tickProxyViewer()
@@ -653,11 +585,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case proxyLogReceivedMsg:
 		// New proxy log received - update view
-		if m.mode == ModeProxyViewer && m.proxyRunning {
+		if m.mode == ModeProxyViewer && m.proxyServerState.IsRunning() {
 			m.updateProxyView()
 		}
 		// Continue listening for more logs
-		if m.proxyRunning && m.proxyServer != nil {
+		if m.proxyServerState.IsRunning() && m.proxyServerState.GetServer() != nil {
 			cmd = m.listenForProxyLogs()
 		}
 
@@ -933,22 +865,24 @@ func (m *Model) tickProxyViewer() tea.Cmd {
 
 // listenForProxyLogs waits for new proxy log notifications
 func (m *Model) listenForProxyLogs() tea.Cmd {
-	if m.proxyServer == nil {
+	server := m.proxyServerState.GetServer()
+	if server == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		<-m.proxyServer.NotifyChannel()
+		<-server.NotifyChannel()
 		return proxyLogReceivedMsg{}
 	}
 }
 
 // listenForMockLogs waits for new mock server log notifications
 func (m *Model) listenForMockLogs() tea.Cmd {
-	if m.mockServer == nil {
+	server := m.mockServerState.GetServer()
+	if server == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		<-m.mockServer.NotifyChannel()
+		<-server.NotifyChannel()
 		return mockLogReceivedMsg{}
 	}
 }

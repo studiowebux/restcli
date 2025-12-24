@@ -35,17 +35,15 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.profileIndex < len(profiles) {
 			profile := profiles[m.profileIndex]
 			m.mode = ModeProfileEdit
-			m.profileEditField = 0
-			m.profileEditName = profile.Name
-			m.profileEditWorkdir = profile.Workdir
-			m.profileEditEditor = profile.Editor
-			m.profileEditOutput = profile.Output
-			m.profileEditHistoryEnabled = profile.HistoryEnabled
-			m.profileEditAnalyticsEnabled = profile.AnalyticsEnabled
-			m.profileEditNamePos = len(profile.Name)
-			m.profileEditWorkdirPos = len(profile.Workdir)
-			m.profileEditEditorPos = len(profile.Editor)
-			m.profileEditOutputPos = len(profile.Output)
+			m.profileEditState.SetField(0)
+			m.profileEditState.LoadFromProfile(
+				profile.Name,
+				profile.Workdir,
+				profile.Editor,
+				profile.Output,
+				profile.HistoryEnabled,
+				profile.AnalyticsEnabled,
+			)
 		}
 		return nil
 	}
@@ -297,47 +295,44 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "tab":
 		// Move to next field
-		m.profileEditField = (m.profileEditField + 1) % 6
+		m.profileEditState.SetField((m.profileEditState.GetField() + 1) % 6)
 		return nil
 
 	case "shift+tab":
 		// Move to previous field
-		m.profileEditField--
-		if m.profileEditField < 0 {
-			m.profileEditField = 5
-		}
+		m.profileEditState.Navigate(-1, 6)
 		return nil
 
 	case " ":
 		// Toggle history setting (field 4)
-		if m.profileEditField == 4 {
-			if m.profileEditHistoryEnabled == nil {
+		if m.profileEditState.GetField() == 4 {
+			if m.profileEditState.GetHistoryEnabled() == nil {
 				// nil -> true
 				enabled := true
-				m.profileEditHistoryEnabled = &enabled
-			} else if *m.profileEditHistoryEnabled {
+				m.profileEditState.SetHistoryEnabled(&enabled)
+			} else if *m.profileEditState.GetHistoryEnabled() {
 				// true -> false
 				disabled := false
-				m.profileEditHistoryEnabled = &disabled
+				m.profileEditState.SetHistoryEnabled(&disabled)
 			} else {
 				// false -> nil (default)
-				m.profileEditHistoryEnabled = nil
+				m.profileEditState.SetHistoryEnabled(nil)
 			}
 			return nil
 		}
 		// Toggle analytics setting (field 5)
-		if m.profileEditField == 5 {
-			if m.profileEditAnalyticsEnabled == nil {
+		if m.profileEditState.GetField() == 5 {
+			if m.profileEditState.GetAnalyticsEnabled() == nil {
 				// nil -> true
 				enabled := true
-				m.profileEditAnalyticsEnabled = &enabled
-			} else if *m.profileEditAnalyticsEnabled {
+				m.profileEditState.SetAnalyticsEnabled(&enabled)
+			} else if *m.profileEditState.GetAnalyticsEnabled() {
 				// true -> false
 				disabled := false
-				m.profileEditAnalyticsEnabled = &disabled
+				m.profileEditState.SetAnalyticsEnabled(&disabled)
 			} else {
 				// false -> nil (default/false)
-				m.profileEditAnalyticsEnabled = nil
+				m.profileEditState.SetAnalyticsEnabled(nil)
 			}
 			return nil
 		}
@@ -358,23 +353,23 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 				profile := &profiles[m.profileIndex]
 				oldName := profile.Name
 
-				profile.Name = m.profileEditName
-				profile.Workdir = m.profileEditWorkdir
-				profile.Editor = m.profileEditEditor
-				profile.Output = m.profileEditOutput
-				profile.HistoryEnabled = m.profileEditHistoryEnabled
-				profile.AnalyticsEnabled = m.profileEditAnalyticsEnabled
+				profile.Name = m.profileEditState.GetName()
+				profile.Workdir = m.profileEditState.GetWorkdir()
+				profile.Editor = m.profileEditState.GetEditor()
+				profile.Output = m.profileEditState.GetOutput()
+				profile.HistoryEnabled = m.profileEditState.GetHistoryEnabled()
+				profile.AnalyticsEnabled = m.profileEditState.GetAnalyticsEnabled()
 
 				m.sessionMgr.SaveProfiles()
 
 				// If active profile name changed, update it
 				activeProfile := m.sessionMgr.GetActiveProfile()
 				if activeProfile.Name == oldName {
-					m.sessionMgr.SetActiveProfile(m.profileEditName)
+					m.sessionMgr.SetActiveProfile(m.profileEditState.GetName())
 				}
 
 				m.mode = ModeNormal
-				m.statusMsg = fmt.Sprintf("Profile saved: %s", m.profileEditName)
+				m.statusMsg = fmt.Sprintf("Profile saved: %s", m.profileEditState.GetName())
 
 				// Reload files if workdir changed
 				return m.refreshFiles()
@@ -384,32 +379,66 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	// Handle text input for current field
-	var input *string
-	var cursorPos *int
-
-	switch m.profileEditField {
+	switch m.profileEditState.GetField() {
 	case 0:
-		input = &m.profileEditName
-		cursorPos = &m.profileEditNamePos
-	case 1:
-		input = &m.profileEditWorkdir
-		cursorPos = &m.profileEditWorkdirPos
-	case 2:
-		input = &m.profileEditEditor
-		cursorPos = &m.profileEditEditorPos
-	case 3:
-		input = &m.profileEditOutput
-		cursorPos = &m.profileEditOutputPos
-	}
-
-	if input != nil && cursorPos != nil {
-		if _, shouldContinue := handleTextInputWithCursor(input, cursorPos, msg); shouldContinue {
+		input := m.profileEditState.GetName()
+		cursorPos := m.profileEditState.GetNamePos()
+		if _, shouldContinue := handleTextInputWithCursor(&input, &cursorPos, msg); shouldContinue {
+			m.profileEditState.SetName(input)
+			m.profileEditState.SetNamePos(cursorPos)
 			return nil
 		}
 		// Append character
 		if len(msg.String()) == 1 {
-			*input = (*input)[:*cursorPos] + msg.String() + (*input)[*cursorPos:]
-			*cursorPos++
+			input = input[:cursorPos] + msg.String() + input[cursorPos:]
+			cursorPos++
+			m.profileEditState.SetName(input)
+			m.profileEditState.SetNamePos(cursorPos)
+		}
+	case 1:
+		input := m.profileEditState.GetWorkdir()
+		cursorPos := m.profileEditState.GetWorkdirPos()
+		if _, shouldContinue := handleTextInputWithCursor(&input, &cursorPos, msg); shouldContinue {
+			m.profileEditState.SetWorkdir(input)
+			m.profileEditState.SetWorkdirPos(cursorPos)
+			return nil
+		}
+		// Append character
+		if len(msg.String()) == 1 {
+			input = input[:cursorPos] + msg.String() + input[cursorPos:]
+			cursorPos++
+			m.profileEditState.SetWorkdir(input)
+			m.profileEditState.SetWorkdirPos(cursorPos)
+		}
+	case 2:
+		input := m.profileEditState.GetEditor()
+		cursorPos := m.profileEditState.GetEditorPos()
+		if _, shouldContinue := handleTextInputWithCursor(&input, &cursorPos, msg); shouldContinue {
+			m.profileEditState.SetEditor(input)
+			m.profileEditState.SetEditorPos(cursorPos)
+			return nil
+		}
+		// Append character
+		if len(msg.String()) == 1 {
+			input = input[:cursorPos] + msg.String() + input[cursorPos:]
+			cursorPos++
+			m.profileEditState.SetEditor(input)
+			m.profileEditState.SetEditorPos(cursorPos)
+		}
+	case 3:
+		input := m.profileEditState.GetOutput()
+		cursorPos := m.profileEditState.GetOutputPos()
+		if _, shouldContinue := handleTextInputWithCursor(&input, &cursorPos, msg); shouldContinue {
+			m.profileEditState.SetOutput(input)
+			m.profileEditState.SetOutputPos(cursorPos)
+			return nil
+		}
+		// Append character
+		if len(msg.String()) == 1 {
+			input = input[:cursorPos] + msg.String() + input[cursorPos:]
+			cursorPos++
+			m.profileEditState.SetOutput(input)
+			m.profileEditState.SetOutputPos(cursorPos)
 		}
 	}
 
@@ -515,51 +544,51 @@ func (m *Model) renderProfileModal() string {
 
 		// Name field
 		nameLabel := "Name:    "
-		if m.profileEditField == 0 {
+		if m.profileEditState.GetField() == 0 {
 			nameLabel = styleSelected.Render(nameLabel)
-			content.WriteString(nameLabel + addFieldCursorScrolling(m.profileEditName, m.profileEditNamePos, fieldWidth) + "\n")
+			content.WriteString(nameLabel + addFieldCursorScrolling(m.profileEditState.GetName(), m.profileEditState.GetNamePos(), fieldWidth) + "\n")
 		} else {
-			content.WriteString(nameLabel + truncateField(m.profileEditName, fieldWidth) + "\n")
+			content.WriteString(nameLabel + truncateField(m.profileEditState.GetName(), fieldWidth) + "\n")
 		}
 
 		// Workdir field
 		workdirLabel := "Workdir: "
-		if m.profileEditField == 1 {
+		if m.profileEditState.GetField() == 1 {
 			workdirLabel = styleSelected.Render(workdirLabel)
-			content.WriteString(workdirLabel + addFieldCursorScrolling(m.profileEditWorkdir, m.profileEditWorkdirPos, fieldWidth) + "\n")
+			content.WriteString(workdirLabel + addFieldCursorScrolling(m.profileEditState.GetWorkdir(), m.profileEditState.GetWorkdirPos(), fieldWidth) + "\n")
 		} else {
-			content.WriteString(workdirLabel + truncateField(m.profileEditWorkdir, fieldWidth) + "\n")
+			content.WriteString(workdirLabel + truncateField(m.profileEditState.GetWorkdir(), fieldWidth) + "\n")
 		}
 
 		// Editor field
 		editorLabel := "Editor:  "
-		if m.profileEditField == 2 {
+		if m.profileEditState.GetField() == 2 {
 			editorLabel = styleSelected.Render(editorLabel)
-			content.WriteString(editorLabel + addFieldCursorScrolling(m.profileEditEditor, m.profileEditEditorPos, fieldWidth) + "\n")
+			content.WriteString(editorLabel + addFieldCursorScrolling(m.profileEditState.GetEditor(), m.profileEditState.GetEditorPos(), fieldWidth) + "\n")
 		} else {
-			content.WriteString(editorLabel + truncateField(m.profileEditEditor, fieldWidth) + "\n")
+			content.WriteString(editorLabel + truncateField(m.profileEditState.GetEditor(), fieldWidth) + "\n")
 		}
 
 		// Output field
 		outputLabel := "Output:  "
-		if m.profileEditField == 3 {
+		if m.profileEditState.GetField() == 3 {
 			outputLabel = styleSelected.Render(outputLabel)
-			content.WriteString(outputLabel + addFieldCursorScrolling(m.profileEditOutput, m.profileEditOutputPos, fieldWidth) + "\n")
+			content.WriteString(outputLabel + addFieldCursorScrolling(m.profileEditState.GetOutput(), m.profileEditState.GetOutputPos(), fieldWidth) + "\n")
 		} else {
-			content.WriteString(outputLabel + truncateField(m.profileEditOutput, fieldWidth) + "\n")
+			content.WriteString(outputLabel + truncateField(m.profileEditState.GetOutput(), fieldWidth) + "\n")
 		}
 
 		// History field (toggle)
 		historyLabel := "History:   "
 		historyValue := "default"
-		if m.profileEditHistoryEnabled != nil {
-			if *m.profileEditHistoryEnabled {
+		if m.profileEditState.GetHistoryEnabled() != nil {
+			if *m.profileEditState.GetHistoryEnabled() {
 				historyValue = "enabled"
 			} else {
 				historyValue = "disabled"
 			}
 		}
-		if m.profileEditField == 4 {
+		if m.profileEditState.GetField() == 4 {
 			historyLabel = styleSelected.Render(historyLabel)
 			content.WriteString(historyLabel + styleSelected.Render(historyValue) + " [SPACE to toggle]\n")
 		} else {
@@ -569,14 +598,14 @@ func (m *Model) renderProfileModal() string {
 		// Analytics field (toggle)
 		analyticsLabel := "Analytics: "
 		analyticsValue := "disabled"
-		if m.profileEditAnalyticsEnabled != nil {
-			if *m.profileEditAnalyticsEnabled {
+		if m.profileEditState.GetAnalyticsEnabled() != nil {
+			if *m.profileEditState.GetAnalyticsEnabled() {
 				analyticsValue = "enabled"
 			} else {
 				analyticsValue = "disabled"
 			}
 		}
-		if m.profileEditField == 5 {
+		if m.profileEditState.GetField() == 5 {
 			analyticsLabel = styleSelected.Render(analyticsLabel)
 			content.WriteString(analyticsLabel + styleSelected.Render(analyticsValue) + " [SPACE to toggle]\n")
 		} else {

@@ -53,10 +53,14 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 
 		// Find the file in the current file list
 		found := false
-		for i, f := range m.files {
+		files := m.fileExplorer.GetFiles()
+		for i, f := range files {
 			if f.Path == selectedFile {
-				m.fileIndex = i
-				m.adjustScrollOffset()
+				// Navigate to this file
+				currentIdx := m.fileExplorer.GetCurrentIndex()
+				delta := i - currentIdx
+				pageSize := m.getFileListHeight()
+				m.fileExplorer.Navigate(delta, pageSize)
 				m.loadRequestsFromCurrentFile()
 				found = true
 				break

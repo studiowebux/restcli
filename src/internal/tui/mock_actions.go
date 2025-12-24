@@ -60,8 +60,8 @@ func (m *Model) startMockServer() tea.Cmd {
 // stopMockServer stops the mock server
 func (m *Model) stopMockServer() tea.Cmd {
 	return func() tea.Msg {
-		if m.mockServer != nil {
-			if err := m.mockServer.Stop(); err != nil {
+		if m.mockServerState.GetServer() != nil {
+			if err := m.mockServerState.GetServer().Stop(); err != nil {
 				return errorMsg(fmt.Sprintf("Failed to stop mock server: %v", err))
 			}
 		}

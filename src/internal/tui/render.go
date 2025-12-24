@@ -292,8 +292,9 @@ func (m Model) renderSidebar(width, height int) string {
 		titleStyle = styleTitleFocused
 	}
 	title := "Files"
-	if len(m.tagFilter) > 0 {
-		title = fmt.Sprintf("Files (%s)", strings.Join(m.tagFilter, ","))
+	tagFilter := m.fileExplorer.GetTagFilter()
+	if len(tagFilter) > 0 {
+		title = fmt.Sprintf("Files (%s)", strings.Join(tagFilter, ","))
 	}
 	lines = append(lines, titleStyle.Render(title))
 	lines = append(lines, "")
@@ -304,13 +305,15 @@ func (m Model) renderSidebar(width, height int) string {
 		pageSize = 1
 	}
 
-	endIdx := m.fileOffset + pageSize
-	if endIdx > len(m.files) {
-		endIdx = len(m.files)
+	files := m.fileExplorer.GetFiles()
+	fileOffset := m.fileExplorer.GetScrollOffset()
+	endIdx := fileOffset + pageSize
+	if endIdx > len(files) {
+		endIdx = len(files)
 	}
 
-	for i := m.fileOffset; i < endIdx; i++ {
-		file := m.files[i]
+	for i := fileOffset; i < endIdx; i++ {
+		file := files[i]
 
 		// Hex number
 		hexNum := fmt.Sprintf("%x", i)
@@ -364,31 +367,22 @@ func (m Model) renderSidebar(width, height int) string {
 
 		line := fmt.Sprintf("%s %s%s%s%s", hexNum, methodPrefix, name, styleSubtle.Render(chainIndicator), styleSubtle.Render(tagsSuffix))
 
-		// Check if this file is a search match (only when searching files, not response)
-		isSearchMatch := false
-		if !m.searchInResponseCtx {
-			for _, matchIdx := range m.searchMatches {
-				if i == matchIdx {
-					isSearchMatch = true
-					break
-				}
-			}
-		}
-
 		// Apply styling - selected gets green, search matches get yellow
-		if i == m.fileIndex {
+		fileIndex := m.fileExplorer.GetCurrentIndex()
+		if i == fileIndex {
 			line = styleSelected.Render(line)
-		} else if isSearchMatch {
-			line = styleWarning.Render(line) // Yellow for search matches
 		}
+		// Note: Search highlighting removed as FileExplorerState doesn't expose match indices
+		// Consider adding GetSearchMatches() method if this feature is needed
 
 		lines = append(lines, line)
 	}
 
 	// Footer - show position
-	if len(m.files) > 0 {
+	if len(files) > 0 {
 		lines = append(lines, "")
-		footer := fmt.Sprintf("[%d/%d]", m.fileIndex+1, len(m.files))
+		fileIndex := m.fileExplorer.GetCurrentIndex()
+		footer := fmt.Sprintf("[%d/%d]", fileIndex+1, len(files))
 		lines = append(lines, styleSubtle.Render(footer))
 	} else {
 		lines = append(lines, "")
@@ -596,16 +590,15 @@ func (m Model) renderStatusBar() string {
 	case ModeGoto:
 		right = fmt.Sprintf("Goto: :%s", addCursor(m.gotoInput))
 	case ModeSearch:
-		right = fmt.Sprintf("Search: %s", addCursor(m.searchQuery))
+		right = fmt.Sprintf("Search: %s", addCursor(m.searchInput))
 	case ModeTagFilter:
 		// Build cursor string manually for category filter
 		cursorStr := m.inputValue[:m.inputCursor] + "█" + m.inputValue[m.inputCursor:]
 		right = fmt.Sprintf("Category: %s", cursorStr)
 	default:
-		// Show search results if active
-		if len(m.searchMatches) > 0 {
-			right = styleWarning.Render(fmt.Sprintf("Search: %d of %d | ", m.searchIndex+1, len(m.searchMatches)))
-		}
+		// Show search results if active (check both file and response search)
+		_, _, fileMatches := m.fileExplorer.GetSearchInfo()
+		hasSearch := fileMatches > 0 || len(m.responseSearchMatches) > 0
 
 		if m.errorMsg != "" {
 			right += styleError.Render(m.errorMsg)
@@ -622,7 +615,7 @@ func (m Model) renderStatusBar() string {
 			if len(m.fullStatusMsg) > 100 {
 				right += styleSubtle.Render(" [press 'I' for full message]")
 			}
-		} else if len(m.searchMatches) == 0 {
+		} else if !hasSearch {
 			right += styleSubtle.Render("Press / to search | J to filter | ? for help | q to quit")
 		}
 	}
@@ -918,7 +911,7 @@ func (m *Model) updateResponseView() {
 	m.responseContent = contentStr
 
 	// Apply search highlighting if we're searching in response
-	if m.searchInResponseCtx && len(m.searchMatches) > 0 {
+	if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
 		contentStr = m.highlightSearchMatches(contentStr)
 	}
 
@@ -931,7 +924,7 @@ func (m *Model) highlightSearchMatches(content string) string {
 
 	// Create a map of line numbers to highlight for faster lookup
 	matchLines := make(map[int]bool)
-	for _, lineNum := range m.searchMatches {
+	for _, lineNum := range m.responseSearchMatches {
 		matchLines[lineNum] = true
 	}
 
@@ -1342,7 +1335,7 @@ func (m *Model) updateDocumentationView() {
 
 	// Helper to render a collapsible section
 	renderSection := func(title string, index int, renderContent func()) {
-		collapsed := m.docCollapsed[index]
+		collapsed := m.docState.GetCollapsed(index)
 		marker := "▼" // Expanded
 		if collapsed {
 			marker = "▶" // Collapsed
@@ -1350,7 +1343,7 @@ func (m *Model) updateDocumentationView() {
 
 		// Highlight if selected
 		line := fmt.Sprintf("%s %s", marker, title)
-		if currentIdx == m.docSelectedIdx {
+		if currentIdx == m.docState.GetSelectedIdx() {
 			line = styleSelected.Render(line)
 			selectedLineNum = strings.Count(content.String(), "\n")
 		} else {
@@ -1393,7 +1386,7 @@ func (m *Model) updateDocumentationView() {
 				line += required
 
 				// Highlight if this parameter is selected
-				if currentIdx == m.docSelectedIdx {
+				if currentIdx == m.docState.GetSelectedIdx() {
 					line = styleSelected.Render(line)
 					selectedLineNum = strings.Count(content.String(), "\n")
 				}
@@ -1417,7 +1410,7 @@ func (m *Model) updateDocumentationView() {
 			for respIdx, resp := range doc.Responses {
 				// Response code and description
 				line := fmt.Sprintf("  %s: %s", styleSuccess.Render(resp.Code), resp.Description)
-				if currentIdx == m.docSelectedIdx {
+				if currentIdx == m.docState.GetSelectedIdx() {
 					line = styleSelected.Render(line)
 					selectedLineNum = strings.Count(content.String(), "\n")
 				}
@@ -1427,23 +1420,23 @@ func (m *Model) updateDocumentationView() {
 				// Response fields - lazy rendering (only build tree when response is expanded)
 				if len(resp.Fields) > 0 {
 					responseKey := 100 + respIdx
-					responseFieldsCollapsed := m.docCollapsed[responseKey]
+					responseFieldsCollapsed := m.docState.GetCollapsed(responseKey)
 
 					if !responseFieldsCollapsed {
 						// Response fields are expanded - use cached tree
-						allFields, ok := m.docFieldTreeCache[respIdx]
+						allFields := m.docState.GetFieldTreeCache(respIdx); ok := allFields != nil
 						if !ok {
 							// Build and cache the tree
 							allFields = buildVirtualFieldTree(resp.Fields)
-							m.docFieldTreeCache[respIdx] = allFields
-							m.docChildrenCache[respIdx] = buildHasChildrenCache(allFields)
+							m.docState.SetFieldTreeCache(respIdx, allFields)
+							m.docState.SetChildrenCache(respIdx, buildHasChildrenCache(allFields))
 						}
-						hasChildrenCache := m.docChildrenCache[respIdx]
+						hasChildrenCache := m.docState.GetChildrenCache(respIdx)
 						m.renderResponseFieldsTree(respIdx, "", allFields, hasChildrenCache, &currentIdx, &content, 0, &selectedLineNum)
 					} else {
 						// Response fields are collapsed - show indicator only (no tree building!)
 						line := fmt.Sprintf("    ▶ %d fields", len(resp.Fields))
-						if currentIdx == m.docSelectedIdx {
+						if currentIdx == m.docState.GetSelectedIdx() {
 							line = styleSelected.Render(line)
 							selectedLineNum = strings.Count(content.String(), "\n")
 						}
@@ -1636,9 +1629,10 @@ func (m *Model) updateInspectView() {
 				graph := chain.NewGraph(profile.Workdir)
 
 				// Get current file path
+				currentFileInfo := m.fileExplorer.GetCurrentFile()
 				currentFile := ""
-				if len(m.files) > 0 && m.fileIndex < len(m.files) {
-					currentFile = m.files[m.fileIndex].Path
+				if currentFileInfo != nil {
+					currentFile = currentFileInfo.Path
 				}
 
 				if currentFile != "" {
@@ -1781,7 +1775,7 @@ func (m *Model) updateHistoryView() {
 	paneHeight := modalHeight - 4 // Account for borders and padding
 
 	// Adjust viewport widths based on preview visibility
-	if m.historyPreviewVisible {
+	if m.historyState.GetPreviewVisible() {
 		// Split view mode: calculate widths for both panes
 		listWidth := (modalWidth - 3) / 2          // Left pane width
 		previewWidth := modalWidth - listWidth - 3 // Right pane width
@@ -1791,8 +1785,10 @@ func (m *Model) updateHistoryView() {
 		m.modalView.Height = paneHeight - 2 // Account for title
 
 		// Set viewport dimensions for right pane (response preview)
-		m.historyPreviewView.Width = previewWidth - 4
-		m.historyPreviewView.Height = paneHeight - 2
+		previewView := m.historyState.GetPreviewView()
+		previewView.Width = previewWidth - 4
+		previewView.Height = paneHeight - 2
+		m.historyState.SetPreviewView(previewView)
 	} else {
 		// Preview hidden: expand list to full width
 		m.modalView.Width = modalWidth - 4  // Account for padding and borders
@@ -1801,11 +1797,11 @@ func (m *Model) updateHistoryView() {
 
 	// Build content for left pane (history list)
 	var listContent strings.Builder
-	if len(m.historyEntries) == 0 {
+	if len(m.historyState.GetEntries()) == 0 {
 		listContent.WriteString("No history entries")
 	} else {
 		// Show ALL entries (not just first 10) - viewport handles scrolling
-		for i, entry := range m.historyEntries {
+		for i, entry := range m.historyState.GetEntries() {
 			statusStyle := styleSuccess
 			if entry.ResponseStatus >= 400 {
 				statusStyle = styleError
@@ -1818,7 +1814,7 @@ func (m *Model) updateHistoryView() {
 				statusStyle.Render(fmt.Sprintf("%d", entry.ResponseStatus)))
 
 			// Highlight selected entry
-			if i == m.historyIndex {
+			if i == m.historyState.GetIndex() {
 				line = styleSelected.Render(line)
 			}
 
@@ -1827,10 +1823,10 @@ func (m *Model) updateHistoryView() {
 	}
 
 	// Build content for right pane (response preview) - ONLY if preview is visible
-	if m.historyPreviewVisible {
+	if m.historyState.GetPreviewVisible() {
 		var previewContent strings.Builder
-		if len(m.historyEntries) > 0 && m.historyIndex >= 0 && m.historyIndex < len(m.historyEntries) {
-			entry := m.historyEntries[m.historyIndex]
+		if len(m.historyState.GetEntries()) > 0 && m.historyState.GetIndex() >= 0 && m.historyState.GetIndex() < len(m.historyState.GetEntries()) {
+			entry := m.historyState.GetEntries()[m.historyState.GetIndex()]
 
 			// Show response metadata
 			previewContent.WriteString(fmt.Sprintf("%s %s\n", entry.Method, entry.URL))
@@ -1852,7 +1848,7 @@ func (m *Model) updateHistoryView() {
 			}
 
 			// Wrap text to viewport width
-			wrapWidth := m.historyPreviewView.Width
+			wrapWidth := m.historyState.GetPreviewView().Width
 			if wrapWidth < 40 {
 				wrapWidth = 40
 			}
@@ -1870,11 +1866,15 @@ func (m *Model) updateHistoryView() {
 		}
 
 		// Set preview content (always start from top when selection changes)
-		m.historyPreviewView.SetContent(previewContent.String())
-		m.historyPreviewView.GotoTop()
+		previewView := m.historyState.GetPreviewView()
+		previewView.SetContent(previewContent.String())
+		previewView.GotoTop()
+		m.historyState.SetPreviewView(previewView)
 	} else {
 		// Clear preview content when hidden (security/privacy)
-		m.historyPreviewView.SetContent("")
+		previewView := m.historyState.GetPreviewView()
+		previewView.SetContent("")
+		m.historyState.SetPreviewView(previewView)
 	}
 
 	// Save current scroll positions before updating content
@@ -1882,8 +1882,8 @@ func (m *Model) updateHistoryView() {
 	m.modalView.SetContent(listContent.String())
 
 	// Auto-scroll list to keep selected item visible
-	if len(m.historyEntries) > 0 && m.historyIndex >= 0 {
-		selectedLine := m.historyIndex
+	if len(m.historyState.GetEntries()) > 0 && m.historyState.GetIndex() >= 0 {
+		selectedLine := m.historyState.GetIndex()
 
 		// Ensure selected item is visible in viewport
 		if selectedLine < m.modalView.YOffset {

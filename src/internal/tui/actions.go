@@ -27,26 +27,8 @@ import (
 
 // navigateFiles moves the file selection up or down
 func (m *Model) navigateFiles(delta int) {
-	if len(m.files) == 0 {
-		return
-	}
-
-	m.fileIndex += delta
-
-	// Wrap around (circular navigation as per TypeScript version)
-	if m.fileIndex < 0 {
-		m.fileIndex = len(m.files) - 1
-	} else if m.fileIndex >= len(m.files) {
-		m.fileIndex = 0
-	}
-
-	// Adjust scroll offset
 	pageSize := m.getFileListHeight()
-	if m.fileIndex < m.fileOffset {
-		m.fileOffset = m.fileIndex
-	} else if m.fileIndex >= m.fileOffset+pageSize {
-		m.fileOffset = m.fileIndex - pageSize + 1
-	}
+	m.fileExplorer.Navigate(delta, pageSize)
 
 	// Load requests from selected file
 	m.loadRequestsFromCurrentFile()
@@ -189,13 +171,14 @@ func (m *Model) executeRequest() tea.Cmd {
 
 // executeWebSocket opens WebSocket modal and loads predefined messages
 func (m *Model) executeWebSocket() tea.Cmd {
-	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
+	currentFile := m.fileExplorer.GetCurrentFile()
+	if currentFile == nil {
 		return func() tea.Msg {
 			return errorMsg("No file selected")
 		}
 	}
 
-	filePath := m.files[m.fileIndex].Path
+	filePath := currentFile.Path
 
 	// Parse the .ws file
 	wsReq, err := parser.ParseWebSocketFile(filePath)
@@ -205,8 +188,7 @@ func (m *Model) executeWebSocket() tea.Cmd {
 		}
 	}
 
-	// Initialize WebSocket state
-	m.wsActive = false // Not connected yet
+	// Initialize WebSocket state (wsState already initialized)
 	// Only clear messages if switching to a different WebSocket URL
 	if m.wsURL != wsReq.URL {
 		m.wsMessages = []types.ReceivedMessage{}
@@ -244,7 +226,7 @@ func (m *Model) sendWebSocketMessage(msgIndex int) tea.Cmd {
 	}
 
 	// If not connected, initiate connection first and store message to send after
-	if !m.wsActive {
+	if !m.wsState.IsActive() {
 		m.wsPendingMessageIndex = msgIndex
 		return m.connectWebSocket()
 	}
@@ -276,13 +258,14 @@ func (m *Model) connectWebSocket() tea.Cmd {
 	}
 
 	// Parse the .ws file again to get full request
-	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
+	currentFile := m.fileExplorer.GetCurrentFile()
+	if currentFile == nil {
 		return func() tea.Msg {
 			return errorMsg("No file selected")
 		}
 	}
 
-	filePath := m.files[m.fileIndex].Path
+	filePath := currentFile.Path
 	wsReq, err := parser.ParseWebSocketFile(filePath)
 	if err != nil {
 		return func() tea.Msg {
@@ -291,7 +274,6 @@ func (m *Model) connectWebSocket() tea.Cmd {
 	}
 
 	// Set connecting status
-	m.wsActive = true
 	m.wsConnectionStatus = "connecting"
 
 	// Create channels for WebSocket communication
@@ -300,7 +282,7 @@ func (m *Model) connectWebSocket() tea.Cmd {
 
 	// Create cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
-	m.wsCancelFunc = cancel
+	m.wsState.Start(cancel)
 
 	// Start persistent WebSocket connection in a goroutine
 	go func() {
@@ -425,7 +407,7 @@ func (m *Model) exportWebSocketMessages() tea.Cmd {
 func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsConfig *types.TLSConfig, warnings, shellErrs []string, profile *types.Profile) tea.Cmd {
 	// Create a cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
-	m.requestCancelFunc = cancel
+	m.requestState.SetCancel(cancel)
 
 	return func() tea.Msg {
 		// Create a channel for the result
@@ -454,24 +436,27 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 				if profile != nil && profile.AnalyticsEnabled != nil {
 					shouldSaveAnalytics = *profile.AnalyticsEnabled
 				}
-				if shouldSaveAnalytics && len(m.files) > 0 && m.analyticsManager != nil {
-					filePath := m.files[m.fileIndex].Path
-					normalizedPath := normalizePath(resolvedRequest.URL)
+				if shouldSaveAnalytics && m.analyticsManager != nil {
+					currentFile := m.fileExplorer.GetCurrentFile()
+					if currentFile != nil {
+						filePath := currentFile.Path
+						normalizedPath := normalizePath(resolvedRequest.URL)
 
-					entry := analytics.Entry{
-						FilePath:       filePath,
-						NormalizedPath: normalizedPath,
-						Method:         resolvedRequest.Method,
-						StatusCode:     0, // 0 indicates network error (no HTTP response)
-						RequestSize:    int64(len(resolvedRequest.Body)),
-						ResponseSize:   0,
-						DurationMs:     0,
-						ErrorMessage:   res.err.Error(),
-						Timestamp:      time.Now(),
-						ProfileName:    profile.Name,
+						entry := analytics.Entry{
+							FilePath:       filePath,
+							NormalizedPath: normalizedPath,
+							Method:         resolvedRequest.Method,
+							StatusCode:     0, // 0 indicates network error (no HTTP response)
+							RequestSize:    int64(len(resolvedRequest.Body)),
+							ResponseSize:   0,
+							DurationMs:     0,
+							ErrorMessage:   res.err.Error(),
+							Timestamp:      time.Now(),
+							ProfileName:    profile.Name,
+						}
+
+						_ = m.analyticsManager.Save(entry)
 					}
-
-					_ = m.analyticsManager.Save(entry)
 				}
 
 				return errorMsg(fmt.Sprintf("Failed to execute request: %v", res.err))
@@ -508,9 +493,12 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 			if profile != nil && profile.HistoryEnabled != nil {
 				shouldSaveHistory = *profile.HistoryEnabled
 			}
-			if shouldSaveHistory && len(m.files) > 0 && m.historyManager != nil {
-				filePath := m.files[m.fileIndex].Path
-				_ = m.historyManager.Save(filePath, profile.Name, resolvedRequest, result)
+			if shouldSaveHistory && m.historyManager != nil {
+				currentFile := m.fileExplorer.GetCurrentFile()
+				if currentFile != nil {
+					filePath := currentFile.Path
+					_ = m.historyManager.Save(filePath, profile.Name, resolvedRequest, result)
+				}
 			}
 
 			// Save to analytics
@@ -518,23 +506,26 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 			if profile != nil && profile.AnalyticsEnabled != nil {
 				shouldSaveAnalytics = *profile.AnalyticsEnabled
 			}
-			if shouldSaveAnalytics && len(m.files) > 0 && m.analyticsManager != nil {
-				filePath := m.files[m.fileIndex].Path
-				normalizedPath := normalizePath(resolvedRequest.URL)
+			if shouldSaveAnalytics && m.analyticsManager != nil {
+				currentFile := m.fileExplorer.GetCurrentFile()
+				if currentFile != nil {
+					filePath := currentFile.Path
+					normalizedPath := normalizePath(resolvedRequest.URL)
 
-				entry := analytics.Entry{
-					FilePath:       filePath,
-					NormalizedPath: normalizedPath,
-					Method:         resolvedRequest.Method,
-					StatusCode:     result.Status,
-					RequestSize:    int64(len(resolvedRequest.Body)),
-					ResponseSize:   int64(len(result.Body)),
-					DurationMs:     result.Duration,
-					Timestamp:      time.Now(),
-					ProfileName:    profile.Name,
+					entry := analytics.Entry{
+						FilePath:       filePath,
+						NormalizedPath: normalizedPath,
+						Method:         resolvedRequest.Method,
+						StatusCode:     result.Status,
+						RequestSize:    int64(len(resolvedRequest.Body)),
+						ResponseSize:   int64(len(result.Body)),
+						DurationMs:     result.Duration,
+						Timestamp:      time.Now(),
+						ProfileName:    profile.Name,
+					}
+
+					_ = m.analyticsManager.Save(entry) // Ignore errors to not interrupt the flow
 				}
-
-				_ = m.analyticsManager.Save(entry) // Ignore errors to not interrupt the flow
 			}
 
 			// Auto-extract tokens
@@ -556,12 +547,11 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 func (m *Model) executeStreamingRequest(resolvedRequest *types.HttpRequest, tlsConfig *types.TLSConfig, warnings, shellErrs []string, profile *types.Profile) tea.Cmd {
 	// Create a channel for streaming chunks
 	m.streamChannel = make(chan streamChunkMsg, 100)
-	m.streamingActive = true
 	m.streamedBody = ""
 
 	// Create a cancellable context for the request
 	ctx, cancel := context.WithCancel(context.Background())
-	m.streamCancelFunc = cancel
+	m.streamState.Start(cancel)
 
 	// Start the request in a goroutine
 	go func() {
@@ -621,13 +611,14 @@ func (m *Model) refreshFiles() tea.Cmd {
 
 // executeChain executes a request chain (request with dependencies)
 func (m *Model) executeChain() tea.Cmd {
-	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
+	file := m.fileExplorer.GetCurrentFile()
+	if file == nil {
 		return func() tea.Msg {
 			return errorMsg("No file selected")
 		}
 	}
 
-	currentFile := m.files[m.fileIndex].Path
+	currentFile := file.Path
 	profile := m.sessionMgr.GetActiveProfile()
 
 	// Build dependency graph
@@ -776,12 +767,13 @@ func (m *Model) executeChain() tea.Cmd {
 
 // openInEditor opens the current file in external editor
 func (m *Model) openInEditor() tea.Cmd {
-	if len(m.files) == 0 {
+	currentFile := m.fileExplorer.GetCurrentFile()
+	if currentFile == nil {
 		m.errorMsg = "No file selected"
 		return nil
 	}
 
-	filePath := m.files[m.fileIndex].Path
+	filePath := currentFile.Path
 	profile := m.sessionMgr.GetActiveProfile()
 	editor := profile.Editor
 	if editor == "" {
@@ -806,11 +798,12 @@ func (m *Model) openInEditor() tea.Cmd {
 // duplicateFile duplicates the current file
 func (m *Model) duplicateFile() tea.Cmd {
 	return func() tea.Msg {
-		if len(m.files) == 0 {
+		currentFile := m.fileExplorer.GetCurrentFile()
+		if currentFile == nil {
 			return errorMsg("No file selected")
 		}
 
-		srcPath := m.files[m.fileIndex].Path
+		srcPath := currentFile.Path
 		dir := filepath.Dir(srcPath)
 		base := filepath.Base(srcPath)
 		ext := filepath.Ext(base)
@@ -846,22 +839,20 @@ func (m *Model) duplicateFile() tea.Cmd {
 // deleteFile deletes the current file
 func (m *Model) deleteFile() tea.Cmd {
 	return func() tea.Msg {
-		if len(m.files) == 0 {
+		currentFile := m.fileExplorer.GetCurrentFile()
+		if currentFile == nil {
 			return errorMsg("No file selected")
 		}
 
-		filePath := m.files[m.fileIndex].Path
-		fileName := m.files[m.fileIndex].Name
+		filePath := currentFile.Path
+		fileName := currentFile.Name
 
 		// Delete the file
 		if err := os.Remove(filePath); err != nil {
 			return errorMsg(fmt.Sprintf("Failed to delete file: %v", err))
 		}
 
-		// Adjust file index if we deleted the last file
-		if m.fileIndex >= len(m.files)-1 && m.fileIndex > 0 {
-			m.fileIndex--
-		}
+		// File index will be adjusted when files are reloaded
 
 		m.statusMsg = fmt.Sprintf("Deleted: %s", fileName)
 		m.mode = ModeNormal
@@ -882,8 +873,9 @@ func (m *Model) saveResponse() tea.Cmd {
 		// Generate filename with timestamp
 		timestamp := time.Now().Format("20060102_150405")
 		filename := fmt.Sprintf("response_%s.json", timestamp)
-		if len(m.files) > 0 {
-			base := filepath.Base(m.files[m.fileIndex].Name)
+		currentFile := m.fileExplorer.GetCurrentFile()
+		if currentFile != nil {
+			base := filepath.Base(currentFile.Name)
 			baseName := strings.TrimSuffix(base, filepath.Ext(base))
 			filename = fmt.Sprintf("%s_response_%s.json", baseName, timestamp)
 		}
@@ -1014,10 +1006,13 @@ func (m *Model) copyToClipboard() tea.Cmd {
 
 // performSearch performs context-aware search (files or response based on focus)
 func (m *Model) performSearch() {
-	if m.searchQuery == "" {
+	// Use searchInput from ModeSearch (not the currently active search)
+	query := m.searchInput
+	if query == "" {
 		wasSearchingResponse := m.searchInResponseCtx
-		m.searchMatches = nil
-		m.searchIndex = 0
+		m.fileExplorer.ClearSearch()
+		m.responseSearchMatches = nil
+		m.responseSearchIndex = 0
 		m.searchInResponseCtx = false
 		// Clear highlighting from response if we were searching there
 		if wasSearchingResponse && m.currentResponse != nil {
@@ -1047,73 +1042,39 @@ func isRegexPattern(s string) bool {
 
 // searchInFiles searches in file names with optional regex support
 func (m *Model) searchInFiles() {
-	m.searchMatches = nil
 	m.searchInResponseCtx = false
 	m.errorMsg = "" // Clear any previous errors
 
-	// Auto-detect regex
-	useRegex := isRegexPattern(m.searchQuery)
+	// Use searchInput (from ModeSearch) for new searches
+	query := m.searchInput
+	pageSize := m.getFileListHeight()
 
-	if useRegex {
-		// Try regex search
-		pattern, err := regexp.Compile(m.searchQuery)
-		if err != nil {
-			// Fall back to substring search if regex is invalid
-			m.searchInFilesSubstring()
-			return
-		}
+	matchCount, errMsg := m.fileExplorer.Search(query, pageSize)
 
-		for i, file := range m.files {
-			if pattern.MatchString(file.Name) {
-				m.searchMatches = append(m.searchMatches, i)
-			}
-		}
-	} else {
-		// Simple substring search (case-insensitive)
-		m.searchInFilesSubstring()
+	if errMsg != "" {
+		m.errorMsg = errMsg
 		return
 	}
 
-	if len(m.searchMatches) == 0 {
-		m.errorMsg = "No matching files found"
-		return
-	}
-
-	// Jump to first match
-	m.searchIndex = 0
-	m.fileIndex = m.searchMatches[0]
-	m.adjustScrollOffset()
+	// Load requests from selected file
 	m.loadRequestsFromCurrentFile()
 
-	mode := "regex"
-	m.statusMsg = fmt.Sprintf("[Files] Match 1 of %d (%s)", len(m.searchMatches), mode)
+	mode := "search"
+	if isRegexPattern(query) {
+		mode = "regex"
+	}
+	m.statusMsg = fmt.Sprintf("[Files] Match 1 of %d (%s)", matchCount, mode)
 }
 
 // searchInFilesSubstring performs case-insensitive substring search
+// Note: This is now handled by FileExplorerState.Search internally
 func (m *Model) searchInFilesSubstring() {
-	query := strings.ToLower(m.searchQuery)
-
-	for i, file := range m.files {
-		if strings.Contains(strings.ToLower(file.Name), query) {
-			m.searchMatches = append(m.searchMatches, i)
-		}
-	}
-
-	if len(m.searchMatches) == 0 {
-		m.errorMsg = "No matching files found"
-		return
-	}
-
-	m.searchIndex = 0
-	m.fileIndex = m.searchMatches[0]
-	m.adjustScrollOffset()
-	m.loadRequestsFromCurrentFile()
-	m.statusMsg = fmt.Sprintf("[Files] Match 1 of %d (text)", len(m.searchMatches))
+	m.searchInFiles()
 }
 
 // searchInResponse searches in response body
 func (m *Model) searchInResponse() {
-	m.searchMatches = nil
+	m.responseSearchMatches = nil
 	m.searchInResponseCtx = true
 	m.errorMsg = "" // Clear any previous errors
 
@@ -1125,12 +1086,15 @@ func (m *Model) searchInResponse() {
 	}
 	lines := strings.Split(content, "\n")
 
+	// Use searchInput (from ModeSearch) for new searches
+	query := m.searchInput
+
 	// Auto-detect regex
-	useRegex := isRegexPattern(m.searchQuery)
+	useRegex := isRegexPattern(query)
 
 	if useRegex {
 		// Try regex search
-		pattern, err := regexp.Compile(m.searchQuery)
+		pattern, err := regexp.Compile(query)
 		if err != nil {
 			// Fall back to substring search if regex is invalid
 			m.searchInResponseSubstring(lines)
@@ -1141,18 +1105,18 @@ func (m *Model) searchInResponse() {
 			// Strip ANSI codes for searching
 			cleanLine := stripANSI(line)
 			if pattern.MatchString(cleanLine) {
-				m.searchMatches = append(m.searchMatches, lineNum)
+				m.responseSearchMatches = append(m.responseSearchMatches, lineNum)
 			}
 		}
 
-		if len(m.searchMatches) == 0 {
+		if len(m.responseSearchMatches) == 0 {
 			m.errorMsg = "No matches found in response"
 			return
 		}
 
-		m.searchIndex = 0
-		m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[0]))
-		m.statusMsg = fmt.Sprintf("[Response] Match 1 of %d (regex)", len(m.searchMatches))
+		m.responseSearchIndex = 0
+		m.responseView.SetYOffset(m.centerLineInViewport(m.responseSearchMatches[0]))
+		m.statusMsg = fmt.Sprintf("[Response] Match 1 of %d (regex)", len(m.responseSearchMatches))
 		m.updateResponseView() // Re-render with highlighting
 	} else {
 		m.searchInResponseSubstring(lines)
@@ -1161,23 +1125,24 @@ func (m *Model) searchInResponse() {
 
 // searchInResponseSubstring performs case-insensitive substring search in response
 func (m *Model) searchInResponseSubstring(lines []string) {
-	query := strings.ToLower(m.searchQuery)
+	query, _, _ := m.fileExplorer.GetSearchInfo()
+	queryLower := strings.ToLower(query)
 
 	for lineNum, line := range lines {
 		cleanLine := stripANSI(line)
-		if strings.Contains(strings.ToLower(cleanLine), query) {
-			m.searchMatches = append(m.searchMatches, lineNum)
+		if strings.Contains(strings.ToLower(cleanLine), queryLower) {
+			m.responseSearchMatches = append(m.responseSearchMatches, lineNum)
 		}
 	}
 
-	if len(m.searchMatches) == 0 {
+	if len(m.responseSearchMatches) == 0 {
 		m.errorMsg = "No matches found in response"
 		return
 	}
 
-	m.searchIndex = 0
-	m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[0]))
-	m.statusMsg = fmt.Sprintf("[Response] Match 1 of %d (text)", len(m.searchMatches))
+	m.responseSearchIndex = 0
+	m.responseView.SetYOffset(m.centerLineInViewport(m.responseSearchMatches[0]))
+	m.statusMsg = fmt.Sprintf("[Response] Match 1 of %d (text)", len(m.responseSearchMatches))
 	m.updateResponseView() // Re-render with highlighting
 }
 
@@ -1198,13 +1163,10 @@ func stripANSI(s string) string {
 }
 
 // adjustScrollOffset adjusts scroll offset to keep selected file visible
+// Note: This is now handled by FileExplorerState.Navigate and FileExplorerState.AdjustScrollOffset
 func (m *Model) adjustScrollOffset() {
 	pageSize := m.getFileListHeight()
-	if m.fileIndex < m.fileOffset {
-		m.fileOffset = m.fileIndex
-	} else if m.fileIndex >= m.fileOffset+pageSize {
-		m.fileOffset = m.fileIndex - pageSize + 1
-	}
+	m.fileExplorer.AdjustScrollOffset(pageSize)
 }
 
 // performGoto jumps to a hex line number
@@ -1220,13 +1182,17 @@ func (m *Model) performGoto() {
 		return
 	}
 
-	if lineNum < 0 || int(lineNum) >= len(m.files) {
+	files := m.fileExplorer.GetFiles()
+	if lineNum < 0 || int(lineNum) >= len(files) {
 		m.errorMsg = "Line number out of range"
 		return
 	}
 
-	m.fileIndex = int(lineNum)
-	m.fileOffset = int(lineNum)
+	// Navigate to the specified file index
+	currentIdx := m.fileExplorer.GetCurrentIndex()
+	delta := int(lineNum) - currentIdx
+	pageSize := m.getFileListHeight()
+	m.fileExplorer.Navigate(delta, pageSize)
 	m.loadRequestsFromCurrentFile()
 }
 
@@ -1251,11 +1217,11 @@ func (m *Model) loadHistory() tea.Cmd {
 
 // loadHistoryEntry loads a specific history entry into the response view
 func (m *Model) loadHistoryEntry(index int) tea.Cmd {
-	if index < 0 || index >= len(m.historyEntries) {
+	if index < 0 || index >= len(m.historyState.GetEntries()) {
 		return nil
 	}
 
-	entry := m.historyEntries[index]
+	entry := m.historyState.GetEntries()[index]
 
 	// Convert to RequestResult
 	m.currentResponse = &types.RequestResult{
@@ -1293,17 +1259,17 @@ func (m *Model) loadHistoryEntry(index int) tea.Cmd {
 // filterHistoryEntries filters history entries based on search query
 // Searches in: URL, method, request name, status code, timestamp
 func (m *Model) filterHistoryEntries() {
-	query := strings.ToLower(m.historySearchQuery)
+	query := strings.ToLower(m.historyState.GetSearchQuery())
 
 	if query == "" {
-		m.historyEntries = m.historyAllEntries
-		m.historyIndex = 0
+		m.historyState.SetEntries(m.historyState.GetAllEntries())
+		m.historyState.SetIndex(0)
 		m.updateHistoryView()
 		return
 	}
 
 	var filtered []types.HistoryEntry
-	for _, entry := range m.historyAllEntries {
+	for _, entry := range m.historyState.GetAllEntries() {
 		// Search in multiple fields
 		if strings.Contains(strings.ToLower(entry.URL), query) ||
 			strings.Contains(strings.ToLower(entry.Method), query) ||
@@ -1315,18 +1281,18 @@ func (m *Model) filterHistoryEntries() {
 		}
 	}
 
-	m.historyEntries = filtered
-	m.historyIndex = 0
+	m.historyState.SetEntries(filtered)
+	m.historyState.SetIndex(0)
 	m.updateHistoryView()
 }
 
 // replayHistoryEntry re-executes a request from history
 func (m *Model) replayHistoryEntry(index int) tea.Cmd {
-	if index < 0 || index >= len(m.historyEntries) {
+	if index < 0 || index >= len(m.historyState.GetEntries()) {
 		return nil
 	}
 
-	entry := m.historyEntries[index]
+	entry := m.historyState.GetEntries()[index]
 
 	// Convert history entry to HttpRequest
 	request := &types.HttpRequest{
@@ -1445,21 +1411,22 @@ func (m *Model) openConfigFile(filePath string) tea.Cmd {
 
 // loadRequestsFromCurrentFile loads requests from the currently selected file
 func (m *Model) loadRequestsFromCurrentFile() {
-	if len(m.files) == 0 || m.fileIndex >= len(m.files) {
+	currentFile := m.fileExplorer.GetCurrentFile()
+	if currentFile == nil {
 		m.currentRequests = nil
 		m.currentRequest = nil
 		return
 	}
 
 	// Skip parsing for WebSocket files - they're executed directly
-	if m.files[m.fileIndex].HTTPMethod == "WS" {
+	if currentFile.HTTPMethod == "WS" {
 		m.currentRequests = nil
 		m.currentRequest = nil
 		m.errorMsg = "" // Clear any errors
 		return
 	}
 
-	filePath := m.files[m.fileIndex].Path
+	filePath := currentFile.Path
 	requests, err := parser.Parse(filePath)
 	if err != nil {
 		m.errorMsg = fmt.Sprintf("Failed to parse file: %v", err)
@@ -1536,7 +1503,7 @@ func normalizePath(rawURL string) string {
 
 // renderHistoryClearConfirmation renders the confirmation modal for clearing all history
 func (m *Model) renderHistoryClearConfirmation() string {
-	count := len(m.historyEntries)
+	count := len(m.historyState.GetEntries())
 	content := "WARNING\n\n"
 	content += "This will permanently delete ALL history entries.\n\n"
 	content += fmt.Sprintf("Total entries to delete: %d\n\n", count)
@@ -1562,17 +1529,9 @@ func (m *Model) checkForUpdate() tea.Cmd {
 
 // applyTagFilter applies the current tag filter to the file list
 func (m *Model) applyTagFilter() {
-	if len(m.tagFilter) == 0 {
-		m.files = m.allFiles
-		return
-	}
+	tags := m.fileExplorer.GetTagFilter()
+	m.fileExplorer.SetTagFilter(tags)
 
-	// Use the filter package to filter files
-	m.files = filter.FilterByTags(m.allFiles, m.tagFilter)
-
-	// Reset file index if out of bounds
-	if m.fileIndex >= len(m.files) {
-		m.fileIndex = 0
-		m.fileOffset = 0
-	}
+	// Load requests from current file after filtering
+	m.loadRequestsFromCurrentFile()
 }

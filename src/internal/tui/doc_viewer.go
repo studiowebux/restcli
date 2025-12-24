@@ -102,7 +102,7 @@ func getDirectChildren(parentPath string, allFields []DocField) []DocField {
 
 // initializeCollapsedFields sets default collapse state (all fields with children)
 func (m *Model) initializeCollapsedFields() {
-	m.docCollapsed = make(map[int]bool)
+	m.docState.ClearCollapsed()
 
 	if m.currentRequest == nil || m.currentRequest.Documentation == nil {
 		return
@@ -111,15 +111,15 @@ func (m *Model) initializeCollapsedFields() {
 	doc := m.currentRequest.Documentation
 
 	// CRITICAL: Collapse the main sections by default!
-	m.docCollapsed[0] = true // Parameters section
-	m.docCollapsed[1] = true // Responses section
+	m.docState.SetCollapsed(0, true) // Parameters section
+	m.docState.SetCollapsed(1, true) // Responses section
 
 	// Collapse each individual response's fields by default (lazy loading)
 	if doc.Responses != nil {
 		for respIdx := range doc.Responses {
 			// Use key pattern: 100 + respIdx (separate from field keys which start at 200)
 			responseKey := 100 + respIdx
-			m.docCollapsed[responseKey] = true // Collapse each response's fields
+			m.docState.SetCollapsed(responseKey, true) // Collapse each response's fields
 		}
 	}
 
@@ -165,10 +165,8 @@ func (m *Model) initializeFieldCollapseState(respIdx int, fields []types.Respons
 	for _, field := range allFields {
 		if hasChildrenCache[field.Name] {
 			key := 200 + respIdx*1000 + hashString(field.Name)
-			// Only set if not already set (preserve user's expand/collapse actions)
-			if _, exists := m.docCollapsed[key]; !exists {
-				m.docCollapsed[key] = true
-			}
+			// Set collapsed state (only called during lazy initialization)
+			m.docState.SetCollapsed(key, true)
 		}
 	}
 }
@@ -203,7 +201,7 @@ func (m *Model) renderResponseFieldsTree(
 		// Check if this field has children using cache
 		fieldHasChildren := hasChildrenCache[field.Name]
 		fieldKey := 200 + respIdx*1000 + hashString(field.Name)
-		isCollapsed := m.docCollapsed[fieldKey]
+		isCollapsed := m.docState.GetCollapsed(fieldKey)
 
 		// Collapse indicator
 		collapseIndicator := "  "
@@ -243,7 +241,7 @@ func (m *Model) renderResponseFieldsTree(
 		}
 
 		// Check if this is the selected item
-		if *currentIdx == m.docSelectedIdx {
+		if *currentIdx == m.docState.GetSelectedIdx() {
 			fieldText = styleSelected.Render(fieldText)
 			*selectedLineNum = strings.Count(content.String(), "\n")
 		}

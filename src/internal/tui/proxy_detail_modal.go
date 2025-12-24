@@ -23,11 +23,11 @@ func (m *Model) updateProxyDetailView() {
 
 // renderProxyDetailModal renders the detailed view of a single proxy request
 func (m Model) renderProxyDetailModal() string {
-	if m.proxySelectedIndex < 0 || m.proxySelectedIndex >= len(m.proxyLogs) {
+	if m.proxyServerState.GetSelectedIndex() < 0 || m.proxyServerState.GetSelectedIndex() >= len(m.proxyServerState.GetLogs()) {
 		return "No request selected"
 	}
 
-	log := m.proxyLogs[m.proxySelectedIndex]
+	log := m.proxyServerState.GetLogs()[m.proxyServerState.GetSelectedIndex()]
 
 	// Fixed footer for keybinds
 	footer := styleSubtle.Render("↑/↓ scroll | Ctrl+d/u half page | g/G top/bottom | ESC close")
@@ -54,11 +54,11 @@ func (m Model) renderProxyDetailModal() string {
 
 // buildProxyDetailContent builds the content for the proxy detail modal
 func (m *Model) buildProxyDetailContent() string {
-	if m.proxySelectedIndex < 0 || m.proxySelectedIndex >= len(m.proxyLogs) {
+	if m.proxyServerState.GetSelectedIndex() < 0 || m.proxyServerState.GetSelectedIndex() >= len(m.proxyServerState.GetLogs()) {
 		return "No request selected"
 	}
 
-	log := m.proxyLogs[m.proxySelectedIndex]
+	log := m.proxyServerState.GetLogs()[m.proxyServerState.GetSelectedIndex()]
 	var content strings.Builder
 
 	// Request line

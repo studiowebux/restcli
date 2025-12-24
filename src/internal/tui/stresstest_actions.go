@@ -12,7 +12,7 @@ import (
 
 // startStressTest starts a stress test execution
 func (m *Model) startStressTest() tea.Cmd {
-	if m.stressTestConfigEdit == nil {
+	if m.stressTestState.GetConfigEdit() == nil {
 		return func() tea.Msg {
 			return errorMsg("No stress test configuration")
 		}
@@ -21,11 +21,11 @@ func (m *Model) startStressTest() tea.Cmd {
 	// Set profile name from active profile
 	profile := m.sessionMgr.GetActiveProfile()
 	if profile != nil {
-		m.stressTestConfigEdit.ProfileName = profile.Name
+		m.stressTestState.GetConfigEdit().ProfileName = profile.Name
 	}
 
 	// Load requests from the configured file
-	requests, err := parser.Parse(m.stressTestConfigEdit.RequestFile)
+	requests, err := parser.Parse(m.stressTestState.GetConfigEdit().RequestFile)
 	if err != nil {
 		return func() tea.Msg {
 			return errorMsg(fmt.Sprintf("Failed to parse request file: %v", err))
@@ -106,11 +106,11 @@ func (m *Model) startStressTest() tea.Cmd {
 	execConfig := &stresstest.ExecutionConfig{
 		Request:   &requestCopy,
 		TLSConfig: tlsConfig,
-		Config:    m.stressTestConfigEdit,
+		Config:    m.stressTestState.GetConfigEdit(),
 	}
 
 	// Create executor
-	executor, err := stresstest.NewExecutor(execConfig, m.stressTestManager)
+	executor, err := stresstest.NewExecutor(execConfig, m.stressTestState.GetManager())
 	if err != nil {
 		return func() tea.Msg {
 			return errorMsg(fmt.Sprintf("Failed to create stress test executor: %v", err))
@@ -118,9 +118,9 @@ func (m *Model) startStressTest() tea.Cmd {
 	}
 
 	// Store executor and request info for display
-	m.stressTestExecutor = executor
-	m.stressTestActiveRequest = &requestCopy
-	m.stressTestExecutor.Start()
+	m.stressTestState.SetExecutor(executor)
+	m.stressTestState.SetActiveRequest(&requestCopy)
+	m.stressTestState.GetExecutor().Start()
 
 	// Switch to progress mode
 	m.mode = ModeStressTestProgress
@@ -133,11 +133,11 @@ func (m *Model) startStressTest() tea.Cmd {
 // pollStressTestProgress polls the stress test executor for progress updates
 func (m *Model) pollStressTestProgress() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-		if m.stressTestExecutor == nil {
+		if m.stressTestState.GetExecutor() == nil {
 			return nil
 		}
 
-		if m.stressTestExecutor.IsExecutionComplete() {
+		if m.stressTestState.GetExecutor().IsExecutionComplete() {
 			// Test execution completed, trigger finalization
 			return stressTestCompletedMsg{}
 		}
@@ -151,13 +151,13 @@ func (m *Model) pollStressTestProgress() tea.Cmd {
 func (m *Model) loadStressTestFilePicker() {
 	profile := m.sessionMgr.GetActiveProfile()
 	if profile == nil {
-		m.stressTestFilePickerFiles = nil
-		m.stressTestFilePickerIndex = 0
+		m.stressTestState.SetFilePickerFiles(nil)
+		m.stressTestState.SetFilePickerIndex(0)
 		return
 	}
 
 	// Get files from workdir
-	files := m.files // Use already loaded files from main view
+	files := m.fileExplorer.GetFiles() // Use already loaded files from main view
 
 	// Filter by supported extensions
 	supportedExts := map[string]bool{
@@ -179,8 +179,8 @@ func (m *Model) loadStressTestFilePicker() {
 		}
 	}
 
-	m.stressTestFilePickerFiles = filtered
-	m.stressTestFilePickerIndex = 0
+	m.stressTestState.SetFilePickerFiles(filtered)
+	m.stressTestState.SetFilePickerIndex(0)
 }
 
 // Message types

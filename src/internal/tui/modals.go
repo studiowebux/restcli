@@ -91,7 +91,7 @@ func (m *Model) renderHistory() string {
 
 	var mainView string
 
-	if m.historyPreviewVisible {
+	if m.historyState.GetPreviewVisible() {
 		// Split view mode: show both list and preview
 		listWidth := (modalWidth - 3) / 2          // Left pane: history list
 		previewWidth := modalWidth - listWidth - 3 // Right pane: response preview
@@ -112,7 +112,7 @@ func (m *Model) renderHistory() string {
 			Width(previewWidth).
 			Height(paneHeight).
 			Padding(0, 1).
-			Render(styleTitle.Render("Response Preview") + "\n" + m.historyPreviewView.View())
+			Render(styleTitle.Render("Response Preview") + "\n" + m.historyState.GetPreviewView().View())
 
 		// Join panes horizontally (Telescope-style split)
 		mainView = lipgloss.JoinHorizontal(
@@ -133,19 +133,19 @@ func (m *Model) renderHistory() string {
 
 	// Add footer with instructions and scroll position
 	var footerText string
-	if m.historySearchActive {
+	if m.historyState.GetSearchActive() {
 		// Show search input when active
-		footerText = fmt.Sprintf("Search: %s█", m.historySearchQuery)
-		if len(m.historyEntries) > 0 {
-			footerText += fmt.Sprintf(" [%d results]", len(m.historyEntries))
+		footerText = fmt.Sprintf("Search: %s█", m.historyState.GetSearchQuery())
+		if len(m.historyState.GetEntries()) > 0 {
+			footerText += fmt.Sprintf(" [%d results]", len(m.historyState.GetEntries()))
 		}
 	} else {
 		footerText = "/: Search | ↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
 
 		// Add scroll indicator if there are entries
-		if len(m.historyEntries) > 0 {
-			current := m.historyIndex + 1
-			total := len(m.historyEntries)
+		if len(m.historyState.GetEntries()) > 0 {
+			current := m.historyState.GetIndex() + 1
+			total := len(m.historyState.GetEntries())
 			percentage := int(float64(current) / float64(total) * 100)
 			scrollInfo := fmt.Sprintf(" [%d/%d] (%d%%)", current, total, percentage)
 			footerText += scrollInfo

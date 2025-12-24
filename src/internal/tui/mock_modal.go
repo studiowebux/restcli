@@ -18,17 +18,17 @@ func (m *Model) renderMockServer() string {
 	content.WriteString(styleTitle.Render("Mock Server Management") + "\n\n")
 
 	// Server status
-	if m.mockServerRunning {
-		address := m.mockServer.GetAddress()
+	if m.mockServerState.IsRunning() {
+		address := m.mockServerState.GetServer().GetAddress()
 		content.WriteString(styleSuccess.Render("● Server Running") + "\n")
 		content.WriteString(fmt.Sprintf("  Address: %s\n", address))
-		if m.mockConfigPath != "" {
-			content.WriteString(fmt.Sprintf("  Config: %s\n", filepath.Base(m.mockConfigPath)))
+		if m.mockServerState.GetConfigPath() != "" {
+			content.WriteString(fmt.Sprintf("  Config: %s\n", filepath.Base(m.mockServerState.GetConfigPath())))
 		}
 		content.WriteString("\n")
 
 		// Recent logs
-		logs := m.mockServer.GetLogs()
+		logs := m.mockServerState.GetServer().GetLogs()
 		if len(logs) > 0 {
 			content.WriteString(styleTitle.Render("Recent Requests") + " (last 10)\n\n")
 
@@ -129,7 +129,7 @@ func (m *Model) handleMockServerKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle special keys not in registry
 	switch msg.String() {
 	case "s":
-		if m.mockServerRunning {
+		if m.mockServerState.IsRunning() {
 			// Stop server
 			return m.stopMockServer()
 		} else {
@@ -138,8 +138,8 @@ func (m *Model) handleMockServerKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "c":
-		if m.mockServerRunning && m.mockServer != nil {
-			m.mockServer.ClearLogs()
+		if m.mockServerState.IsRunning() && m.mockServerState.GetServer() != nil {
+			m.mockServerState.GetServer().ClearLogs()
 			m.statusMsg = "Mock server logs cleared"
 		}
 		return nil

@@ -26,20 +26,24 @@ func (m *Model) renderStressTestResults() string {
 	listTitleStyle := styleTitleUnfocused
 	detailTitleStyle := styleTitleUnfocused
 
-	if m.stressTestFocusedPane == "list" {
+	if m.stressTestState.GetFocusedPane() == "list" {
 		listBorderColor = colorCyan
 		listTitleStyle = styleTitleFocused
-	} else if m.stressTestFocusedPane == "details" {
+	} else if m.stressTestState.GetFocusedPane() == "details" {
 		detailBorderColor = colorCyan
 		detailTitleStyle = styleTitleFocused
 	}
 
 	// Set viewport dimensions
-	m.stressTestListView.Width = listWidth - 4
-	m.stressTestListView.Height = paneHeight - 2
+	listView := m.stressTestState.GetListView()
+	listView.Width = listWidth - 4
+	listView.Height = paneHeight - 2
+	m.stressTestState.SetListView(listView)
 
-	m.stressTestDetailView.Width = detailWidth - 4
-	m.stressTestDetailView.Height = paneHeight - 2
+	detailView := m.stressTestState.GetDetailView()
+	detailView.Width = detailWidth - 4
+	detailView.Height = paneHeight - 2
+	m.stressTestState.SetDetailView(detailView)
 
 	// Update list content
 	m.updateStressTestListView()
@@ -51,7 +55,7 @@ func (m *Model) renderStressTestResults() string {
 		Width(listWidth).
 		Height(paneHeight).
 		Padding(0, 1).
-		Render(listTitleStyle.Render("Test Runs") + "\n" + m.stressTestListView.View())
+		Render(listTitleStyle.Render("Test Runs") + "\n" + m.stressTestState.GetListView().View())
 
 	// Right pane: Test run details
 	rightPane := lipgloss.NewStyle().
@@ -60,7 +64,7 @@ func (m *Model) renderStressTestResults() string {
 		Width(detailWidth).
 		Height(paneHeight).
 		Padding(0, 1).
-		Render(detailTitleStyle.Render("Details") + "\n" + m.stressTestDetailView.View())
+		Render(detailTitleStyle.Render("Details") + "\n" + m.stressTestState.GetDetailView().View())
 
 	mainView := lipgloss.JoinHorizontal(
 		lipgloss.Top,
@@ -91,10 +95,10 @@ func (m *Model) renderStressTestResults() string {
 func (m *Model) updateStressTestListView() {
 	var listContent strings.Builder
 
-	if len(m.stressTestRuns) == 0 {
+	if len(m.stressTestState.GetRuns()) == 0 {
 		listContent.WriteString("No stress test runs found.\n\nPress 'n' to create and run a stress test.")
 	} else {
-		for i, run := range m.stressTestRuns {
+		for i, run := range m.stressTestState.GetRuns() {
 			// Format display
 			displayName := run.ConfigName
 
@@ -120,7 +124,7 @@ func (m *Model) updateStressTestListView() {
 			}
 
 			// Highlight selected
-			if i == m.stressTestRunIndex {
+			if i == m.stressTestState.GetRunIndex() {
 				line = styleSelected.Render("> " + line)
 			} else {
 				line = "  " + line
@@ -130,19 +134,23 @@ func (m *Model) updateStressTestListView() {
 		}
 	}
 
-	m.stressTestListView.SetContent(listContent.String())
+	listView := m.stressTestState.GetListView()
+	listView.SetContent(listContent.String())
+	m.stressTestState.SetListView(listView)
 
 	// Auto-scroll to keep selected item visible
-	if len(m.stressTestRuns) > 0 && m.stressTestRunIndex >= 0 && m.stressTestRunIndex < len(m.stressTestRuns) {
-		linePos := m.stressTestRunIndex * 2 // 2 lines per item
-		viewportHeight := m.stressTestListView.Height
+	if len(m.stressTestState.GetRuns()) > 0 && m.stressTestState.GetRunIndex() >= 0 && m.stressTestState.GetRunIndex() < len(m.stressTestState.GetRuns()) {
+		linePos := m.stressTestState.GetRunIndex() * 2 // 2 lines per item
+		listView := m.stressTestState.GetListView()
+		viewportHeight := listView.Height
 
 		desiredOffset := linePos - (viewportHeight / 2)
 		if desiredOffset < 0 {
 			desiredOffset = 0
 		}
 
-		m.stressTestListView.SetYOffset(desiredOffset)
+		listView.SetYOffset(desiredOffset)
+		m.stressTestState.SetListView(listView)
 	}
 
 	// Update detail view
@@ -153,10 +161,10 @@ func (m *Model) updateStressTestListView() {
 func (m *Model) updateStressTestDetailView() {
 	var detailContent strings.Builder
 
-	if len(m.stressTestRuns) == 0 || m.stressTestRunIndex >= len(m.stressTestRuns) {
+	if len(m.stressTestState.GetRuns()) == 0 || m.stressTestState.GetRunIndex() >= len(m.stressTestState.GetRuns()) {
 		detailContent.WriteString("No test run selected")
 	} else {
-		run := m.stressTestRuns[m.stressTestRunIndex]
+		run := m.stressTestState.GetRuns()[m.stressTestState.GetRunIndex()]
 
 		// Header
 		detailContent.WriteString(styleTitle.Render(run.ConfigName) + "\n\n")
@@ -200,13 +208,15 @@ func (m *Model) updateStressTestDetailView() {
 		detailContent.WriteString(fmt.Sprintf("P99:        %dms\n", run.P99DurationMs))
 	}
 
-	m.stressTestDetailView.SetContent(detailContent.String())
+	detailView := m.stressTestState.GetDetailView()
+	detailView.SetContent(detailContent.String())
+	m.stressTestState.SetDetailView(detailView)
 }
 
 // loadStressTestRuns loads stress test runs from the database
 func (m *Model) loadStressTestRuns() tea.Cmd {
 	return func() tea.Msg {
-		if m.stressTestManager == nil {
+		if m.stressTestState.GetManager() == nil {
 			return stressTestRunsLoadedMsg{runs: []*stresstest.Run{}}
 		}
 
@@ -216,7 +226,7 @@ func (m *Model) loadStressTestRuns() tea.Cmd {
 			profileName = profile.Name
 		}
 
-		runs, err := m.stressTestManager.ListRuns(profileName, 100) // Limit to 100 most recent
+		runs, err := m.stressTestState.GetManager().ListRuns(profileName, 100) // Limit to 100 most recent
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to load stress test runs: %v", err))
 		}
@@ -228,7 +238,7 @@ func (m *Model) loadStressTestRuns() tea.Cmd {
 // loadStressTestConfigs loads stress test configs from the database
 func (m *Model) loadStressTestConfigs() tea.Cmd {
 	return func() tea.Msg {
-		if m.stressTestManager == nil {
+		if m.stressTestState.GetManager() == nil {
 			return stressTestConfigsLoadedMsg{configs: []*stresstest.Config{}}
 		}
 
@@ -238,7 +248,7 @@ func (m *Model) loadStressTestConfigs() tea.Cmd {
 			profileName = profile.Name
 		}
 
-		configs, err := m.stressTestManager.ListConfigs(profileName)
+		configs, err := m.stressTestState.GetManager().ListConfigs(profileName)
 		if err != nil {
 			return errorMsg(fmt.Sprintf("Failed to load stress test configs: %v", err))
 		}

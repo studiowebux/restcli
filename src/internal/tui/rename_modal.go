@@ -19,23 +19,24 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 		switch action {
 		case keybinds.ActionTextCancel:
 			m.mode = ModeNormal
-			m.renameInput = ""
+			m.renameState.Reset()
 			m.errorMsg = ""
 			return nil
 
 		case keybinds.ActionTextSubmit:
-			if m.renameInput == "" {
+			if m.renameState.GetInput() == "" {
 				m.errorMsg = "Filename cannot be empty"
 				return nil
 			}
 
-			if len(m.files) == 0 {
+			currentFile := m.fileExplorer.GetCurrentFile()
+			if currentFile == nil {
 				m.errorMsg = "No file selected"
 				return nil
 			}
 
 			// Get absolute path of old file
-			oldPath := m.files[m.fileIndex].Path
+			oldPath := currentFile.Path
 			if !filepath.IsAbs(oldPath) {
 				var err error
 				oldPath, err = filepath.Abs(oldPath)
@@ -48,7 +49,7 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 			dir := filepath.Dir(oldPath)
 
 			// Ensure extension is preserved if not provided
-			newName := m.renameInput
+			newName := m.renameState.GetInput()
 			if filepath.Ext(newName) == "" {
 				newName += filepath.Ext(oldPath)
 			}
@@ -92,7 +93,7 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 
 			m.mode = ModeNormal
 			m.statusMsg = fmt.Sprintf("Renamed to: %s", newName)
-			m.renameInput = ""
+			m.renameState.Reset()
 
 			// Refresh file list
 			return m.refreshFiles()
@@ -103,13 +104,19 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 	m.errorMsg = ""
 
 	// Handle text input with cursor support (arrow keys, etc.)
-	if _, shouldContinue := handleTextInputWithCursor(&m.renameInput, &m.renameCursor, msg); shouldContinue {
+	input := m.renameState.GetInput()
+	cursor := m.renameState.GetCursor()
+	if _, shouldContinue := handleTextInputWithCursor(&input, &cursor, msg); shouldContinue {
+		m.renameState.SetInput(input)
+		m.renameState.SetCursor(cursor)
 		return nil
 	}
 	// Insert character at cursor position
 	if len(msg.String()) == 1 {
-		m.renameInput = m.renameInput[:m.renameCursor] + msg.String() + m.renameInput[m.renameCursor:]
-		m.renameCursor++
+		input = input[:cursor] + msg.String() + input[cursor:]
+		cursor++
+		m.renameState.SetInput(input)
+		m.renameState.SetCursor(cursor)
 	}
 
 	return nil
@@ -117,13 +124,14 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 
 // renderRenameModal renders the file rename modal
 func (m *Model) renderRenameModal() string {
-	if len(m.files) == 0 {
+	currentFile := m.fileExplorer.GetCurrentFile()
+	if currentFile == nil {
 		return m.renderModal("Rename", "No file selected\n\nPress ESC to close", 50, 10)
 	}
 
-	currentName := m.files[m.fileIndex].Name
+	currentName := currentFile.Name
 	// Show cursor at correct position
-	inputWithCursor := m.renameInput[:m.renameCursor] + "█" + m.renameInput[m.renameCursor:]
+	inputWithCursor := m.renameState.GetInput()[:m.renameState.GetCursor()] + "█" + m.renameState.GetInput()[m.renameState.GetCursor():]
 	content := fmt.Sprintf("Current: %s\n\nNew name: %s",
 		currentName, inputWithCursor)
 
@@ -151,11 +159,12 @@ func (m *Model) renderEditorConfigModal() string {
 
 // renderDeleteModal renders the delete file confirmation modal
 func (m *Model) renderDeleteModal() string {
-	if len(m.files) == 0 {
+	currentFile := m.fileExplorer.GetCurrentFile()
+	if currentFile == nil {
 		return m.renderModal("Delete", "No file selected\n\nPress ESC to close", 50, 10)
 	}
 
-	fileName := m.files[m.fileIndex].Name
+	fileName := currentFile.Name
 	content := fmt.Sprintf("Are you sure you want to delete:\n\n  %s\n\nThis action cannot be undone.", fileName)
 	footer := "[y]es [n]o"
 

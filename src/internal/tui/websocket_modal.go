@@ -178,7 +178,7 @@ func (m *Model) renderWebSocketModal() string {
 		footer = statusStyle.Render(" Type message | Enter: Send | Esc: Cancel ")
 	} else {
 		connectionAction := "r: Connect/Reconnect"
-		if m.wsActive {
+		if m.wsState.IsActive() {
 			connectionAction = "d: Disconnect | i: Compose"
 		}
 
@@ -532,7 +532,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		case "enter":
 			// Send custom message
-			if m.wsActive && m.wsSendChannel != nil && m.wsComposerMessage != "" {
+			if m.wsState.IsActive() && m.wsSendChannel != nil && m.wsComposerMessage != "" {
 				message := m.wsComposerMessage
 				m.wsComposerMode = false
 				m.wsComposerMessage = ""
@@ -569,7 +569,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 	case "r":
 		// Reconnect WebSocket
 		m.wsLastKey = ""
-		if !m.wsActive {
+		if !m.wsState.IsActive() {
 			return m.connectWebSocket()
 		}
 		return nil
@@ -584,7 +584,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 	case "i":
 		// Enter composer mode (only when connected)
 		m.wsLastKey = ""
-		if m.wsActive {
+		if m.wsState.IsActive() {
 			m.wsComposerMode = true
 			m.wsComposerMessage = ""
 		}
@@ -632,13 +632,9 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionCloseModal:
 		// Close WebSocket modal
 		m.mode = ModeNormal
-		if m.wsCancelFunc != nil {
-			m.wsCancelFunc()
-		}
-		m.wsActive = false
+		m.wsState.Cancel()
 		m.wsConnectionStatus = "disconnected"
 		m.wsMessageChannel = nil
-		m.wsCancelFunc = nil
 		m.wsLastKey = ""
 
 	case keybinds.ActionSwitchPane:
@@ -653,14 +649,10 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionWSDisconnect:
 		// Disconnect WebSocket (keep modal open with history)
 		m.wsLastKey = ""
-		if m.wsActive {
-			if m.wsCancelFunc != nil {
-				m.wsCancelFunc()
-			}
-			m.wsActive = false
+		if m.wsState.IsActive() {
+			m.wsState.Cancel()
 			m.wsConnectionStatus = "disconnected"
 			m.wsMessageChannel = nil
-			m.wsCancelFunc = nil
 		}
 
 	case keybinds.ActionWSClear:

@@ -21,9 +21,8 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	case "q":
 		// If streaming is active, stop it
-		if m.streamingActive && m.streamCancelFunc != nil {
-			m.streamCancelFunc()
-			m.streamingActive = false
+		if m.streamState.IsActive() {
+			m.streamState.Cancel()
 			m.loading = false // Clear loading flag when stopping stream
 			m.statusMsg = "Stream stopped by user"
 			return nil
@@ -349,9 +348,12 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 				m.responseView.GotoTop()
 			}
 		} else {
-			if len(m.files) > 0 {
-				m.fileIndex = 0
-				m.fileOffset = 0
+			files := m.fileExplorer.GetFiles()
+			if len(files) > 0 {
+				// Navigate to first file
+				currentIdx := m.fileExplorer.GetCurrentIndex()
+				pageSize := m.getFileListHeight()
+				m.fileExplorer.Navigate(-currentIdx, pageSize)
 				m.loadRequestsFromCurrentFile()
 			}
 		}
@@ -362,10 +364,13 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 				m.responseView.GotoBottom()
 			}
 		} else {
-			if len(m.files) > 0 {
-				m.fileIndex = len(m.files) - 1
+			files := m.fileExplorer.GetFiles()
+			if len(files) > 0 {
+				// Navigate to last file
+				currentIdx := m.fileExplorer.GetCurrentIndex()
+				delta := len(files) - 1 - currentIdx
 				pageSize := m.getFileListHeight()
-				m.fileOffset = max(0, m.fileIndex-pageSize+1)
+				m.fileExplorer.Navigate(delta, pageSize)
 				m.loadRequestsFromCurrentFile()
 			}
 		}
@@ -382,11 +387,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 		// Check if current file is a WebSocket file
-		if len(m.files) > 0 && m.fileIndex < len(m.files) {
-			if m.files[m.fileIndex].HTTPMethod == "WS" {
-				m.statusMsg = "Connecting to WebSocket..."
-				return m.executeWebSocket()
-			}
+		currentFile := m.fileExplorer.GetCurrentFile()
+		if currentFile != nil && currentFile.HTTPMethod == "WS" {
+			m.statusMsg = "Connecting to WebSocket..."
+			return m.executeWebSocket()
 		}
 
 		m.statusMsg = "Executing request..."
@@ -418,7 +422,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionDeleteFile:
 		if m.focusedPanel == "sidebar" {
 			// Delete file with confirmation
-			if len(m.files) > 0 {
+			if len(m.fileExplorer.GetFiles()) > 0 {
 				m.mode = ModeDelete
 			}
 		}
@@ -426,8 +430,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionRenameFile:
 		if m.focusedPanel == "sidebar" {
 			m.mode = ModeRename
-			m.renameInput = ""
-			m.renameCursor = 0
+			m.renameState.Reset()
 		}
 
 	case keybinds.ActionCreateFile:
@@ -556,70 +559,78 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionSearchNext:
 		// If search is active, go to next match (vim-style)
-		if len(m.searchMatches) > 0 {
-			m.searchIndex = (m.searchIndex + 1) % len(m.searchMatches)
-
-			if m.searchInResponseCtx {
-				// Navigate in response
-				m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[m.searchIndex]))
+		if m.searchInResponseCtx {
+			// Navigate in response
+			if len(m.responseSearchMatches) > 0 {
+				m.responseSearchIndex = (m.responseSearchIndex + 1) % len(m.responseSearchMatches)
+				m.responseView.SetYOffset(m.centerLineInViewport(m.responseSearchMatches[m.responseSearchIndex]))
+				query, _, _ := m.fileExplorer.GetSearchInfo()
 				context := "text"
-				if isRegexPattern(m.searchQuery) {
+				if isRegexPattern(query) {
 					context = "regex"
 				}
-				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
-			} else {
-				// Navigate in files
-				m.fileIndex = m.searchMatches[m.searchIndex]
-				m.adjustScrollOffset()
-				m.loadRequestsFromCurrentFile()
-				context := "text"
-				if isRegexPattern(m.searchQuery) {
-					context = "regex"
-				}
-				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
+				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.responseSearchIndex+1, len(m.responseSearchMatches), context)
 			}
 		} else {
-			// No active search - create new profile
-			m.mode = ModeProfileCreate
-			m.profileName = ""
+			// Navigate in files
+			_, _, totalMatches := m.fileExplorer.GetSearchInfo()
+			if totalMatches > 0 {
+				pageSize := m.getFileListHeight()
+				m.fileExplorer.NextSearchMatch(pageSize)
+				m.loadRequestsFromCurrentFile()
+				query, currentMatch, total := m.fileExplorer.GetSearchInfo()
+				context := "text"
+				if isRegexPattern(query) {
+					context = "regex"
+				}
+				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", currentMatch, total, context)
+			} else {
+				// No active search - create new profile
+				m.mode = ModeProfileCreate
+				m.profileName = ""
+			}
 		}
 
 	case keybinds.ActionSearchPrevious:
 		// Previous search result (vim-style)
-		if len(m.searchMatches) > 0 {
-			m.searchIndex--
-			if m.searchIndex < 0 {
-				m.searchIndex = len(m.searchMatches) - 1
+		if m.searchInResponseCtx {
+			// Navigate in response
+			if len(m.responseSearchMatches) > 0 {
+				m.responseSearchIndex--
+				if m.responseSearchIndex < 0 {
+					m.responseSearchIndex = len(m.responseSearchMatches) - 1
+				}
+				m.responseView.SetYOffset(m.centerLineInViewport(m.responseSearchMatches[m.responseSearchIndex]))
+				query, _, _ := m.fileExplorer.GetSearchInfo()
+				context := "text"
+				if isRegexPattern(query) {
+					context = "regex"
+				}
+				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.responseSearchIndex+1, len(m.responseSearchMatches), context)
 			}
-
-			if m.searchInResponseCtx {
-				// Navigate in response
-				m.responseView.SetYOffset(m.centerLineInViewport(m.searchMatches[m.searchIndex]))
-				context := "text"
-				if isRegexPattern(m.searchQuery) {
-					context = "regex"
-				}
-				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
-			} else {
-				// Navigate in files
-				m.fileIndex = m.searchMatches[m.searchIndex]
-				m.adjustScrollOffset()
+		} else {
+			// Navigate in files
+			_, _, totalMatches := m.fileExplorer.GetSearchInfo()
+			if totalMatches > 0 {
+				pageSize := m.getFileListHeight()
+				m.fileExplorer.PrevSearchMatch(pageSize)
 				m.loadRequestsFromCurrentFile()
+				query, currentMatch, total := m.fileExplorer.GetSearchInfo()
 				context := "text"
-				if isRegexPattern(m.searchQuery) {
+				if isRegexPattern(query) {
 					context = "regex"
 				}
-				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", m.searchIndex+1, len(m.searchMatches), context)
+				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", currentMatch, total, context)
 			}
 		}
 
 	case keybinds.ActionOpenDocumentation:
 		m.mode = ModeDocumentation
 		// Initialize caches for field trees (prevents rebuilding on every navigation)
-		m.docFieldTreeCache = make(map[int][]DocField)
-		m.docChildrenCache = make(map[int]map[string]bool)
+		m.docState.ClearFieldTreeCache()
+		m.docState.ClearChildrenCache()
 		m.updateDocumentationView() // Set content and initialize collapse state
-		m.docItemCount = m.countDocItems() // Cache item count
+		m.docState.SetItemCount(m.countDocItems()) // Cache item count
 
 	case keybinds.ActionOpenHistory:
 		m.mode = ModeHistory
@@ -627,13 +638,13 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionOpenAnalytics:
 		m.mode = ModeAnalytics
-		m.analyticsPreviewVisible = true
-		m.analyticsGroupByPath = false
+		m.analyticsState.SetPreviewVisible(true)
+		m.analyticsState.SetGroupByPath(false)
 		return m.loadAnalytics()
 
 	case keybinds.ActionOpenStressTest:
 		m.mode = ModeStressTestResults
-		m.stressTestFocusedPane = "list"
+		m.stressTestState.SetFocusedPane("list")
 		return m.loadStressTestRuns()
 
 	case keybinds.ActionOpenMockServer:
@@ -644,7 +655,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeProxyViewer
 		m.updateProxyView()
 		// Start event listener if proxy is running
-		if m.proxyRunning && m.proxyServer != nil {
+		if m.proxyServerState.IsRunning() && m.proxyServerState.GetServer() != nil {
 			return m.listenForProxyLogs()
 		}
 		return nil
@@ -658,11 +669,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionClearTagFilter:
 		// Clear category filter (Shift+t)
-		if len(m.tagFilter) > 0 {
-			m.tagFilter = nil
-			m.files = m.allFiles
-			m.fileIndex = 0
-			m.fileOffset = 0
+		if len(m.fileExplorer.GetTagFilter()) > 0 {
+			m.fileExplorer.SetTagFilter(nil)
 			m.statusMsg = "Category filter cleared"
 		}
 
@@ -679,18 +687,20 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionOpenSearch:
 		m.mode = ModeSearch
-		m.searchQuery = ""
-		m.searchMatches = nil
-		m.searchIndex = 0
+		// Clear both file and response search state
+		m.fileExplorer.ClearSearch()
+		m.responseSearchMatches = nil
+		m.responseSearchIndex = 0
 
 	case keybinds.ActionRefresh:
 		// Next search result (ctrl+r alternative)
-		if len(m.searchMatches) > 0 {
-			m.searchIndex = (m.searchIndex + 1) % len(m.searchMatches)
-			m.fileIndex = m.searchMatches[m.searchIndex]
-			m.adjustScrollOffset()
+		_, _, totalMatches := m.fileExplorer.GetSearchInfo()
+		if totalMatches > 0 {
+			pageSize := m.getFileListHeight()
+			m.fileExplorer.NextSearchMatch(pageSize)
 			m.loadRequestsFromCurrentFile()
-			m.statusMsg = fmt.Sprintf("Match %d of %d", m.searchIndex+1, len(m.searchMatches))
+			_, currentMatch, total := m.fileExplorer.GetSearchInfo()
+			m.statusMsg = fmt.Sprintf("Match %d of %d", currentMatch, total)
 		} else {
 			m.statusMsg = "No active search - press / to search"
 		}
@@ -717,15 +727,12 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	if msg.String() == "esc" {
 		// First priority: Cancel running request
 		if m.loading {
-			if m.streamingActive && m.streamCancelFunc != nil {
+			if m.streamState.IsActive() {
 				// Cancel streaming request
-				m.streamCancelFunc()
-				m.streamingActive = false
-				m.streamCancelFunc = nil
-			} else if m.requestCancelFunc != nil {
+				m.streamState.Cancel()
+			} else {
 				// Cancel regular request
-				m.requestCancelFunc()
-				m.requestCancelFunc = nil
+				m.requestState.Cancel()
 			}
 			m.loading = false
 			m.statusMsg = "Request cancelled by user"
@@ -734,22 +741,29 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 			m.fullscreen = false
 			m.updateViewport()
 			m.updateResponseView()
-		} else if len(m.searchMatches) > 0 {
-			// Clear active search
-			wasSearchingResponse := m.searchInResponseCtx
-			m.searchMatches = nil
-			m.searchQuery = ""
-			m.searchIndex = 0
-			m.searchInResponseCtx = false
-			m.statusMsg = "Search cleared"
-			// Clear highlighting from response if we were searching there
-			if wasSearchingResponse && m.currentResponse != nil {
-				m.updateResponseView()
-			}
 		} else {
-			m.errorMsg = ""
-			m.statusMsg = ""
+			// Check if there's an active search to clear
+			_, _, fileMatches := m.fileExplorer.GetSearchInfo()
+			hasResponseSearch := len(m.responseSearchMatches) > 0
+
+			if fileMatches > 0 || hasResponseSearch {
+				// Clear active search
+				wasSearchingResponse := m.searchInResponseCtx
+				m.fileExplorer.ClearSearch()
+				m.responseSearchMatches = nil
+				m.responseSearchIndex = 0
+				m.searchInResponseCtx = false
+				m.statusMsg = "Search cleared"
+				// Clear highlighting from response if we were searching there
+				if wasSearchingResponse && m.currentResponse != nil {
+					m.updateResponseView()
+				}
+			} else {
+				m.errorMsg = ""
+				m.statusMsg = ""
+			}
 		}
+		return nil
 	}
 
 	return nil
@@ -886,9 +900,7 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 		case keybinds.ActionTextCancel:
 			wasSearchingResponse := m.searchInResponseCtx
 			m.mode = ModeNormal
-			m.searchQuery = ""
-			m.searchMatches = nil
-			m.searchIndex = 0
+			m.searchInput = ""
 			m.searchInResponseCtx = false
 			if wasSearchingResponse && m.currentResponse != nil {
 				m.updateResponseView()
@@ -908,13 +920,13 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	// Handle common text input operations
-	if _, shouldContinue := handleTextInput(&m.searchQuery, msg); shouldContinue {
+	if _, shouldContinue := handleTextInput(&m.searchInput, msg); shouldContinue {
 		return nil
 	}
 
 	// Only append single printable characters
 	if len(msg.String()) == 1 {
-		m.searchQuery += msg.String()
+		m.searchInput += msg.String()
 	}
 
 	return nil
@@ -1176,27 +1188,27 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionCloseModal:
 		m.mode = ModeNormal
-		m.docSelectedIdx = 0
+		m.docState.SetSelectedIdx(0)
 
 	case keybinds.ActionNavigateUp:
-		if m.docSelectedIdx > 0 {
-			m.docSelectedIdx--
+		if m.docState.GetSelectedIdx() > 0 {
+			m.docState.Navigate(-1, m.docState.GetItemCount())
 			m.updateDocumentationView()
 		}
 
 	case keybinds.ActionNavigateDown:
-		if m.docSelectedIdx < m.docItemCount-1 {
-			m.docSelectedIdx++
+		if m.docState.GetSelectedIdx() < m.docState.GetItemCount()-1 {
+			m.docState.Navigate(1, m.docState.GetItemCount())
 			m.updateDocumentationView()
 		}
 
 	case keybinds.ActionGoToTop:
-		m.docSelectedIdx = 0
+		m.docState.SetSelectedIdx(0)
 		m.updateDocumentationView()
 
 	case keybinds.ActionGoToBottom:
-		if m.docItemCount > 0 {
-			m.docSelectedIdx = m.docItemCount - 1
+		if m.docState.GetItemCount() > 0 {
+			m.docState.SetSelectedIdx(m.docState.GetItemCount() - 1)
 		}
 		m.updateDocumentationView()
 
@@ -1205,9 +1217,9 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		m.docSelectedIdx -= pageSize
-		if m.docSelectedIdx < 0 {
-			m.docSelectedIdx = 0
+		idx := m.docState.GetSelectedIdx() - pageSize; m.docState.SetSelectedIdx(idx)
+		if m.docState.GetSelectedIdx() < 0 {
+			m.docState.SetSelectedIdx(0)
 		}
 		m.updateDocumentationView()
 
@@ -1216,12 +1228,12 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		m.docSelectedIdx += pageSize
-		if m.docSelectedIdx >= m.docItemCount {
-			m.docSelectedIdx = m.docItemCount - 1
+		idx := m.docState.GetSelectedIdx() + pageSize; m.docState.SetSelectedIdx(idx)
+		if m.docState.GetSelectedIdx() >= m.docState.GetItemCount() {
+			m.docState.SetSelectedIdx(m.docState.GetItemCount() - 1)
 		}
-		if m.docSelectedIdx < 0 {
-			m.docSelectedIdx = 0
+		if m.docState.GetSelectedIdx() < 0 {
+			m.docState.SetSelectedIdx(0)
 		}
 		m.updateDocumentationView()
 
@@ -1230,9 +1242,9 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if halfPage < 1 {
 			halfPage = 5
 		}
-		m.docSelectedIdx -= halfPage
-		if m.docSelectedIdx < 0 {
-			m.docSelectedIdx = 0
+		idx := m.docState.GetSelectedIdx() - halfPage; m.docState.SetSelectedIdx(idx)
+		if m.docState.GetSelectedIdx() < 0 {
+			m.docState.SetSelectedIdx(0)
 		}
 		m.updateDocumentationView()
 
@@ -1241,12 +1253,12 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if halfPage < 1 {
 			halfPage = 5
 		}
-		m.docSelectedIdx += halfPage
-		if m.docSelectedIdx >= m.docItemCount {
-			m.docSelectedIdx = m.docItemCount - 1
+		idx := m.docState.GetSelectedIdx() + halfPage; m.docState.SetSelectedIdx(idx)
+		if m.docState.GetSelectedIdx() >= m.docState.GetItemCount() {
+			m.docState.SetSelectedIdx(m.docState.GetItemCount() - 1)
 		}
-		if m.docSelectedIdx < 0 {
-			m.docSelectedIdx = 0
+		if m.docState.GetSelectedIdx() < 0 {
+			m.docState.SetSelectedIdx(0)
 		}
 		m.updateDocumentationView()
 
@@ -1270,7 +1282,7 @@ func (m *Model) countDocItems() int {
 	// Parameters section header
 	if len(doc.Parameters) > 0 {
 		count++ // Section header
-		if !m.docCollapsed[0] {
+		if !m.docState.GetCollapsed(0) {
 			count += len(doc.Parameters) // Each parameter
 		}
 	}
@@ -1278,20 +1290,20 @@ func (m *Model) countDocItems() int {
 	// Responses section header
 	if len(doc.Responses) > 0 {
 		count++ // Section header
-		if !m.docCollapsed[1] {
+		if !m.docState.GetCollapsed(1) {
 			for respIdx, resp := range doc.Responses {
 				count++ // Response line
 
 				// Check if THIS response's fields are expanded
 				responseKey := 100 + respIdx
-				if !m.docCollapsed[responseKey] && len(resp.Fields) > 0 {
+				if !m.docState.GetCollapsed(responseKey) && len(resp.Fields) > 0 {
 					// Fields are expanded - use cached tree
-					allFields, ok := m.docFieldTreeCache[respIdx]
+					allFields := m.docState.GetFieldTreeCache(respIdx); ok := allFields != nil
 					if !ok {
 						// Build and cache the tree
 						allFields = buildVirtualFieldTree(resp.Fields)
-						m.docFieldTreeCache[respIdx] = allFields
-						m.docChildrenCache[respIdx] = buildHasChildrenCache(allFields)
+						m.docState.SetFieldTreeCache(respIdx, allFields)
+						m.docState.SetChildrenCache(respIdx, buildHasChildrenCache(allFields))
 					}
 					count += m.countFieldsInTree(respIdx, "", allFields)
 				} else if len(resp.Fields) > 0 {
@@ -1315,7 +1327,7 @@ func (m *Model) countFieldsInTree(respIdx int, parentPath string, allFields []Do
 
 		// Recurse into children if not collapsed
 		fieldKey := 200 + respIdx*1000 + hashString(field.Name)
-		isCollapsed := m.docCollapsed[fieldKey]
+		isCollapsed := m.docState.GetCollapsed(fieldKey)
 		fieldHasChildren := hasChildren(field.Name, allFields)
 		if !isCollapsed && fieldHasChildren {
 			count += m.countFieldsInTree(respIdx, field.Name, allFields)
@@ -1336,59 +1348,59 @@ func (m *Model) toggleDocSection() {
 
 	// Check if we're on the Parameters section header
 	if len(doc.Parameters) > 0 {
-		if currentIdx == m.docSelectedIdx {
-			m.docCollapsed[0] = !m.docCollapsed[0]
+		if currentIdx == m.docState.GetSelectedIdx() {
+			m.docState.SetCollapsed(0, !m.docState.GetCollapsed(0))
 			m.updateDocumentationView()
-			m.docItemCount = m.countDocItems() // Recalculate after toggle
+			m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
 			return
 		}
 		currentIdx++
-		if !m.docCollapsed[0] {
+		if !m.docState.GetCollapsed(0) {
 			currentIdx += len(doc.Parameters)
 		}
 	}
 
 	// Check if we're on the Responses section header
 	if len(doc.Responses) > 0 {
-		if currentIdx == m.docSelectedIdx {
-			m.docCollapsed[1] = !m.docCollapsed[1]
+		if currentIdx == m.docState.GetSelectedIdx() {
+			m.docState.SetCollapsed(1, !m.docState.GetCollapsed(1))
 			m.updateDocumentationView()
-			m.docItemCount = m.countDocItems() // Recalculate after toggle
+			m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
 			return
 		}
 		currentIdx++
 
 		// Check if we're on a response or nested field
-		if !m.docCollapsed[1] {
+		if !m.docState.GetCollapsed(1) {
 			for respIdx, resp := range doc.Responses {
 				// Response line (200:) is NOT toggleable - only the "▶ N fields" line below can toggle
 				currentIdx++
 
 				// Only process field toggles if this response's fields are visible
 				responseKey := 100 + respIdx
-				if !m.docCollapsed[responseKey] && len(resp.Fields) > 0 {
+				if !m.docState.GetCollapsed(responseKey) && len(resp.Fields) > 0 {
 					// Fields are expanded - use cached tree
-					allFields, ok := m.docFieldTreeCache[respIdx]
+					allFields := m.docState.GetFieldTreeCache(respIdx); ok := allFields != nil
 					if !ok {
 						// Build and cache the tree
 						allFields = buildVirtualFieldTree(resp.Fields)
-						m.docFieldTreeCache[respIdx] = allFields
-						m.docChildrenCache[respIdx] = buildHasChildrenCache(allFields)
+						m.docState.SetFieldTreeCache(respIdx, allFields)
+						m.docState.SetChildrenCache(respIdx, buildHasChildrenCache(allFields))
 					}
 					m.toggleFieldInTree(respIdx, "", allFields, &currentIdx)
 				} else if len(resp.Fields) > 0 {
 					// Fields are collapsed - check if user is toggling the "▶ N fields" line
-					if currentIdx == m.docSelectedIdx {
+					if currentIdx == m.docState.GetSelectedIdx() {
 						// Toggle fields visibility
-						m.docCollapsed[responseKey] = !m.docCollapsed[responseKey]
+						m.docState.SetCollapsed(responseKey, !m.docState.GetCollapsed(responseKey))
 
 						// Lazy initialization: if expanding for first time, initialize field collapse states
-						if !m.docCollapsed[responseKey] {
+						if !m.docState.GetCollapsed(responseKey) {
 							m.initializeFieldCollapseState(respIdx, resp.Fields)
 						}
 
 						m.updateDocumentationView()
-						m.docItemCount = m.countDocItems() // Recalculate after toggle
+						m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
 						return
 					}
 					currentIdx++
@@ -1403,19 +1415,19 @@ func (m *Model) toggleFieldInTree(respIdx int, parentPath string, allFields []Do
 	children := getDirectChildren(parentPath, allFields)
 
 	for _, field := range children {
-		if *currentIdx == m.docSelectedIdx {
+		if *currentIdx == m.docState.GetSelectedIdx() {
 			// This is the selected field - toggle it
 			fieldKey := 200 + respIdx*1000 + hashString(field.Name)
-			m.docCollapsed[fieldKey] = !m.docCollapsed[fieldKey]
+			m.docState.SetCollapsed(fieldKey, !m.docState.GetCollapsed(fieldKey))
 			m.updateDocumentationView()
-			m.docItemCount = m.countDocItems() // Recalculate after toggle
+			m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
 			return
 		}
 		*currentIdx++
 
 		// Show description if not collapsed and not virtual
 		fieldKey := 200 + respIdx*1000 + hashString(field.Name)
-		isCollapsed := m.docCollapsed[fieldKey]
+		isCollapsed := m.docState.GetCollapsed(fieldKey)
 		if !isCollapsed && !field.IsVirtual && field.Description != "" {
 			// Description line doesn't increment selection
 		}
@@ -1431,29 +1443,30 @@ func (m *Model) toggleFieldInTree(respIdx int, parentPath string, allFields []Do
 // handleHistoryKeys handles keys in history viewer mode
 func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	// If search is active, handle search input first
-	if m.historySearchActive {
+	if m.historyState.GetSearchActive() {
 		switch msg.String() {
 		case "esc":
-			m.historySearchActive = false
-			m.historySearchQuery = ""
-			m.historyEntries = m.historyAllEntries
-			m.historyIndex = 0
+			m.historyState.SetSearchActive(false)
+			m.historyState.SetSearchQuery("")
+			m.historyState.SetEntries(m.historyState.GetAllEntries())
+			m.historyState.SetIndex(0)
 			m.updateHistoryView()
 			m.statusMsg = "Search cleared"
 			return nil
 		case "enter":
-			m.historySearchActive = false
-			m.statusMsg = fmt.Sprintf("Filtered to %d entries", len(m.historyEntries))
+			m.historyState.SetSearchActive(false)
+			m.statusMsg = fmt.Sprintf("Filtered to %d entries", len(m.historyState.GetEntries()))
 			return nil
 		case "backspace":
-			if len(m.historySearchQuery) > 0 {
-				m.historySearchQuery = m.historySearchQuery[:len(m.historySearchQuery)-1]
+			if len(m.historyState.GetSearchQuery()) > 0 {
+				m.historyState.SetSearchQuery(m.historyState.GetSearchQuery()[:len(m.historyState.GetSearchQuery())-1])
 				m.filterHistoryEntries()
 			}
 			return nil
 		default:
 			if len(msg.String()) == 1 {
-				m.historySearchQuery += msg.String()
+				query := m.historyState.GetSearchQuery()
+				m.historyState.SetSearchQuery(query + msg.String())
 				m.filterHistoryEntries()
 			}
 			return nil
@@ -1463,13 +1476,17 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle preview pane scrolling (not in keybinds registry)
 	switch msg.String() {
 	case "shift+up", "K":
-		if m.historyPreviewVisible {
-			m.historyPreviewView.LineUp(1)
+		if m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.LineUp(1)
+			m.historyState.SetPreviewView(previewView)
 		}
 		return nil
 	case "shift+down", "J":
-		if m.historyPreviewVisible {
-			m.historyPreviewView.LineDown(1)
+		if m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.LineDown(1)
+			m.historyState.SetPreviewView(previewView)
 		}
 		return nil
 	}
@@ -1489,36 +1506,36 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeNormal
 
 	case keybinds.ActionOpenSearch:
-		m.historySearchActive = true
-		m.historySearchQuery = ""
+		m.historyState.SetSearchActive(true)
+		m.historyState.SetSearchQuery("")
 		m.statusMsg = "Search history (ESC to cancel, Enter to apply)"
 		return nil
 
 	case keybinds.ActionNavigateUp:
-		if m.historyIndex > 0 {
-			m.historyIndex--
+		if m.historyState.GetIndex() > 0 {
+			m.historyState.Navigate(-1)
 			m.updateHistoryView()
 		}
 
 	case keybinds.ActionNavigateDown:
-		if m.historyIndex < len(m.historyEntries)-1 {
-			m.historyIndex++
+		if m.historyState.GetIndex() < len(m.historyState.GetEntries())-1 {
+			m.historyState.Navigate(1)
 			m.updateHistoryView()
 		}
 
 	case keybinds.ActionHistoryExecute:
-		if len(m.historyEntries) > 0 && m.historyIndex < len(m.historyEntries) {
-			return m.loadHistoryEntry(m.historyIndex)
+		if len(m.historyState.GetEntries()) > 0 && m.historyState.GetIndex() < len(m.historyState.GetEntries()) {
+			return m.loadHistoryEntry(m.historyState.GetIndex())
 		}
 
 	case keybinds.ActionHistoryRollback:
-		if len(m.historyEntries) > 0 && m.historyIndex < len(m.historyEntries) {
-			return m.replayHistoryEntry(m.historyIndex)
+		if len(m.historyState.GetEntries()) > 0 && m.historyState.GetIndex() < len(m.historyState.GetEntries()) {
+			return m.replayHistoryEntry(m.historyState.GetIndex())
 		}
 
 	case keybinds.ActionHistoryPaginate:
-		m.historyPreviewVisible = !m.historyPreviewVisible
-		if m.historyPreviewVisible {
+		m.historyState.TogglePreview(); // m.historyState.GetPreviewVisible()
+		if m.historyState.GetPreviewVisible() {
 			m.statusMsg = "Preview pane shown"
 		} else {
 			m.statusMsg = "Preview pane hidden"
@@ -1533,10 +1550,11 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		m.historyIndex -= pageSize
-		if m.historyIndex < 0 {
-			m.historyIndex = 0
+		newIndex := m.historyState.GetIndex() - pageSize
+		if newIndex < 0 {
+			newIndex = 0
 		}
+		m.historyState.SetIndex(newIndex)
 		m.updateHistoryView()
 
 	case keybinds.ActionPageDown:
@@ -1544,13 +1562,14 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		m.historyIndex += pageSize
-		if m.historyIndex >= len(m.historyEntries) {
-			m.historyIndex = len(m.historyEntries) - 1
+		newIndex := m.historyState.GetIndex() + pageSize
+		if newIndex >= len(m.historyState.GetEntries()) {
+			newIndex = len(m.historyState.GetEntries()) - 1
 		}
-		if m.historyIndex < 0 {
-			m.historyIndex = 0
+		if newIndex < 0 {
+			newIndex = 0
 		}
+		m.historyState.SetIndex(newIndex)
 		m.updateHistoryView()
 
 	case keybinds.ActionHalfPageUp:
@@ -1558,10 +1577,11 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		if halfPage < 1 {
 			halfPage = 5
 		}
-		m.historyIndex -= halfPage
-		if m.historyIndex < 0 {
-			m.historyIndex = 0
+		newIndex := m.historyState.GetIndex() - halfPage
+		if newIndex < 0 {
+			newIndex = 0
 		}
+		m.historyState.SetIndex(newIndex)
 		m.updateHistoryView()
 
 	case keybinds.ActionHalfPageDown:
@@ -1569,24 +1589,25 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		if halfPage < 1 {
 			halfPage = 5
 		}
-		m.historyIndex += halfPage
-		if m.historyIndex >= len(m.historyEntries) {
-			m.historyIndex = len(m.historyEntries) - 1
+		newIndex := m.historyState.GetIndex() + halfPage
+		if newIndex >= len(m.historyState.GetEntries()) {
+			newIndex = len(m.historyState.GetEntries()) - 1
 		}
-		if m.historyIndex < 0 {
-			m.historyIndex = 0
+		if newIndex < 0 {
+			newIndex = 0
 		}
+		m.historyState.SetIndex(newIndex)
 		m.updateHistoryView()
 
 	case keybinds.ActionGoToTop:
-		if len(m.historyEntries) > 0 {
-			m.historyIndex = 0
+		if len(m.historyState.GetEntries()) > 0 {
+			m.historyState.SetIndex(0)
 			m.updateHistoryView()
 		}
 
 	case keybinds.ActionGoToBottom:
-		if len(m.historyEntries) > 0 {
-			m.historyIndex = len(m.historyEntries) - 1
+		if len(m.historyState.GetEntries()) > 0 {
+			m.historyState.SetIndex(len(m.historyState.GetEntries()) - 1)
 			m.updateHistoryView()
 		}
 	}
@@ -1675,8 +1696,8 @@ func (m *Model) handleHistoryClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 				m.errorMsg = fmt.Sprintf("Failed to clear history: %v", err)
 				m.mode = ModeHistory
 			} else {
-				m.historyEntries = nil
-				m.historyIndex = 0
+				m.historyState.SetEntries(nil)
+				m.historyState.SetIndex(0)
 				m.mode = ModeHistory
 				m.statusMsg = "All history cleared"
 				m.updateHistoryView()
@@ -1704,51 +1725,55 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeNormal
 
 	case keybinds.ActionSwitchPane:
-		if m.analyticsFocusedPane == "list" {
-			m.analyticsFocusedPane = "details"
+		if m.analyticsState.GetFocusedPane() == "list" {
+			m.analyticsState.SetFocusedPane("details")
 			m.statusMsg = "Focus: Details panel (use TAB to switch back)"
 		} else {
-			m.analyticsFocusedPane = "list"
+			m.analyticsState.SetFocusedPane("list")
 			m.statusMsg = "Focus: List panel (use TAB to switch)"
 		}
 
 	case keybinds.ActionNavigateUp:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.LineUp(1)
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.LineUp(1); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
-			if m.analyticsIndex > 0 {
-				m.analyticsIndex--
+			if m.analyticsState.GetIndex() > 0 {
+				m.analyticsState.Navigate(-1)
 				m.updateAnalyticsView()
 			}
 		}
 
 	case keybinds.ActionNavigateDown:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.LineDown(1)
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.LineDown(1); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
-			if m.analyticsIndex < len(m.analyticsStats)-1 {
-				m.analyticsIndex++
+			if m.analyticsState.GetIndex() < len(m.analyticsState.GetStats())-1 {
+				m.analyticsState.Navigate(1)
 				m.updateAnalyticsView()
 			}
 		}
 
 	case keybinds.ActionTextSubmit:
-		if len(m.analyticsStats) > 0 && m.analyticsIndex < len(m.analyticsStats) {
-			if m.analyticsGroupByPath {
+		if len(m.analyticsState.GetStats()) > 0 && m.analyticsState.GetIndex() < len(m.analyticsState.GetStats()) {
+			if m.analyticsState.GetGroupByPath() {
 				m.statusMsg = "Switch to per-file mode (press 't') to load a specific file"
 				return nil
 			}
 
-			stat := m.analyticsStats[m.analyticsIndex]
+			stat := m.analyticsState.GetStats()[m.analyticsState.GetIndex()]
 			fileFound := false
-			for i, file := range m.files {
+			files := m.fileExplorer.GetFiles()
+			for i, file := range files {
 				if file.Path == stat.FilePath {
-					m.fileIndex = i
-					m.adjustScrollOffset()
+					// Navigate to this file
+					currentIdx := m.fileExplorer.GetCurrentIndex()
+					delta := i - currentIdx
+					pageSize := m.getFileListHeight()
+					m.fileExplorer.Navigate(delta, pageSize)
 					m.focusedPanel = "sidebar"
 					m.mode = ModeNormal
 					m.loadRequestsFromCurrentFile()
@@ -1764,8 +1789,8 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case keybinds.ActionAnalyticsPaginate:
-		m.analyticsPreviewVisible = !m.analyticsPreviewVisible
-		if m.analyticsPreviewVisible {
+		m.analyticsState.TogglePreview()
+		if m.analyticsState.GetPreviewVisible() {
 			m.statusMsg = "Preview pane shown"
 		} else {
 			m.statusMsg = "Preview pane hidden"
@@ -1773,9 +1798,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		m.updateAnalyticsView()
 
 	case keybinds.ActionOpenTagFilter:
-		m.analyticsGroupByPath = !m.analyticsGroupByPath
-		m.analyticsIndex = 0
-		if m.analyticsGroupByPath {
+		m.analyticsState.ToggleGroupByPath()
+		m.analyticsState.SetIndex(0)
+		if m.analyticsState.GetGroupByPath() {
 			m.statusMsg = "Grouping by normalized path"
 		} else {
 			m.statusMsg = "Grouping by file"
@@ -1787,87 +1812,91 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		m.statusMsg = "Confirm clear all analytics"
 
 	case keybinds.ActionPageUp:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.HalfViewUp()
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewUp(); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			pageSize := 10
-			m.analyticsIndex -= pageSize
-			if m.analyticsIndex < 0 {
-				m.analyticsIndex = 0
+			newIndex := m.analyticsState.GetIndex() - pageSize
+			if newIndex < 0 {
+				newIndex = 0
 			}
+			m.analyticsState.SetIndex(newIndex)
 			m.updateAnalyticsView()
 		}
 
 	case keybinds.ActionPageDown:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.HalfViewDown()
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewDown(); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			pageSize := 10
-			m.analyticsIndex += pageSize
-			if m.analyticsIndex >= len(m.analyticsStats) {
-				m.analyticsIndex = len(m.analyticsStats) - 1
+			newIndex := m.analyticsState.GetIndex() + pageSize
+			if newIndex >= len(m.analyticsState.GetStats()) {
+				newIndex = len(m.analyticsState.GetStats()) - 1
 			}
-			if m.analyticsIndex < 0 {
-				m.analyticsIndex = 0
+			if newIndex < 0 {
+				newIndex = 0
 			}
+			m.analyticsState.SetIndex(newIndex)
 			m.updateAnalyticsView()
 		}
 
 	case keybinds.ActionHalfPageUp:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.HalfViewUp()
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewUp(); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			halfPage := 5
-			m.analyticsIndex -= halfPage
-			if m.analyticsIndex < 0 {
-				m.analyticsIndex = 0
+			newIndex := m.analyticsState.GetIndex() - halfPage
+			if newIndex < 0 {
+				newIndex = 0
 			}
+			m.analyticsState.SetIndex(newIndex)
 			m.updateAnalyticsView()
 		}
 
 	case keybinds.ActionHalfPageDown:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.HalfViewDown()
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewDown(); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			halfPage := 5
-			m.analyticsIndex += halfPage
-			if m.analyticsIndex >= len(m.analyticsStats) {
-				m.analyticsIndex = len(m.analyticsStats) - 1
+			newIndex := m.analyticsState.GetIndex() + halfPage
+			if newIndex >= len(m.analyticsState.GetStats()) {
+				newIndex = len(m.analyticsState.GetStats()) - 1
 			}
-			if m.analyticsIndex < 0 {
-				m.analyticsIndex = 0
+			if newIndex < 0 {
+				newIndex = 0
 			}
+			m.analyticsState.SetIndex(newIndex)
 			m.updateAnalyticsView()
 		}
 
 	case keybinds.ActionGoToTop:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.GotoTop()
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.GotoTop(); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
-			if len(m.analyticsStats) > 0 {
-				m.analyticsIndex = 0
+			if len(m.analyticsState.GetStats()) > 0 {
+				m.analyticsState.SetIndex(0)
 				m.updateAnalyticsView()
 			}
 		}
 
 	case keybinds.ActionGoToBottom:
-		if m.analyticsFocusedPane == "details" {
-			if m.analyticsPreviewVisible {
-				m.analyticsDetailView.GotoBottom()
+		if m.analyticsState.GetFocusedPane() == "details" {
+			if m.analyticsState.GetPreviewVisible() {
+				detailView := m.analyticsState.GetDetailView(); detailView.GotoBottom(); m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
-			if len(m.analyticsStats) > 0 {
-				m.analyticsIndex = len(m.analyticsStats) - 1
+			if len(m.analyticsState.GetStats()) > 0 {
+				m.analyticsState.SetIndex(len(m.analyticsState.GetStats()) - 1)
 				m.updateAnalyticsView()
 			}
 		}
@@ -1895,10 +1924,10 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 				m.errorMsg = fmt.Sprintf("Failed to clear analytics: %v", err)
 				m.mode = ModeAnalytics
 			} else {
-				m.analyticsStats = nil
-				m.analyticsIndex = 0
-				m.analyticsFocusedPane = "list"
-				m.analyticsDetailView.SetContent("")
+				m.analyticsState.SetStats(nil)
+				m.analyticsState.SetIndex(0)
+				m.analyticsState.SetFocusedPane("list")
+				detailView := m.analyticsState.GetDetailView(); detailView.SetContent(""); m.analyticsState.SetDetailView(detailView)
 				m.mode = ModeAnalytics
 				m.statusMsg = "All analytics cleared"
 				m.updateAnalyticsView()
@@ -1912,19 +1941,19 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 // handleStressTestConfigKeys handles key events in stress test config mode
 func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	// Determine if we're in a text input field (not file picker)
-	inTextInput := m.stressTestConfigField != 1
+	inTextInput := m.stressTestState.GetConfigField() != 1
 
 	// Handle special keys first (always active regardless of mode)
 	switch msg.String() {
 	case "up":
 		// Field navigation up
-		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
-			if m.stressTestFilePickerIndex > 0 {
-				m.stressTestFilePickerIndex--
+		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
+			if m.stressTestState.GetFilePickerIndex() > 0 {
+				m.stressTestState.NavigateFilePicker(-1)
 			}
 			return nil
 		}
-		if m.stressTestConfigField == 1 && m.stressTestConfigInput == "" {
+		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
 			m.errorMsg = "Please select a file first (press Enter to confirm)"
 			return nil
 		}
@@ -1932,25 +1961,25 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			m.errorMsg = err.Error()
 			return nil
 		}
-		if m.stressTestConfigField > 0 {
-			m.stressTestConfigField--
+		if m.stressTestState.GetConfigField() > 0 {
+			m.stressTestState.NavigateConfigFields(-1, 6) // 6 fields total
 			m.updateStressTestConfigInput()
-			if m.stressTestConfigField == 1 {
+			if m.stressTestState.GetConfigField() == 1 {
 				m.loadStressTestFilePicker()
-				m.stressTestFilePickerActive = true
+				m.stressTestState.SetFilePickerActive(true)
 			}
 		}
 		return nil
 
 	case "down":
 		// Field navigation down
-		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
-			if m.stressTestFilePickerIndex < len(m.stressTestFilePickerFiles)-1 {
-				m.stressTestFilePickerIndex++
+		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
+			if m.stressTestState.GetFilePickerIndex() < len(m.stressTestState.GetFilePickerFiles())-1 {
+				m.stressTestState.NavigateFilePicker(1)
 			}
 			return nil
 		}
-		if m.stressTestConfigField == 1 && m.stressTestConfigInput == "" {
+		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetConfigInput() == "" {
 			m.errorMsg = "Please select a file first (press Enter to confirm)"
 			return nil
 		}
@@ -1958,12 +1987,12 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			m.errorMsg = err.Error()
 			return nil
 		}
-		if m.stressTestConfigField < 5 {
-			m.stressTestConfigField++
+		if m.stressTestState.GetConfigField() < 5 {
+			m.stressTestState.NavigateConfigFields(1, 6) // 6 fields total
 			m.updateStressTestConfigInput()
-			if m.stressTestConfigField == 1 {
+			if m.stressTestState.GetConfigField() == 1 {
 				m.loadStressTestFilePicker()
-				m.stressTestFilePickerActive = true
+				m.stressTestState.SetFilePickerActive(true)
 			}
 		}
 		return nil
@@ -1971,9 +2000,9 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	case "esc", "n", "N":
 		// Close modal
 		m.mode = ModeNormal
-		m.stressTestConfigEdit = nil
-		m.stressTestConfigInput = ""
-		m.stressTestFilePickerActive = false
+		m.stressTestState.SetConfigEdit(nil)
+		m.stressTestState.SetConfigInput("")
+		m.stressTestState.SetFilePickerActive(false)
 		m.statusMsg = "Stress test configuration cancelled"
 		return nil
 
@@ -1987,12 +2016,12 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			m.errorMsg = err.Error()
 			return nil
 		}
-		if err := m.stressTestConfigEdit.Validate(); err != nil {
+		if err := m.stressTestState.GetConfigEdit().Validate(); err != nil {
 			m.errorMsg = fmt.Sprintf("Invalid configuration: %v", err)
 			return nil
 		}
-		if m.stressTestConfigEdit.Name != "" {
-			if err := m.stressTestManager.SaveConfig(m.stressTestConfigEdit); err != nil {
+		if m.stressTestState.GetConfigEdit().Name != "" {
+			if err := m.stressTestState.GetManager().SaveConfig(m.stressTestState.GetConfigEdit()); err != nil {
 				m.errorMsg = fmt.Sprintf("Failed to save config: %v", err)
 				return nil
 			}
@@ -2001,12 +2030,12 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "enter":
 		// Submit/select
-		if m.stressTestConfigField == 1 && m.stressTestFilePickerActive {
-			if len(m.stressTestFilePickerFiles) > 0 && m.stressTestFilePickerIndex < len(m.stressTestFilePickerFiles) {
-				selectedFile := m.stressTestFilePickerFiles[m.stressTestFilePickerIndex]
-				m.stressTestConfigInput = selectedFile.Path
-				m.stressTestConfigCursor = len(m.stressTestConfigInput)
-				m.stressTestFilePickerActive = false
+		if m.stressTestState.GetConfigField() == 1 && m.stressTestState.GetFilePickerActive() {
+			if len(m.stressTestState.GetFilePickerFiles()) > 0 && m.stressTestState.GetFilePickerIndex() < len(m.stressTestState.GetFilePickerFiles()) {
+				selectedFile := m.stressTestState.GetFilePickerFiles()[m.stressTestState.GetFilePickerIndex()]
+				m.stressTestState.SetConfigInput(selectedFile.Path)
+				m.stressTestState.SetConfigCursor(len(selectedFile.Path))
+				m.stressTestState.SetFilePickerActive(false)
 				if err := m.applyStressTestConfigInput(); err != nil {
 					m.errorMsg = err.Error()
 				} else {
@@ -2029,44 +2058,50 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 		if ok {
 			switch action {
 			case keybinds.ActionTextBackspace:
-				if m.stressTestConfigCursor > 0 {
-					input := m.stressTestConfigInput
-					m.stressTestConfigInput = input[:m.stressTestConfigCursor-1] + input[m.stressTestConfigCursor:]
-					m.stressTestConfigCursor--
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor > 0 {
+					input := m.stressTestState.GetConfigInput()
+					m.stressTestState.SetConfigInput(input[:cursor-1] + input[cursor:])
+					m.stressTestState.SetConfigCursor(cursor - 1)
 				}
 
 			case keybinds.ActionTextDelete:
-				input := m.stressTestConfigInput
-				if m.stressTestConfigCursor < len(input) {
-					m.stressTestConfigInput = input[:m.stressTestConfigCursor] + input[m.stressTestConfigCursor+1:]
+				input := m.stressTestState.GetConfigInput()
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor < len(input) {
+					m.stressTestState.SetConfigInput(input[:cursor] + input[cursor+1:])
 				}
 
 			case keybinds.ActionTextMoveLeft:
-				if m.stressTestConfigCursor > 0 {
-					m.stressTestConfigCursor--
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor > 0 {
+					m.stressTestState.SetConfigCursor(cursor - 1)
 				}
 
 			case keybinds.ActionTextMoveRight:
-				if m.stressTestConfigCursor < len(m.stressTestConfigInput) {
-					m.stressTestConfigCursor++
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor < len(m.stressTestState.GetConfigInput()) {
+					m.stressTestState.SetConfigCursor(cursor + 1)
 				}
 
 			case keybinds.ActionTextMoveHome:
-				if m.stressTestConfigCursor > 0 {
-					m.stressTestConfigCursor = 0
+				if m.stressTestState.GetConfigCursor() > 0 {
+					m.stressTestState.SetConfigCursor(0)
 				}
 
 			case keybinds.ActionTextMoveEnd:
-				m.stressTestConfigCursor = len(m.stressTestConfigInput)
+				m.stressTestState.SetConfigCursor(len(m.stressTestState.GetConfigInput()))
 			}
 			return nil
 		}
 
 		// Handle character input
 		if len(msg.String()) == 1 {
-			input := m.stressTestConfigInput
-			m.stressTestConfigInput = input[:m.stressTestConfigCursor] + msg.String() + input[m.stressTestConfigCursor:]
-			m.stressTestConfigCursor++
+			input := m.stressTestState.GetConfigInput()
+			cursor := m.stressTestState.GetConfigCursor()
+			newInput := input[:cursor] + msg.String() + input[cursor:]
+			m.stressTestState.SetConfigInput(newInput)
+			m.stressTestState.SetConfigCursor(cursor + 1)
 		}
 		return nil
 	}
@@ -2092,11 +2127,11 @@ func (m *Model) handleStressTestProgressKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		if !m.stressTestStopping && m.stressTestExecutor != nil {
-			m.stressTestStopping = true
+		if !m.stressTestState.GetStopping() && m.stressTestState.GetExecutor() != nil {
+			m.stressTestState.SetStopping(true)
 			m.statusMsg = "Stopping stress test..."
 			return func() tea.Msg {
-				m.stressTestExecutor.Stop()
+				m.stressTestState.GetExecutor().Stop()
 				return stressTestStoppedMsg{}
 			}
 		}
@@ -2118,38 +2153,38 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionCloseModal:
 		m.mode = ModeStressTestConfig
-		m.stressTestFilePickerActive = false
-		m.stressTestFilePickerFiles = nil
-		m.stressTestFilePickerIndex = 0
+		m.stressTestState.SetFilePickerActive(false)
+		m.stressTestState.SetFilePickerFiles(nil)
+		m.stressTestState.SetFilePickerIndex(0)
 		m.statusMsg = "Load cancelled"
 
 	case keybinds.ActionNavigateUp:
-		if m.stressTestConfigIndex > 0 {
-			m.stressTestConfigIndex--
+		if m.stressTestState.GetConfigIndex() > 0 {
+			m.stressTestState.Navigate(-1)
 		}
 
 	case keybinds.ActionNavigateDown:
-		if m.stressTestConfigIndex < len(m.stressTestConfigs)-1 {
-			m.stressTestConfigIndex++
+		if m.stressTestState.GetConfigIndex() < len(m.stressTestState.GetConfigs())-1 {
+			m.stressTestState.Navigate(1)
 		}
 
 	case keybinds.ActionTextSubmit:
-		if len(m.stressTestConfigs) > 0 && m.stressTestConfigIndex < len(m.stressTestConfigs) {
-			config := m.stressTestConfigs[m.stressTestConfigIndex]
-			m.stressTestConfigEdit = config
+		if len(m.stressTestState.GetConfigs()) > 0 && m.stressTestState.GetConfigIndex() < len(m.stressTestState.GetConfigs()) {
+			config := m.stressTestState.GetConfigs()[m.stressTestState.GetConfigIndex()]
+			m.stressTestState.SetConfigEdit(config)
 			m.mode = ModeStressTestConfig
-			m.stressTestFilePickerActive = false
-			m.stressTestFilePickerFiles = nil
-			m.stressTestFilePickerIndex = 0
-			m.stressTestConfigField = 0
+			m.stressTestState.SetFilePickerActive(false)
+			m.stressTestState.SetFilePickerFiles(nil)
+			m.stressTestState.SetFilePickerIndex(0)
+			m.stressTestState.SetConfigField(0)
 			m.updateStressTestConfigInput()
 			m.statusMsg = fmt.Sprintf("Loaded config: %s", config.Name)
 		}
 
 	case keybinds.ActionStressTestDelete:
-		if len(m.stressTestConfigs) > 0 && m.stressTestConfigIndex < len(m.stressTestConfigs) {
-			config := m.stressTestConfigs[m.stressTestConfigIndex]
-			if err := m.stressTestManager.DeleteConfig(config.ID); err != nil {
+		if len(m.stressTestState.GetConfigs()) > 0 && m.stressTestState.GetConfigIndex() < len(m.stressTestState.GetConfigs()) {
+			config := m.stressTestState.GetConfigs()[m.stressTestState.GetConfigIndex()]
+			if err := m.stressTestState.GetManager().DeleteConfig(config.ID); err != nil {
 				m.errorMsg = fmt.Sprintf("Failed to delete config: %v", err)
 			} else {
 				m.statusMsg = "Configuration deleted"
@@ -2170,21 +2205,22 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "n":
 		m.mode = ModeStressTestConfig
-		m.stressTestConfigEdit = &stresstest.Config{
+		m.stressTestState.SetConfigEdit(&stresstest.Config{
 			Name:              "",
 			RequestFile:       "",
 			ConcurrentConns:   10,
 			TotalRequests:     100,
 			RampUpDurationSec: 0,
 			TestDurationSec:   0,
+		})
+		currentFile := m.fileExplorer.GetCurrentFile()
+		if currentFile != nil {
+			m.stressTestState.GetConfigEdit().RequestFile = currentFile.Path
 		}
-		if len(m.files) > 0 && m.fileIndex < len(m.files) {
-			m.stressTestConfigEdit.RequestFile = m.files[m.fileIndex].Path
-		}
-		m.stressTestFilePickerActive = false
-		m.stressTestFilePickerFiles = nil
-		m.stressTestFilePickerIndex = 0
-		m.stressTestConfigField = 0
+		m.stressTestState.SetFilePickerActive(false)
+		m.stressTestState.SetFilePickerFiles(nil)
+		m.stressTestState.SetFilePickerIndex(0)
+		m.stressTestState.SetConfigField(0)
 		m.updateStressTestConfigInput()
 		return nil
 	}
@@ -2199,60 +2235,76 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeNormal
 
 	case keybinds.ActionSwitchPane:
-		if m.stressTestFocusedPane == "list" {
-			m.stressTestFocusedPane = "details"
+		if m.stressTestState.GetFocusedPane() == "list" {
+			m.stressTestState.SetFocusedPane("details")
 			m.statusMsg = "Focus: Details panel (use TAB to switch back)"
 		} else {
-			m.stressTestFocusedPane = "list"
+			m.stressTestState.SetFocusedPane("list")
 			m.statusMsg = "Focus: List panel (use TAB to switch)"
 		}
 
 	case keybinds.ActionNavigateUp:
-		if m.stressTestFocusedPane == "details" {
-			m.stressTestDetailView.LineUp(1)
-		} else if m.stressTestFocusedPane == "list" {
-			if m.stressTestRunIndex > 0 {
-				m.stressTestRunIndex--
+		if m.stressTestState.GetFocusedPane() == "details" {
+			detailView := m.stressTestState.GetDetailView()
+			detailView.LineUp(1)
+			m.stressTestState.SetDetailView(detailView)
+		} else if m.stressTestState.GetFocusedPane() == "list" {
+			if m.stressTestState.GetRunIndex() > 0 {
+				m.stressTestState.NavigateRuns(-1)
 				m.updateStressTestListView()
-				m.stressTestDetailView.GotoTop()
+				detailView := m.stressTestState.GetDetailView()
+				detailView.GotoTop()
+				m.stressTestState.SetDetailView(detailView)
 			}
 		}
 
 	case keybinds.ActionNavigateDown:
-		if m.stressTestFocusedPane == "details" {
-			m.stressTestDetailView.LineDown(1)
-		} else if m.stressTestFocusedPane == "list" {
-			if m.stressTestRunIndex < len(m.stressTestRuns)-1 {
-				m.stressTestRunIndex++
+		if m.stressTestState.GetFocusedPane() == "details" {
+			detailView := m.stressTestState.GetDetailView()
+			detailView.LineDown(1)
+			m.stressTestState.SetDetailView(detailView)
+		} else if m.stressTestState.GetFocusedPane() == "list" {
+			if m.stressTestState.GetRunIndex() < len(m.stressTestState.GetRuns())-1 {
+				m.stressTestState.NavigateRuns(1)
 				m.updateStressTestListView()
-				m.stressTestDetailView.GotoTop()
+				detailView := m.stressTestState.GetDetailView()
+				detailView.GotoTop()
+				m.stressTestState.SetDetailView(detailView)
 			}
 		}
 
 	case keybinds.ActionPageUp:
-		if m.stressTestFocusedPane == "details" {
-			m.stressTestDetailView.ViewUp()
+		if m.stressTestState.GetFocusedPane() == "details" {
+			detailView := m.stressTestState.GetDetailView()
+			detailView.ViewUp()
+			m.stressTestState.SetDetailView(detailView)
 		}
 
 	case keybinds.ActionPageDown:
-		if m.stressTestFocusedPane == "details" {
-			m.stressTestDetailView.ViewDown()
+		if m.stressTestState.GetFocusedPane() == "details" {
+			detailView := m.stressTestState.GetDetailView()
+			detailView.ViewDown()
+			m.stressTestState.SetDetailView(detailView)
 		}
 
 	case keybinds.ActionGoToTopPrepare:
-		if m.stressTestFocusedPane == "details" {
-			m.stressTestDetailView.GotoTop()
+		if m.stressTestState.GetFocusedPane() == "details" {
+			detailView := m.stressTestState.GetDetailView()
+			detailView.GotoTop()
+			m.stressTestState.SetDetailView(detailView)
 		}
 
 	case keybinds.ActionGoToBottom:
-		if m.stressTestFocusedPane == "details" {
-			m.stressTestDetailView.GotoBottom()
+		if m.stressTestState.GetFocusedPane() == "details" {
+			detailView := m.stressTestState.GetDetailView()
+			detailView.GotoBottom()
+			m.stressTestState.SetDetailView(detailView)
 		}
 
 	case keybinds.ActionStressTestDelete:
-		if len(m.stressTestRuns) > 0 && m.stressTestRunIndex < len(m.stressTestRuns) {
-			run := m.stressTestRuns[m.stressTestRunIndex]
-			if err := m.stressTestManager.DeleteRun(run.ID); err != nil {
+		if len(m.stressTestState.GetRuns()) > 0 && m.stressTestState.GetRunIndex() < len(m.stressTestState.GetRuns()) {
+			run := m.stressTestState.GetRuns()[m.stressTestState.GetRunIndex()]
+			if err := m.stressTestState.GetManager().DeleteRun(run.ID); err != nil {
 				m.errorMsg = fmt.Sprintf("Failed to delete run: %v", err)
 			} else {
 				m.statusMsg = "Stress test run deleted"
@@ -2264,18 +2316,18 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.loadStressTestConfigs()
 
 	case keybinds.ActionRefresh:
-		if len(m.stressTestRuns) > 0 && m.stressTestRunIndex < len(m.stressTestRuns) {
-			run := m.stressTestRuns[m.stressTestRunIndex]
+		if len(m.stressTestState.GetRuns()) > 0 && m.stressTestState.GetRunIndex() < len(m.stressTestState.GetRuns()) {
+			run := m.stressTestState.GetRuns()[m.stressTestState.GetRunIndex()]
 			if run.ConfigID == nil {
 				m.errorMsg = "Cannot re-run: this test was not saved with a configuration"
 				return nil
 			}
-			config, err := m.stressTestManager.GetConfig(*run.ConfigID)
+			config, err := m.stressTestState.GetManager().GetConfig(*run.ConfigID)
 			if err != nil {
 				m.errorMsg = fmt.Sprintf("Failed to load config: %v", err)
 				return nil
 			}
-			m.stressTestConfigEdit = config
+			m.stressTestState.SetConfigEdit(config)
 			m.statusMsg = fmt.Sprintf("Re-running test: %s", config.Name)
 			return m.startStressTest()
 		}
@@ -2292,10 +2344,7 @@ func (m *Model) handleTagFilterKeys(msg tea.KeyMsg) tea.Cmd {
 		switch action {
 		case keybinds.ActionTextCancel:
 			m.mode = ModeNormal
-			m.tagFilter = nil
-			m.files = m.allFiles
-			m.fileIndex = 0
-			m.fileOffset = 0
+			m.fileExplorer.SetTagFilter(nil)
 			m.statusMsg = "Tag filter cleared"
 			m.inputValue = ""
 			m.inputCursor = 0
@@ -2304,16 +2353,14 @@ func (m *Model) handleTagFilterKeys(msg tea.KeyMsg) tea.Cmd {
 		case keybinds.ActionTextSubmit:
 			if m.inputValue == "" {
 				m.mode = ModeNormal
-				m.tagFilter = nil
-				m.files = m.allFiles
-				m.fileIndex = 0
-				m.fileOffset = 0
+				m.fileExplorer.SetTagFilter(nil)
 				m.statusMsg = "Tag filter cleared"
 			} else {
-				m.tagFilter = []string{m.inputValue}
-				m.applyTagFilter()
+				m.fileExplorer.SetTagFilter([]string{m.inputValue})
+				m.loadRequestsFromCurrentFile()
 				m.mode = ModeNormal
-				m.statusMsg = fmt.Sprintf("Filtered by category: %s (%d files)", m.inputValue, len(m.files))
+				files := m.fileExplorer.GetFiles()
+				m.statusMsg = fmt.Sprintf("Filtered by category: %s (%d files)", m.inputValue, len(files))
 			}
 			m.inputValue = ""
 			m.inputCursor = 0

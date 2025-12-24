@@ -19,7 +19,7 @@ func (m *Model) renderAnalytics() string {
 
 	var mainView string
 
-	if m.analyticsPreviewVisible {
+	if m.analyticsState.GetPreviewVisible() {
 		// Split view mode: show both list and detail
 		listWidth := (modalWidth - 3) / 2
 		previewWidth := modalWidth - listWidth - 3
@@ -29,10 +29,10 @@ func (m *Model) renderAnalytics() string {
 		detailBorderColor := colorGray
 		listTitleStyle := styleTitleUnfocused
 		detailTitleStyle := styleTitleUnfocused
-		if m.analyticsFocusedPane == "list" {
+		if m.analyticsState.GetFocusedPane() == "list" {
 			listBorderColor = colorCyan
 			listTitleStyle = styleTitleFocused
-		} else if m.analyticsFocusedPane == "details" {
+		} else if m.analyticsState.GetFocusedPane() == "details" {
 			detailBorderColor = colorCyan
 			detailTitleStyle = styleTitleFocused
 		}
@@ -44,7 +44,7 @@ func (m *Model) renderAnalytics() string {
 			Width(listWidth).
 			Height(paneHeight).
 			Padding(0, 1).
-			Render(listTitleStyle.Render("Analytics") + "\n" + m.analyticsListView.View())
+			Render(listTitleStyle.Render("Analytics") + "\n" + m.analyticsState.GetListView().View())
 
 		// Right pane: Stats detail with scroll indicator
 		detailTitle := detailTitleStyle.Render("Details")
@@ -59,7 +59,7 @@ func (m *Model) renderAnalytics() string {
 			Width(previewWidth).
 			Height(paneHeight).
 			Padding(0, 1).
-			Render(detailTitle + "\n" + m.analyticsDetailView.View())
+			Render(detailTitle + "\n" + m.analyticsState.GetDetailView().View())
 
 		mainView = lipgloss.JoinHorizontal(
 			lipgloss.Top,
@@ -76,20 +76,20 @@ func (m *Model) renderAnalytics() string {
 			Width(modalWidth).
 			Height(paneHeight).
 			Padding(0, 1).
-			Render(listTitleStyle.Render("Analytics") + "\n" + m.analyticsListView.View())
+			Render(listTitleStyle.Render("Analytics") + "\n" + m.analyticsState.GetListView().View())
 	}
 
 	// Build footer with instructions and scroll position
 	groupMode := "Per File"
-	if m.analyticsGroupByPath {
+	if m.analyticsState.GetGroupByPath() {
 		groupMode = "By Path"
 	}
 	footerText := fmt.Sprintf("TAB: Switch Focus | ↑/↓ j/k: Nav | Enter: Load | p: Preview | t: Toggle Group (%s) | C: Clear | ESC/q: Close", groupMode)
 
 	// Add scroll indicator if there are stats
-	if len(m.analyticsStats) > 0 {
-		current := m.analyticsIndex + 1
-		total := len(m.analyticsStats)
+	if len(m.analyticsState.GetStats()) > 0 {
+		current := m.analyticsState.GetIndex() + 1
+		total := len(m.analyticsState.GetStats())
 		percentage := int(float64(current) / float64(total) * 100)
 		scrollInfo := fmt.Sprintf(" [%d/%d] (%d%%)", current, total, percentage)
 		footerText += scrollInfo
@@ -120,34 +120,40 @@ func (m *Model) updateAnalyticsView() {
 	paneHeight := modalHeight - 4
 
 	// Adjust viewport widths based on preview visibility
-	if m.analyticsPreviewVisible {
+	if m.analyticsState.GetPreviewVisible() {
 		// Split view mode: calculate widths for both panes
 		listWidth := (modalWidth - 3) / 2
 		previewWidth := modalWidth - listWidth - 3
 
 		// Set viewport dimensions for left pane (analytics list)
-		m.analyticsListView.Width = listWidth - 4
-		m.analyticsListView.Height = paneHeight - 2
+		listView := m.analyticsState.GetListView()
+		listView.Width = listWidth - 4
+		listView.Height = paneHeight - 2
+		m.analyticsState.SetListView(listView)
 
 		// Set viewport dimensions for right pane (analytics detail)
-		m.analyticsDetailView.Width = previewWidth - 4
-		m.analyticsDetailView.Height = paneHeight - 2
+		detailView := m.analyticsState.GetDetailView()
+		detailView.Width = previewWidth - 4
+		detailView.Height = paneHeight - 2
+		m.analyticsState.SetDetailView(detailView)
 	} else {
 		// Preview hidden: expand list to full width
-		m.analyticsListView.Width = modalWidth - 4
-		m.analyticsListView.Height = paneHeight - 2
+		listView := m.analyticsState.GetListView()
+		listView.Width = modalWidth - 4
+		listView.Height = paneHeight - 2
+		m.analyticsState.SetListView(listView)
 	}
 
 	// Build content for left pane (analytics list)
 	var listContent strings.Builder
-	if len(m.analyticsStats) == 0 {
+	if len(m.analyticsState.GetStats()) == 0 {
 		listContent.WriteString("No analytics data available.\n\nEnable analytics in your profile to start tracking:\n\"analyticsEnabled\": true")
 	} else {
 		// Show ALL entries - viewport handles scrolling
-		for i, stat := range m.analyticsStats {
+		for i, stat := range m.analyticsState.GetStats() {
 			// Format display name
 			displayName := filepath.Base(stat.FilePath)
-			if m.analyticsGroupByPath {
+			if m.analyticsState.GetGroupByPath() {
 				displayName = stat.NormalizedPath
 			}
 
@@ -167,7 +173,7 @@ func (m *Model) updateAnalyticsView() {
 			)
 
 			// Highlight selected
-			if i == m.analyticsIndex {
+			if i == m.analyticsState.GetIndex() {
 				line = styleSelected.Render("> " + line)
 			} else {
 				line = "  " + line
@@ -177,15 +183,18 @@ func (m *Model) updateAnalyticsView() {
 		}
 	}
 
-	m.analyticsListView.SetContent(listContent.String())
+	listView := m.analyticsState.GetListView()
+	listView.SetContent(listContent.String())
+	m.analyticsState.SetListView(listView)
 
 	// Auto-scroll to keep selected item visible
-	if len(m.analyticsStats) > 0 && m.analyticsIndex >= 0 && m.analyticsIndex < len(m.analyticsStats) {
+	if len(m.analyticsState.GetStats()) > 0 && m.analyticsState.GetIndex() >= 0 && m.analyticsState.GetIndex() < len(m.analyticsState.GetStats()) {
 		// Calculate the line position (0-indexed)
-		linePos := m.analyticsIndex
+		linePos := m.analyticsState.GetIndex()
 
 		// Get viewport height
-		viewportHeight := m.analyticsListView.Height
+		listView := m.analyticsState.GetListView()
+		viewportHeight := listView.Height
 
 		// Calculate desired Y offset to keep selected item centered
 		desiredOffset := linePos - (viewportHeight / 2)
@@ -193,21 +202,22 @@ func (m *Model) updateAnalyticsView() {
 			desiredOffset = 0
 		}
 
-		m.analyticsListView.SetYOffset(desiredOffset)
+		listView.SetYOffset(desiredOffset)
+		m.analyticsState.SetListView(listView)
 	}
 
 	// Build content for right pane (analytics detail)
 	var detailContent strings.Builder
-	if len(m.analyticsStats) == 0 || m.analyticsIndex >= len(m.analyticsStats) {
+	if len(m.analyticsState.GetStats()) == 0 || m.analyticsState.GetIndex() >= len(m.analyticsState.GetStats()) {
 		detailContent.WriteString("No analytics selected")
 	} else {
-		stat := m.analyticsStats[m.analyticsIndex]
+		stat := m.analyticsState.GetStats()[m.analyticsState.GetIndex()]
 
 		// Header
 		detailContent.WriteString(styleTitle.Render(fmt.Sprintf("%s %s", stat.Method, stat.NormalizedPath)) + "\n\n")
 
 		// File path (if grouping by path)
-		if m.analyticsGroupByPath && stat.FilePath != "" {
+		if m.analyticsState.GetGroupByPath() && stat.FilePath != "" {
 			detailContent.WriteString(styleSubtle.Render("File: ") + filepath.Base(stat.FilePath) + "\n\n")
 		}
 
@@ -250,8 +260,10 @@ func (m *Model) updateAnalyticsView() {
 		detailContent.WriteString(formatRelativeTime(stat.LastCalled) + "\n")
 	}
 
-	m.analyticsDetailView.SetContent(detailContent.String())
-	m.analyticsDetailView.GotoTop()
+	detailView := m.analyticsState.GetDetailView()
+	detailView.SetContent(detailContent.String())
+	detailView.GotoTop()
+	m.analyticsState.SetDetailView(detailView)
 }
 
 // formatBytes formats bytes into human-readable format
@@ -307,13 +319,13 @@ func formatRelativeTime(t time.Time) string {
 // getAnalyticsDetailScrollIndicator returns a scroll position indicator for the analytics detail viewport
 func (m Model) getAnalyticsDetailScrollIndicator() string {
 	// Only show indicator when preview is visible and content is scrollable
-	if !m.analyticsPreviewVisible {
+	if !m.analyticsState.GetPreviewVisible() {
 		return ""
 	}
 
 	// Count total lines in viewport content
-	totalLines := strings.Count(m.analyticsDetailView.View(), "\n") + 1
-	visibleLines := m.analyticsDetailView.Height
+	totalLines := strings.Count(m.analyticsState.GetDetailView().View(), "\n") + 1
+	visibleLines := m.analyticsState.GetDetailView().Height
 
 	// No scroll indicator if all content fits in viewport
 	if totalLines <= visibleLines {
@@ -321,7 +333,7 @@ func (m Model) getAnalyticsDetailScrollIndicator() string {
 	}
 
 	// Calculate scroll percentage
-	currentLine := m.analyticsDetailView.YOffset
+	currentLine := m.analyticsState.GetDetailView().YOffset
 	scrollableLines := totalLines - visibleLines
 
 	var percentage int
@@ -356,10 +368,10 @@ func (m *Model) loadAnalytics() tea.Cmd {
 		var stats []analytics.Stats
 		var err error
 
-		if m.analyticsGroupByPath {
-			stats, err = m.analyticsManager.GetStatsPerNormalizedPath(profileName)
+		if m.analyticsState.GetGroupByPath() {
+			stats, err = m.analyticsState.GetManager().GetStatsPerNormalizedPath(profileName)
 		} else {
-			stats, err = m.analyticsManager.GetStatsPerFile(profileName)
+			stats, err = m.analyticsState.GetManager().GetStatsPerFile(profileName)
 		}
 
 		if err != nil {
@@ -372,7 +384,7 @@ func (m *Model) loadAnalytics() tea.Cmd {
 
 // renderAnalyticsClearConfirmation renders the confirmation modal for clearing all analytics
 func (m *Model) renderAnalyticsClearConfirmation() string {
-	count := len(m.analyticsStats)
+	count := len(m.analyticsState.GetStats())
 	content := "WARNING\n\n"
 	content += "This will permanently delete ALL analytics data.\n\n"
 	content += fmt.Sprintf("Total entries to delete: %d\n\n", count)
