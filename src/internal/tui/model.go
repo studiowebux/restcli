@@ -480,7 +480,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.wsMessageChannel = nil
 		if msg.err != nil {
 			m.wsError = msg.err.Error()
-			m.errorMsg = fmt.Sprintf("WebSocket error: %v", msg.err)
+			m.errorMsg = fmt.Sprintf("WebSocket error: %s", categorizeError(msg.err))
 		} else {
 			m.statusMsg = "WebSocket connection closed"
 		}

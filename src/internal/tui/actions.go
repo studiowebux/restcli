@@ -465,7 +465,7 @@ func (m *Model) executeRegularRequest(resolvedRequest *types.HttpRequest, tlsCon
 					}
 				}
 
-				return errorMsg(fmt.Sprintf("Failed to execute request: %v", res.err))
+				return errorMsg(categorizeError(res.err))
 			}
 
 			result := res.data
@@ -723,7 +723,7 @@ func (m *Model) executeChain() tea.Cmd {
 			if err != nil {
 				return chainCompleteMsg{
 					success: false,
-					message: fmt.Sprintf("Request %d/%d (%s) failed: %v", i+1, len(executionOrder), filepath.Base(filePath), err),
+					message: fmt.Sprintf("Request %d/%d (%s) failed: %s", i+1, len(executionOrder), filepath.Base(filePath), categorizeError(err)),
 				}
 			}
 
@@ -1372,7 +1372,7 @@ func (m *Model) startOAuthFlow() tea.Cmd {
 		// Start OAuth flow
 		token, err := oauth.StartFlow(config)
 		if err != nil {
-			return errorMsg(fmt.Sprintf("OAuth flow failed: %v", err))
+			return errorMsg(fmt.Sprintf("OAuth flow failed: %s", categorizeError(err)))
 		}
 
 		// Store token in session variable

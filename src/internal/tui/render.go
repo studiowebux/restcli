@@ -918,7 +918,7 @@ func (m *Model) updateResponseView() {
 		if wrapWidth < 40 {
 			wrapWidth = 40
 		}
-		errorText := "Error: " + m.currentResponse.Error
+		errorText := categorizeRequestError(m.currentResponse.Error)
 		wrappedError := wrapText(errorText, wrapWidth)
 		content.WriteString(styleError.Render(wrappedError))
 	}
