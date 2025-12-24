@@ -106,6 +106,20 @@ func NewExecutor(config *ExecutionConfig, manager *Manager) (*Executor, error) {
 		return nil, fmt.Errorf("failed to build HTTP client: %w", err)
 	}
 
+	// Calculate optimal buffer size based on test configuration
+	// Use concurrent connections as baseline (metrics arrive in batches per worker)
+	// Cap at reasonable limits to avoid excessive memory use
+	bufferSize := config.Config.ConcurrentConns * 10
+	if bufferSize < 50 {
+		bufferSize = 50 // Minimum for small tests
+	}
+	if bufferSize > 1000 {
+		bufferSize = 1000 // Maximum to prevent excessive memory use
+	}
+
+	// Pre-allocate buffer with calculated capacity to reduce reallocations
+	metricsBuffer := make([]*Metric, 0, bufferSize)
+
 	return &Executor{
 		config:      config,
 		manager:     manager,
@@ -115,8 +129,8 @@ func NewExecutor(config *ExecutionConfig, manager *Manager) (*Executor, error) {
 		cancelFunc:  cancel,
 		requestChan: make(chan *RequestTask, config.Config.ConcurrentConns*2),
 		resultChan:  make(chan *RequestResult, config.Config.ConcurrentConns*2),
-		metricsBuf:  make([]*Metric, 0, 100),
-		bufferSize:  100,
+		metricsBuf:  metricsBuffer,
+		bufferSize:  bufferSize,
 		httpClient:  httpClient,
 	}, nil
 }
