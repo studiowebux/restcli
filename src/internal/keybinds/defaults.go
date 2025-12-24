@@ -287,6 +287,7 @@ func registerAnalyticsBindings(r *Registry) {
 func registerStressTestBindings(r *Registry) {
 	r.RegisterMultiple(ContextStressTest, []string{"esc", "q", "n", "N"}, ActionCloseModal)
 	r.RegisterMultiple(ContextStressTest, []string{"y", "Y"}, ActionConfirm)
+	r.Register(ContextStressTest, "tab", ActionSwitchPane)
 	r.Register(ContextStressTest, "ctrl+l", ActionStressTestLoad)
 	r.RegisterMultiple(ContextStressTest, []string{"up", "k"}, ActionNavigateUp)
 	r.RegisterMultiple(ContextStressTest, []string{"down", "j"}, ActionNavigateDown)
