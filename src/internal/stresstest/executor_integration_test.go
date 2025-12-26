@@ -645,9 +645,11 @@ func TestExecutor_RampUp(t *testing.T) {
 	executor.Wait()
 	duration := time.Since(start)
 
-	// With ramp-up, execution should take at least 1 second
-	if duration < 1*time.Second {
-		t.Errorf("Expected ramp-up to take at least 1s, took: %v", duration)
+	// With 10 requests ramped over 1 second, the last request has offset of 900ms
+	// (9 * 100ms spacing). Total time should be >= 900ms + execution time.
+	// Use 850ms threshold to account for timing variance while ensuring ramp-up works.
+	if duration < 850*time.Millisecond {
+		t.Errorf("Expected ramp-up to take at least 850ms, took: %v", duration)
 	}
 
 	// Verify requests were spread out

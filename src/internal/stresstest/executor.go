@@ -51,24 +51,25 @@ type RequestResult struct {
 
 // Executor handles concurrent stress test execution
 type Executor struct {
-	config        *ExecutionConfig
-	manager       *Manager
-	run           *Run
-	stats         *Stats
-	ctx           context.Context
-	cancelFunc    context.CancelFunc
-	wg            sync.WaitGroup
-	workersReady  sync.WaitGroup
-	requestChan   chan *RequestTask
-	resultChan    chan *RequestResult
-	closeOnce     sync.Once // Ensures resultChan is only closed once
-	testStart     time.Time
-	statsMu       sync.Mutex
-	requestsSent  int // Actual number of requests queued/sent
-	activeWorkers int32 // Atomic counter for active workers
-	metricsBuf    []*Metric
-	bufferSize    int
-	httpClient    *http.Client // Shared HTTP client with connection pooling
+	config         *ExecutionConfig
+	manager        *Manager
+	run            *Run
+	stats          *Stats
+	ctx            context.Context
+	cancelFunc     context.CancelFunc
+	wg             sync.WaitGroup
+	workerReadyCh  chan struct{} // Signals when a worker is ready (buffered, size = ConcurrentConns)
+	requestChan    chan *RequestTask
+	resultChan     chan *RequestResult
+	collectorDone  chan struct{} // Signals when result collector finishes
+	closeOnce      sync.Once     // Ensures resultChan is only closed once
+	testStart      time.Time
+	statsMu        sync.Mutex
+	requestsSent   int // Actual number of requests queued/sent
+	activeWorkers  int32 // Atomic counter for active workers
+	metricsBuf     []*Metric
+	bufferSize     int
+	httpClient     *http.Client // Shared HTTP client with connection pooling
 }
 
 // NewExecutor creates a new stress test executor
@@ -121,26 +122,25 @@ func NewExecutor(config *ExecutionConfig, manager *Manager) (*Executor, error) {
 	metricsBuffer := make([]*Metric, 0, bufferSize)
 
 	return &Executor{
-		config:      config,
-		manager:     manager,
-		run:         run,
-		stats:       stats,
-		ctx:         ctx,
-		cancelFunc:  cancel,
-		requestChan: make(chan *RequestTask, config.Config.ConcurrentConns*2),
-		resultChan:  make(chan *RequestResult, config.Config.ConcurrentConns*2),
-		metricsBuf:  metricsBuffer,
-		bufferSize:  bufferSize,
-		httpClient:  httpClient,
+		config:        config,
+		manager:       manager,
+		run:           run,
+		stats:         stats,
+		ctx:           ctx,
+		cancelFunc:    cancel,
+		workerReadyCh: make(chan struct{}, config.Config.ConcurrentConns),
+		requestChan:   make(chan *RequestTask, config.Config.ConcurrentConns*2),
+		resultChan:    make(chan *RequestResult, config.Config.ConcurrentConns*2),
+		collectorDone: make(chan struct{}),
+		metricsBuf:    metricsBuffer,
+		bufferSize:    bufferSize,
+		httpClient:    httpClient,
 	}, nil
 }
 
 // Start begins the stress test execution
 func (e *Executor) Start() {
 	e.testStart = time.Now()
-
-	// Signal we need N workers to be ready before scheduling
-	e.workersReady.Add(e.config.Config.ConcurrentConns)
 
 	// Start worker goroutines
 	for i := 0; i < e.config.Config.ConcurrentConns; i++ {
@@ -151,30 +151,35 @@ func (e *Executor) Start() {
 	// Start result collector
 	go e.collectResults()
 
-	// Wait for all workers to be ready, then schedule requests
-	// This prevents race condition where channel closes before workers start
-	go func() {
-		// Use a channel to make Wait() cancellable
-		done := make(chan struct{})
-		go func() {
-			e.workersReady.Wait()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			e.scheduleRequests()
-		case <-e.ctx.Done():
-			// Context cancelled before workers ready, exit scheduler
-			return
-		}
-	}()
+	// Start scheduler that waits for workers to be ready
+	// Uses channel-based coordination (simpler than WaitGroup + nested goroutines)
+	go e.waitForWorkersAndSchedule()
 
 	// Start duration timer if test duration is set
 	testDuration := e.config.Config.GetTestDuration()
 	if testDuration > 0 {
 		go e.durationTimer(testDuration)
 	}
+}
+
+// waitForWorkersAndSchedule waits for all workers to be ready, then schedules requests.
+// This prevents race condition where requestChan closes before workers start listening.
+func (e *Executor) waitForWorkersAndSchedule() {
+	numWorkers := e.config.Config.ConcurrentConns
+
+	// Wait for all workers to signal ready OR context cancellation
+	for i := 0; i < numWorkers; i++ {
+		select {
+		case <-e.workerReadyCh:
+			// Worker ready, continue waiting for others
+		case <-e.ctx.Done():
+			// Context cancelled before all workers ready
+			return
+		}
+	}
+
+	// All workers ready, start scheduling requests
+	e.scheduleRequests()
 }
 
 // durationTimer cancels the test after the specified duration
@@ -203,21 +208,22 @@ func (e *Executor) StopWithContext(ctx context.Context) error {
 	// Signal cancellation
 	e.cancelFunc()
 
-	// Wait for workers with timeout
+	// Wait for workers and collector with timeout
 	done := make(chan struct{})
 	go func() {
 		e.wg.Wait()
+		e.closeResultChan()
+		<-e.collectorDone
 		close(done)
 	}()
 
 	select {
 	case <-done:
-		// Workers completed successfully
-		e.closeResultChan()
+		// Workers and collector completed successfully
 		e.finalize("cancelled")
 		return nil
 	case <-ctx.Done():
-		// Timeout - workers didn't finish
+		// Timeout - workers/collector didn't finish
 		// Still close channels to prevent leaks, but don't wait further
 		e.closeResultChan()
 		e.finalize("cancelled (timeout)")
@@ -238,9 +244,8 @@ func (e *Executor) Wait() error {
 	e.wg.Wait()
 	e.closeResultChan()
 
-	// Wait for result collector to finish
-	// (it closes when resultChan is closed and drained)
-	time.Sleep(ShutdownGracePeriod)
+	// Wait for result collector to finish (it closes collectorDone when done)
+	<-e.collectorDone
 
 	// Determine status based on completion
 	status := "completed"
@@ -318,7 +323,13 @@ func (e *Executor) worker() {
 	defer e.wg.Done()
 
 	// Signal this worker is ready to receive tasks
-	e.workersReady.Done()
+	select {
+	case e.workerReadyCh <- struct{}{}:
+		// Successfully signaled ready
+	case <-e.ctx.Done():
+		// Context cancelled before we could signal ready
+		return
+	}
 
 	for {
 		select {
@@ -478,6 +489,8 @@ func (e *Executor) validateBody(body string) string {
 
 // collectResults collects and processes request results
 func (e *Executor) collectResults() {
+	defer close(e.collectorDone) // Signal when collector finishes
+
 	for result := range e.resultChan {
 		// Determine error types
 		isNetworkError := result.Error != nil || result.StatusCode == 0

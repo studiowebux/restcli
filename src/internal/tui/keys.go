@@ -2142,12 +2142,72 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	// Determine if we're in a text input field (not file picker)
 	inTextInput := m.stressTestState.GetConfigField() != 1
 
-	// Check keybinds registry first
+	// CRITICAL: If in text input mode, handle text input FIRST to prevent keybind conflicts
+	if inTextInput {
+		// Check ContextTextInput for cursor movement/editing
+		action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+		if ok {
+			switch action {
+			case keybinds.ActionTextBackspace:
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor > 0 {
+					input := m.stressTestState.GetConfigInput()
+					m.stressTestState.SetConfigInput(input[:cursor-1] + input[cursor:])
+					m.stressTestState.SetConfigCursor(cursor - 1)
+				}
+				return nil
+
+			case keybinds.ActionTextDelete:
+				input := m.stressTestState.GetConfigInput()
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor < len(input) {
+					m.stressTestState.SetConfigInput(input[:cursor] + input[cursor+1:])
+				}
+				return nil
+
+			case keybinds.ActionTextMoveLeft:
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor > 0 {
+					m.stressTestState.SetConfigCursor(cursor - 1)
+				}
+				return nil
+
+			case keybinds.ActionTextMoveRight:
+				cursor := m.stressTestState.GetConfigCursor()
+				if cursor < len(m.stressTestState.GetConfigInput()) {
+					m.stressTestState.SetConfigCursor(cursor + 1)
+				}
+				return nil
+
+			case keybinds.ActionTextMoveHome:
+				if m.stressTestState.GetConfigCursor() > 0 {
+					m.stressTestState.SetConfigCursor(0)
+				}
+				return nil
+
+			case keybinds.ActionTextMoveEnd:
+				m.stressTestState.SetConfigCursor(len(m.stressTestState.GetConfigInput()))
+				return nil
+			}
+		}
+
+		// Handle character input (printable characters only)
+		if len(msg.String()) == 1 {
+			input := m.stressTestState.GetConfigInput()
+			cursor := m.stressTestState.GetConfigCursor()
+			newInput := input[:cursor] + msg.String() + input[cursor:]
+			m.stressTestState.SetConfigInput(newInput)
+			m.stressTestState.SetConfigCursor(cursor + 1)
+			return nil
+		}
+	}
+
+	// Check keybinds registry (only if NOT in text input mode, or for special actions)
 	action, ok := m.keybinds.Match(keybinds.ContextStressTest, msg.String())
 	if ok {
 		switch action {
 		case keybinds.ActionCloseModal:
-			// Close modal
+			// Close modal (works in all modes)
 			m.mode = ModeNormal
 			m.stressTestState.SetConfigEdit(nil)
 			m.stressTestState.SetConfigInput("")
@@ -2156,11 +2216,14 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			return nil
 
 		case keybinds.ActionStressTestLoad:
-			// Load configs
-			return m.loadStressTestConfigs()
+			// Load configs (only if not typing)
+			if !inTextInput {
+				return m.loadStressTestConfigs()
+			}
+			return nil
 
 		case keybinds.ActionStressTestSave:
-			// Save config and start test
+			// Save config and start test (works in all modes)
 			if err := m.applyStressTestConfigInput(); err != nil {
 				return m.setErrorMessage(err.Error())
 			}
@@ -2243,60 +2306,6 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 			return nil
 		}
-	}
-
-	// If in text input field, use ContextTextInput for text editing (no ContextStressTest keybind conflicts)
-	if inTextInput {
-		action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
-		if ok {
-			switch action {
-			case keybinds.ActionTextBackspace:
-				cursor := m.stressTestState.GetConfigCursor()
-				if cursor > 0 {
-					input := m.stressTestState.GetConfigInput()
-					m.stressTestState.SetConfigInput(input[:cursor-1] + input[cursor:])
-					m.stressTestState.SetConfigCursor(cursor - 1)
-				}
-
-			case keybinds.ActionTextDelete:
-				input := m.stressTestState.GetConfigInput()
-				cursor := m.stressTestState.GetConfigCursor()
-				if cursor < len(input) {
-					m.stressTestState.SetConfigInput(input[:cursor] + input[cursor+1:])
-				}
-
-			case keybinds.ActionTextMoveLeft:
-				cursor := m.stressTestState.GetConfigCursor()
-				if cursor > 0 {
-					m.stressTestState.SetConfigCursor(cursor - 1)
-				}
-
-			case keybinds.ActionTextMoveRight:
-				cursor := m.stressTestState.GetConfigCursor()
-				if cursor < len(m.stressTestState.GetConfigInput()) {
-					m.stressTestState.SetConfigCursor(cursor + 1)
-				}
-
-			case keybinds.ActionTextMoveHome:
-				if m.stressTestState.GetConfigCursor() > 0 {
-					m.stressTestState.SetConfigCursor(0)
-				}
-
-			case keybinds.ActionTextMoveEnd:
-				m.stressTestState.SetConfigCursor(len(m.stressTestState.GetConfigInput()))
-			}
-			return nil
-		}
-
-		// Handle character input
-		if len(msg.String()) == 1 {
-			input := m.stressTestState.GetConfigInput()
-			cursor := m.stressTestState.GetConfigCursor()
-			newInput := input[:cursor] + msg.String() + input[cursor:]
-			m.stressTestState.SetConfigInput(newInput)
-			m.stressTestState.SetConfigCursor(cursor + 1)
-		}
-		return nil
 	}
 
 	return nil
