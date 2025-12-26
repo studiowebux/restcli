@@ -1893,33 +1893,57 @@ func (m *Model) updateHistoryView() {
 			previewContent.WriteString(fmt.Sprintf("Size: %d bytes\n", entry.ResponseSize))
 			previewContent.WriteString(fmt.Sprintf("Time: %s\n\n", entry.Timestamp[:19]))
 
-			// Show response body with JSON formatting and wrapping
-			bodyText := entry.ResponseBody
-			isJSON := false
-
-			// Try to pretty-print JSON
-			var jsonData interface{}
-			if err := json.Unmarshal([]byte(entry.ResponseBody), &jsonData); err == nil {
-				if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-					bodyText = string(prettyJSON)
-					isJSON = true
-				}
-			}
-
-			// Wrap text to viewport width
+			// Determine viewport width for wrapping
 			wrapWidth := m.historyState.GetPreviewView().Width
 			if wrapWidth < 40 {
 				wrapWidth = 40
 			}
-			wrappedBody := wrapText(bodyText, wrapWidth)
 
-			// Apply syntax highlighting for JSON
-			if isJSON {
-				profile := m.sessionMgr.GetActiveProfile()
-				wrappedBody = highlightJSON(wrappedBody, profile)
+			// Check cache for final rendered content (includes wrapping + highlighting)
+			if cached, ok := m.historyState.GetRenderedCache(entry.Timestamp, wrapWidth); ok {
+				previewContent.WriteString(cached)
+			} else {
+				// Not cached - perform expensive rendering operations
+				bodyText := entry.ResponseBody
+				isJSON := false
+				isTruncated := false
+
+				// Try to pretty-print JSON first (parse FULL body to check validity)
+				var jsonData interface{}
+				if err := json.Unmarshal([]byte(entry.ResponseBody), &jsonData); err == nil {
+					if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
+						bodyText = string(prettyJSON)
+						isJSON = true
+					}
+				}
+
+				// Truncate huge formatted bodies to prevent performance issues
+				// 150KB limit for wrapping/highlighting (after JSON formatting)
+				const maxBodySize = 150 * 1024
+				if len(bodyText) > maxBodySize {
+					bodyText = bodyText[:maxBodySize]
+					isTruncated = true
+				}
+
+				// Wrap text to viewport width (expensive for large text)
+				wrappedBody := wrapText(bodyText, wrapWidth)
+
+				// Apply syntax highlighting for JSON (expensive for large text)
+				if isJSON {
+					profile := m.sessionMgr.GetActiveProfile()
+					wrappedBody = highlightJSON(wrappedBody, profile)
+				}
+
+				// Add truncation notice if body was cut
+				if isTruncated {
+					wrappedBody += "\n\n[Response body truncated - showing first 150KB only]"
+				}
+
+				// Cache the final rendered result for this width
+				m.historyState.SetRenderedCache(entry.Timestamp, wrapWidth, wrappedBody)
+
+				previewContent.WriteString(wrappedBody)
 			}
-
-			previewContent.WriteString(wrappedBody)
 		} else {
 			previewContent.WriteString("No history entry selected")
 		}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -24,6 +25,10 @@ type HistoryState struct {
 	focusedPane    string // "list" or "preview" - which pane has focus in split view
 	searchActive   bool   // True when search input is active
 	searchQuery    string // Search query for filtering history
+
+	// Performance optimization: cache rendered content to avoid re-processing on every navigation
+	// Key format: "{timestamp}:{width}" → final rendered content (wrapped + highlighted)
+	renderedCache map[string]string
 }
 
 // NewHistoryState creates a new history state
@@ -37,6 +42,7 @@ func NewHistoryState() *HistoryState {
 		focusedPane:    "list",
 		searchActive:   false,
 		searchQuery:    "",
+		renderedCache:  make(map[string]string),
 	}
 }
 
@@ -49,11 +55,13 @@ func (s *HistoryState) GetEntries() []types.HistoryEntry {
 	return result
 }
 
-// SetEntries sets the entries slice
+// SetEntries sets the entries slice and clears the rendered cache
 func (s *HistoryState) SetEntries(entries []types.HistoryEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.entries = entries
+	// Clear cache when entries change
+	s.renderedCache = make(map[string]string)
 }
 
 // GetAllEntries returns a copy of the allEntries slice
@@ -232,4 +240,28 @@ func (s *HistoryState) ToggleFocus() {
 	} else {
 		s.focusedPane = "list"
 	}
+}
+
+// GetRenderedCache returns cached rendered content for an entry by timestamp and width
+func (s *HistoryState) GetRenderedCache(timestamp string, width int) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	key := fmt.Sprintf("%s:%d", timestamp, width)
+	rendered, ok := s.renderedCache[key]
+	return rendered, ok
+}
+
+// SetRenderedCache stores rendered content for an entry by timestamp and width
+func (s *HistoryState) SetRenderedCache(timestamp string, width int, rendered string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := fmt.Sprintf("%s:%d", timestamp, width)
+	s.renderedCache[key] = rendered
+}
+
+// ClearRenderedCache clears all cached rendered content
+func (s *HistoryState) ClearRenderedCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.renderedCache = make(map[string]string)
 }
