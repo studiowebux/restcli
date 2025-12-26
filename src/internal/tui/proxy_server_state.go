@@ -79,11 +79,12 @@ func (s *ProxyServerState) AppendLog(log *proxy.ProxyLog) {
 	s.logs = append(s.logs, log)
 }
 
-// ClearLogs clears all logs
+// ClearLogs clears all logs and resets the selected index
 func (s *ProxyServerState) ClearLogs() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.logs = []*proxy.ProxyLog{}
+	s.selectedIndex = 0
 }
 
 // GetSelectedIndex returns the selected log index

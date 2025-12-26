@@ -268,11 +268,12 @@ func (p *Proxy) GetLogCount() int {
 	return len(p.logs)
 }
 
-// ClearLogs clears all captured logs
+// ClearLogs clears all captured logs and resets the ID counter
 func (p *Proxy) ClearLogs() {
 	p.logMutex.Lock()
 	defer p.logMutex.Unlock()
 	p.logs = make([]*ProxyLog, 0)
+	p.nextID = 0
 }
 
 // ExportHAR exports captured traffic to HAR format

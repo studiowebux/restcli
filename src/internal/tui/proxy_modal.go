@@ -193,6 +193,9 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 			m.proxyServerState.GetServer().ClearLogs()
 			m.proxyServerState.ClearLogs()
 			m.proxyServerState.SetSelectedIndex(0)
+			// Reset viewport scroll position
+			m.modalView.SetYOffset(0)
+			m.statusMsg = "Proxy logs cleared"
 		}
 		return nil
 
