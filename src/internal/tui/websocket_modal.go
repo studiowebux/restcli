@@ -252,11 +252,13 @@ func (m *Model) renderWebSocketModal() string {
 			Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"}).
 			Bold(true)
 
-		composerInput := inputStyle.Render(fmt.Sprintf("\n> %s█\n", m.wsComposerMessage))
+		// Show cursor at current position
+		composerText := m.wsComposerMessage[:m.wsComposerCursor] + "█" + m.wsComposerMessage[m.wsComposerCursor:]
+		composerInput := inputStyle.Render(fmt.Sprintf("\n> %s\n", composerText))
 
 		composerHint := lipgloss.NewStyle().
 			Foreground(colorGray).
-			Render("Press Enter to send, Esc to cancel")
+			Render("Enter: Send | Esc: Cancel | Arrow keys, Home/End, Ctrl+A/E: Move cursor | Ctrl+W: Delete word")
 
 		composerContent := lipgloss.JoinVertical(lipgloss.Left, composerTitle, composerInput, composerHint)
 		composerBox := composerStyle.Render(composerContent)
@@ -539,6 +541,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Cancel composer
 			m.wsComposerMode = false
 			m.wsComposerMessage = ""
+			m.wsComposerCursor = 0
 			return nil
 		case "enter":
 			// Send custom message
@@ -546,6 +549,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				message := m.wsComposerMessage
 				m.wsComposerMode = false
 				m.wsComposerMessage = ""
+				m.wsComposerCursor = 0
 				// Send message via channel
 				go func() {
 					select {
@@ -555,20 +559,15 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				}()
 			}
 			return nil
-		case "backspace":
-			// Remove last character
-			if len(m.wsComposerMessage) > 0 {
-				m.wsComposerMessage = m.wsComposerMessage[:len(m.wsComposerMessage)-1]
-			}
-			return nil
-		case "space":
-			// Add space
-			m.wsComposerMessage += " "
-			return nil
 		default:
-			// Add character to message
+			// Use cursor-based text input handler for advanced editing
+			if _, shouldContinue := handleTextInputWithCursor(&m.wsComposerMessage, &m.wsComposerCursor, msg); shouldContinue {
+				return nil
+			}
+			// Insert character at cursor position
 			if len(key) == 1 {
-				m.wsComposerMessage += key
+				m.wsComposerMessage = m.wsComposerMessage[:m.wsComposerCursor] + key + m.wsComposerMessage[m.wsComposerCursor:]
+				m.wsComposerCursor++
 			}
 		}
 		return nil
@@ -597,6 +596,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.wsState.IsActive() {
 			m.wsComposerMode = true
 			m.wsComposerMessage = ""
+			m.wsComposerCursor = 0
 		}
 		return nil
 

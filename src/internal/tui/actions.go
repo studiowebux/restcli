@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/atotto/clipboard"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/analytics"
 	"github.com/studiowebux/restcli/internal/chain"
 	"github.com/studiowebux/restcli/internal/config"
@@ -120,7 +120,7 @@ func (m *Model) executeRequest() tea.Cmd {
 	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, cliVars, parser.LoadSystemEnv())
 	resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
 	if err != nil {
-		m.loading = false // Clear loading flag on error
+		m.loading = false      // Clear loading flag on error
 		m.updateResponseView() // Update view to remove loading indicator
 		return func() tea.Msg {
 			return errorMsg(fmt.Sprintf("Failed to resolve variables: %v", err))
@@ -209,8 +209,8 @@ func (m *Model) executeWebSocket() tea.Cmd {
 	}
 
 	m.wsSelectedMessageIndex = 0
-	m.wsFocusedPane = "menu"       // Start with menu focused
-	m.wsPendingMessageIndex = -1   // No pending message initially
+	m.wsFocusedPane = "menu"     // Start with menu focused
+	m.wsPendingMessageIndex = -1 // No pending message initially
 	m.mode = ModeWebSocket
 
 	// Initialize viewport content
@@ -952,12 +952,12 @@ func (m *Model) saveResponse() tea.Cmd {
 		}
 
 		fullResponse := map[string]interface{}{
-			"request":      requestDetails,
+			"request": requestDetails,
 			"response": map[string]interface{}{
-				"status":       m.currentResponse.Status,
-				"statusText":   m.currentResponse.StatusText,
-				"headers":      m.currentResponse.Headers,
-				"body":         bodyData, // Already parsed if JSON, string if not
+				"status":     m.currentResponse.Status,
+				"statusText": m.currentResponse.StatusText,
+				"headers":    m.currentResponse.Headers,
+				"body":       bodyData, // Already parsed if JSON, string if not
 			},
 			"duration":     m.currentResponse.Duration,
 			"requestSize":  m.currentResponse.RequestSize,
@@ -1242,6 +1242,13 @@ func (m *Model) loadHistoryEntry(index int) tea.Cmd {
 
 	entry := m.historyState.GetEntries()[index]
 
+	// Navigate to the file in the file explorer
+	pageSize := m.getFileListHeight()
+	found := m.fileExplorer.NavigateToFile(entry.RequestFile, pageSize)
+	if found {
+		m.loadRequestsFromCurrentFile()
+	}
+
 	// Convert to RequestResult
 	m.currentResponse = &types.RequestResult{
 		Status:       entry.ResponseStatus,
@@ -1267,9 +1274,9 @@ func (m *Model) loadHistoryEntry(index int) tea.Cmd {
 	// Update response view
 	m.updateResponseView()
 
-	// Switch to normal mode and focus response panel
+	// Switch to normal mode and focus sidebar (to show the selected file)
 	m.mode = ModeNormal
-	m.focusedPanel = "response"
+	m.focusedPanel = "sidebar"
 	m.statusMsg = fmt.Sprintf("Loaded history entry from %s", entry.Timestamp[:19])
 
 	return nil

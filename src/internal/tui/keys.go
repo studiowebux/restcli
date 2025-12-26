@@ -241,208 +241,197 @@ func (m *Model) handleEditorConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// handleNormalKeys handles keys in normal mode
-func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
-	// If filter editing is active, handle filter keys first
-	if m.filterEditing {
-		return m.handleFilterInlineKeys(msg)
-	}
-
-	// Handle ESC for cancellation BEFORE keybinds matching
-	// This allows ESC to cancel requests even though it's not bound in ContextNormal
-	if msg.String() == "esc" {
-		// First priority: Cancel running request
-		if m.loading {
-			if m.streamState.IsActive() {
-				// Cancel streaming request
-				m.streamState.Cancel()
-			} else {
-				// Cancel regular request or chain
-				m.requestState.Cancel()
-			}
-			m.loading = false
-			m.statusMsg = "Request cancelled by user"
-			m.updateResponseView() // Remove loading indicator
-			return nil
-		} else if m.fullscreen {
-			m.fullscreen = false
-			m.updateViewport()
-			m.updateResponseView()
-			return nil
-		} else {
-			// Check if there's an active search to clear
-			_, _, fileMatches := m.fileExplorer.GetSearchInfo()
-			hasResponseSearch := len(m.responseSearchMatches) > 0
-
-			if fileMatches > 0 || hasResponseSearch {
-				// Clear active search
-				wasSearchingResponse := m.searchInResponseCtx
-				m.fileExplorer.ClearSearch()
-				m.responseSearchMatches = nil
-				m.responseSearchIndex = 0
-				m.searchInResponseCtx = false
-				m.statusMsg = "Search cleared"
-				// Clear highlighting from response if we were searching there
-				if wasSearchingResponse && m.currentResponse != nil {
-					m.updateResponseView()
-				}
-				return nil
-			} else {
-				m.errorMsg = ""
-				m.statusMsg = ""
-				return nil
-			}
-		}
-	}
-
-	// Match key to action using keybinds registry
-	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextNormal, msg.String())
-	if partial {
-		// This is a partial match (e.g., first 'g' in 'gg' sequence)
-		return nil
-	}
-
-	if !ok {
-		// No action bound, clear gPressed state and return
-		m.gPressed = false
-		return nil
-	}
-
-	// Handle actions
+// handleModalOpenAction handles modal opening actions
+// Returns tea.Cmd if an async operation is needed, nil otherwise
+func (m *Model) handleModalOpenAction(action keybinds.Action) tea.Cmd {
 	switch action {
-	case keybinds.ActionQuit:
-		m.Cleanup()
-		return tea.Quit
+	case keybinds.ActionOpenVariables:
+		m.mode = ModeVariableList
+		m.varEditIndex = 0
+		m.modalView.SetYOffset(0)
+		return nil
 
-	case keybinds.ActionSwitchFocus:
-		// Toggle focus between sidebar and response
-		if m.focusedPanel == "sidebar" {
-			m.focusedPanel = "response"
-			m.statusMsg = "Focus: Response panel (use TAB to switch back)"
-		} else {
-			m.focusedPanel = "sidebar"
-			m.statusMsg = "Focus: File sidebar (use TAB to switch)"
-			// Reload request from file list when switching to sidebar so Enter executes
-			// the file list selection instead of re-executing the loaded history entry
-			m.loadRequestsFromCurrentFile()
+	case keybinds.ActionOpenHeaders:
+		m.mode = ModeHeaderList
+		m.headerEditIndex = 0
+		m.modalView.SetYOffset(0)
+		return nil
+
+	case keybinds.ActionOpenErrorDetail:
+		if m.fullErrorMsg != "" {
+			m.mode = ModeErrorDetail
 		}
+		return nil
 
-	case keybinds.ActionNavigateUp:
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.ScrollUp(1)
+	case keybinds.ActionShowStatusDetail:
+		if m.fullStatusMsg != "" {
+			m.mode = ModeStatusDetail
+		}
+		return nil
+
+	case keybinds.ActionOpenProfiles:
+		m.mode = ModeProfileSwitch
+		m.profileIndex = 0
+		return nil
+
+	case keybinds.ActionOpenMockServer:
+		m.mode = ModeMockServer
+		return nil
+
+	case keybinds.ActionOpenOAuthDetail:
+		m.mode = ModeOAuthConfig
+		return nil
+
+	case keybinds.ActionOpenRecentFiles:
+		m.mode = ModeMRU
+		m.mruIndex = 0
+		m.errorMsg = ""
+		return nil
+
+	case keybinds.ActionOpenConfigView:
+		m.mode = ModeConfigView
+		return nil
+
+	default:
+		return nil
+	}
+}
+
+// handleComplexModalAction handles complex modal opening actions with initialization/async operations
+// Returns tea.Cmd if an async operation is needed, nil otherwise
+func (m *Model) handleComplexModalAction(action keybinds.Action) tea.Cmd {
+	switch action {
+	case keybinds.ActionOpenBodyOverride:
+		// Open body override editor with variable resolution
+		if m.currentRequest != nil {
+			// Initialize with current body resolved
+			profile := m.sessionMgr.GetActiveProfile()
+			requestCopy := *m.currentRequest
+			resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, m.interactiveVarValues, parser.LoadSystemEnv())
+			resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
+			if err == nil && resolvedRequest != nil {
+				m.bodyOverrideInput = resolvedRequest.Body
+			} else {
+				m.bodyOverrideInput = m.currentRequest.Body
 			}
+			m.bodyOverrideCursor = 0
+			m.mode = ModeBodyOverride
+			m.statusMsg = "Editing request body (one-time override)"
 		} else {
-			m.navigateFiles(-1)
+			m.statusMsg = "No request selected"
 		}
+		return nil
 
-	case keybinds.ActionNavigateDown:
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.ScrollDown(1)
+	case keybinds.ActionOpenDocumentation:
+		m.mode = ModeDocumentation
+		// Initialize caches for field trees (prevents rebuilding on every navigation)
+		m.docState.ClearFieldTreeCache()
+		m.docState.ClearChildrenCache()
+		m.updateDocumentationView()                // Set content and initialize collapse state
+		m.docState.SetItemCount(m.countDocItems()) // Cache item count
+		return nil
+
+	case keybinds.ActionOpenHistory:
+		m.mode = ModeHistory
+		m.statusMsg = "Loading history..."
+		return m.loadHistory()
+
+	case keybinds.ActionOpenAnalytics:
+		m.mode = ModeAnalytics
+		m.analyticsState.SetPreviewVisible(true)
+		m.analyticsState.SetGroupByPath(false)
+		m.statusMsg = "Loading analytics..."
+		return m.loadAnalytics()
+
+	case keybinds.ActionOpenStressTest:
+		m.mode = ModeStressTestResults
+		m.stressTestState.SetFocusedPane("list")
+		m.statusMsg = "Loading stress tests..."
+		return m.loadStressTestRuns()
+
+	case keybinds.ActionOpenProxy:
+		// Open proxy viewer (debug proxy)
+		m.mode = ModeProxyViewer
+		m.updateProxyView()
+		// Start event listener if proxy is running
+		if m.proxyServerState.IsRunning() && m.proxyServerState.GetServer() != nil {
+			return m.listenForProxyLogs()
+		}
+		return nil
+
+	case keybinds.ActionOpenHelp:
+		m.mode = ModeHelp
+		m.updateHelpView()
+		return m.checkForUpdate()
+
+	case keybinds.ActionOpenOAuth:
+		return m.startOAuthFlow()
+
+	case keybinds.ActionOpenSearch:
+		m.mode = ModeSearch
+		// Clear search input text for new search
+		m.searchInput = ""
+		m.searchCursor = 0
+		// Clear both file and response search state
+		m.fileExplorer.ClearSearch()
+		m.responseSearchMatches = nil
+		m.responseSearchIndex = 0
+		// Clear cached highlighting
+		m.cachedHighlightedBody = ""
+		m.cachedSearchMatchCount = 0
+		// Clear search context flag and update response view to remove highlighting
+		if m.searchInResponseCtx {
+			m.searchInResponseCtx = false
+			if m.currentResponse != nil {
+				m.updateResponseView()
 			}
-		} else {
-			m.navigateFiles(1)
 		}
+		return nil
 
-	case keybinds.ActionPageUp:
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.PageUp()
-			}
-		} else {
-			m.navigateFiles(-10)
-		}
+	default:
+		return nil
+	}
+}
 
-	case keybinds.ActionPageDown:
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.PageDown()
-			}
-		} else {
-			m.navigateFiles(10)
-		}
+// handleExecuteAction handles request execution (HTTP or WebSocket)
+// Returns tea.Cmd for async execution, nil if blocked
+func (m *Model) handleExecuteAction() tea.Cmd {
+	// Block if request already in progress
+	if m.loading {
+		m.statusMsg = "Request already in progress"
+		return nil
+	}
 
-	case keybinds.ActionHalfPageUp:
-		// Vim-style half-page up
-		halfPage := m.getFileListHeight() / 2
-		if halfPage < 1 {
-			halfPage = 5
-		}
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.ScrollUp(halfPage)
-			}
-		} else {
-			m.navigateFiles(-halfPage)
-		}
+	// Check if current file is a WebSocket file
+	currentFile := m.fileExplorer.GetCurrentFile()
+	if currentFile != nil && currentFile.HTTPMethod == "WS" {
+		m.statusMsg = "Connecting to WebSocket..."
+		return m.executeWebSocket()
+	}
 
-	case keybinds.ActionHalfPageDown:
-		// Vim-style half-page down
-		halfPage := m.getFileListHeight() / 2
-		if halfPage < 1 {
-			halfPage = 5
-		}
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.ScrollDown(halfPage)
-			}
-		} else {
-			m.navigateFiles(halfPage)
-		}
+	m.statusMsg = "Executing request..."
+	return m.executeRequest()
+}
 
-	case keybinds.ActionGoToTop:
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.GotoTop()
-			}
-		} else {
-			// Navigate to first file atomically
-			pageSize := m.getFileListHeight()
-			m.fileExplorer.GoToTop(pageSize)
-			m.loadRequestsFromCurrentFile()
-		}
+// handleFocusSwitchAction handles switching focus between sidebar and response panel
+func (m *Model) handleFocusSwitchAction() {
+	// Toggle focus between sidebar and response
+	if m.focusedPanel == "sidebar" {
+		m.focusedPanel = "response"
+		m.statusMsg = "Focus: Response panel (use TAB to switch back)"
+	} else {
+		m.focusedPanel = "sidebar"
+		m.statusMsg = "Focus: File sidebar (use TAB to switch)"
+		// Reload request from file list when switching to sidebar so Enter executes
+		// the file list selection instead of re-executing the loaded history entry
+		m.loadRequestsFromCurrentFile()
+	}
+}
 
-	case keybinds.ActionGoToBottom:
-		if m.focusedPanel == "response" {
-			if m.showBody && m.currentResponse != nil {
-				m.responseView.GotoBottom()
-			}
-		} else {
-			// Navigate to last file atomically
-			pageSize := m.getFileListHeight()
-			m.fileExplorer.GoToBottom(pageSize)
-			m.loadRequestsFromCurrentFile()
-		}
-
-	case keybinds.ActionOpenGoto:
-		m.mode = ModeGoto
-		m.gotoInput = ""
-
-	case keybinds.ActionExecute:
-		// Block if request already in progress
-		if m.loading {
-			m.statusMsg = "Request already in progress"
-			return nil
-		}
-
-		// Check if current file is a WebSocket file
-		currentFile := m.fileExplorer.GetCurrentFile()
-		if currentFile != nil && currentFile.HTTPMethod == "WS" {
-			m.statusMsg = "Connecting to WebSocket..."
-			return m.executeWebSocket()
-		}
-
-		m.statusMsg = "Executing request..."
-		return m.executeRequest()
-
-	case keybinds.ActionOpenInspect:
-		if m.currentRequest == nil {
-			return m.setErrorMessage("No request loaded (select a file first)")
-		}
-		m.mode = ModeInspect
-		m.updateInspectView() // Set content once when entering modal
-
+// handleEditorAction handles editor-related actions
+// Returns tea.Cmd if an async operation is needed (opening external editor), nil otherwise
+func (m *Model) handleEditorAction(action keybinds.Action, msg tea.KeyMsg) tea.Cmd {
+	switch action {
 	case keybinds.ActionOpenEditor:
 		return m.openInEditor()
 
@@ -452,58 +441,50 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		profile := m.sessionMgr.GetActiveProfile()
 		m.inputValue = profile.Editor
 		m.inputCursor = len(m.inputValue)
+		return nil
 
-	case keybinds.ActionDuplicateFile:
-		if m.focusedPanel == "sidebar" {
-			return m.duplicateFile()
+	case keybinds.ActionNoOp:
+		// External config editors (mapped to different keys)
+		if msg.String() == "P" {
+			return m.openProfilesInEditor()
+		} else if msg.String() == "ctrl+x" {
+			return m.openSessionInEditor()
 		}
+		return nil
 
-	case keybinds.ActionDeleteFile:
-		if m.focusedPanel == "sidebar" {
-			// Delete file with confirmation
-			if len(m.fileExplorer.GetFiles()) > 0 {
-				m.mode = ModeDelete
-			}
+	default:
+		return nil
+	}
+}
+
+// handleTagFilterAction handles tag/category filtering actions
+func (m *Model) handleTagFilterAction(action keybinds.Action) {
+	switch action {
+	case keybinds.ActionOpenTagFilter:
+		// Category filter mode
+		m.mode = ModeTagFilter
+		m.inputValue = ""
+		m.inputCursor = 0
+		m.statusMsg = "Enter category to filter (press T to clear)"
+
+	case keybinds.ActionClearTagFilter:
+		// Clear category filter (Shift+t)
+		if len(m.fileExplorer.GetTagFilter()) > 0 {
+			m.fileExplorer.SetTagFilter(nil)
+			m.statusMsg = "Category filter cleared"
 		}
+	}
+}
 
-	case keybinds.ActionRenameFile:
-		if m.focusedPanel == "sidebar" {
-			m.mode = ModeRename
-			m.renameState.Reset()
-		}
-
-	case keybinds.ActionCreateFile:
-		if m.focusedPanel == "sidebar" {
-			// Create new file
-			m.mode = ModeCreateFile
-			m.createFileInput = ""
-			m.createFileCursor = 0
-			m.createFileType = 0 // Default to .http
-			m.errorMsg = ""
-		}
-
-	case keybinds.ActionRefreshFiles:
-		if m.focusedPanel == "sidebar" {
-			return m.refreshFiles()
-		}
-
+// handleResponseAction handles response-related actions (save, copy, pin, diff, filter)
+// Returns tea.Cmd if an async operation is needed, nil otherwise
+func (m *Model) handleResponseAction(action keybinds.Action) tea.Cmd {
+	switch action {
 	case keybinds.ActionSaveResponse:
 		return m.saveResponse()
 
 	case keybinds.ActionCopyToClipboard:
 		return m.copyToClipboard()
-
-	case keybinds.ActionToggleBody:
-		m.showBody = !m.showBody
-
-	case keybinds.ActionToggleHeaders:
-		m.showHeaders = !m.showHeaders
-		m.updateResponseView() // Regenerate response content
-
-	case keybinds.ActionToggleFullscreen:
-		m.fullscreen = !m.fullscreen
-		m.updateViewport()       // Recalculate viewport width for fullscreen
-		m.updateResponseView()   // Regenerate content (wrapping changes based on fullscreen)
 
 	case keybinds.ActionPinResponse:
 		// Pin current response for comparison
@@ -513,6 +494,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.pinnedResponse = m.currentResponse
 		m.pinnedRequest = m.currentRequest
 		m.statusMsg = "Response pinned for comparison (press W to view diff)"
+		return nil
 
 	case keybinds.ActionShowDiff:
 		// Show diff between pinned and current response
@@ -524,6 +506,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.mode = ModeDiff
 		m.updateDiffView()
+		return nil
 
 	case keybinds.ActionFilterResponse:
 		// Filter response with JMESPath
@@ -548,230 +531,366 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.statusMsg = "No response to filter"
 		}
+		return nil
 
-	case keybinds.ActionOpenVariables:
-		m.mode = ModeVariableList
-		m.varEditIndex = 0
-		m.modalView.SetYOffset(0)
+	default:
+		return nil
+	}
+}
 
-	case keybinds.ActionOpenHeaders:
-		m.mode = ModeHeaderList
-		m.headerEditIndex = 0
-		m.modalView.SetYOffset(0)
+// handleToggleAction handles view toggle actions (body, headers, fullscreen)
+func (m *Model) handleToggleAction(action keybinds.Action) {
+	switch action {
+	case keybinds.ActionToggleBody:
+		m.showBody = !m.showBody
 
-	case keybinds.ActionOpenErrorDetail:
-		// Open error detail modal if there's an error
-		if m.fullErrorMsg != "" {
-			m.mode = ModeErrorDetail
-		}
+	case keybinds.ActionToggleHeaders:
+		m.showHeaders = !m.showHeaders
+		m.updateResponseView() // Regenerate response content
 
-	case keybinds.ActionOpenBodyOverride:
-		// Open body override editor
-		if m.currentRequest != nil {
-			// Initialize with current body resolved
-			profile := m.sessionMgr.GetActiveProfile()
-			requestCopy := *m.currentRequest
-			resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, m.interactiveVarValues, parser.LoadSystemEnv())
-			resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
-			if err == nil && resolvedRequest != nil {
-				m.bodyOverrideInput = resolvedRequest.Body
-			} else {
-				m.bodyOverrideInput = m.currentRequest.Body
-			}
-			m.bodyOverrideCursor = 0
-			m.mode = ModeBodyOverride
-			m.statusMsg = "Editing request body (one-time override)"
-		} else {
-			m.statusMsg = "No request selected"
-		}
+	case keybinds.ActionToggleFullscreen:
+		m.fullscreen = !m.fullscreen
+		m.updateViewport()     // Recalculate viewport width for fullscreen
+		m.updateResponseView() // Regenerate content (wrapping changes based on fullscreen)
+	}
+}
 
-	case keybinds.ActionShowStatusDetail:
-		// Open status detail modal if there's a status message
-		if m.fullStatusMsg != "" {
-			m.mode = ModeStatusDetail
-		}
+// handleFileOperationAction handles file management actions (create, delete, rename, etc.)
+// Returns tea.Cmd if an async operation is needed, nil otherwise
+func (m *Model) handleFileOperationAction(action keybinds.Action) tea.Cmd {
+	// All file operations require sidebar focus
+	if m.focusedPanel != "sidebar" {
+		return nil
+	}
 
-	case keybinds.ActionOpenProfiles:
-		m.mode = ModeProfileSwitch
-		m.profileIndex = 0
+	switch action {
+	case keybinds.ActionDuplicateFile:
+		return m.duplicateFile()
 
-	case keybinds.ActionSearchNext:
-		// If search is active, go to next match (vim-style)
-		if m.searchInResponseCtx {
-			// Navigate in response
-			if len(m.responseSearchMatches) > 0 {
-				m.responseSearchIndex = (m.responseSearchIndex + 1) % len(m.responseSearchMatches)
-				m.responseView.SetYOffset(m.centerLineInViewport(m.responseSearchMatches[m.responseSearchIndex]))
-				query, _, _ := m.fileExplorer.GetSearchInfo()
-				context := "text"
-				if isRegexPattern(query) {
-					context = "regex"
-				}
-				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.responseSearchIndex+1, len(m.responseSearchMatches), context)
-			}
-		} else {
-			// Navigate in files
-			_, _, totalMatches := m.fileExplorer.GetSearchInfo()
-			if totalMatches > 0 {
-				pageSize := m.getFileListHeight()
-				m.fileExplorer.NextSearchMatch(pageSize)
-				m.loadRequestsFromCurrentFile()
-				query, currentMatch, total := m.fileExplorer.GetSearchInfo()
-				context := "text"
-				if isRegexPattern(query) {
-					context = "regex"
-				}
-				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", currentMatch, total, context)
-			} else {
-				// No active search - create new profile
-				m.mode = ModeProfileCreate
-				m.profileName = ""
-			}
-		}
-
-	case keybinds.ActionSearchPrevious:
-		// Previous search result (vim-style)
-		if m.searchInResponseCtx {
-			// Navigate in response
-			if len(m.responseSearchMatches) > 0 {
-				m.responseSearchIndex--
-				if m.responseSearchIndex < 0 {
-					m.responseSearchIndex = len(m.responseSearchMatches) - 1
-				}
-				m.responseView.SetYOffset(m.centerLineInViewport(m.responseSearchMatches[m.responseSearchIndex]))
-				query, _, _ := m.fileExplorer.GetSearchInfo()
-				context := "text"
-				if isRegexPattern(query) {
-					context = "regex"
-				}
-				m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.responseSearchIndex+1, len(m.responseSearchMatches), context)
-			}
-		} else {
-			// Navigate in files
-			_, _, totalMatches := m.fileExplorer.GetSearchInfo()
-			if totalMatches > 0 {
-				pageSize := m.getFileListHeight()
-				m.fileExplorer.PrevSearchMatch(pageSize)
-				m.loadRequestsFromCurrentFile()
-				query, currentMatch, total := m.fileExplorer.GetSearchInfo()
-				context := "text"
-				if isRegexPattern(query) {
-					context = "regex"
-				}
-				m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", currentMatch, total, context)
-			}
-		}
-
-	case keybinds.ActionOpenDocumentation:
-		m.mode = ModeDocumentation
-		// Initialize caches for field trees (prevents rebuilding on every navigation)
-		m.docState.ClearFieldTreeCache()
-		m.docState.ClearChildrenCache()
-		m.updateDocumentationView() // Set content and initialize collapse state
-		m.docState.SetItemCount(m.countDocItems()) // Cache item count
-
-	case keybinds.ActionOpenHistory:
-		m.mode = ModeHistory
-		return m.loadHistory()
-
-	case keybinds.ActionOpenAnalytics:
-		m.mode = ModeAnalytics
-		m.analyticsState.SetPreviewVisible(true)
-		m.analyticsState.SetGroupByPath(false)
-		return m.loadAnalytics()
-
-	case keybinds.ActionOpenStressTest:
-		m.mode = ModeStressTestResults
-		m.stressTestState.SetFocusedPane("list")
-		return m.loadStressTestRuns()
-
-	case keybinds.ActionOpenMockServer:
-		m.mode = ModeMockServer
-
-	case keybinds.ActionOpenProxy:
-		// Open proxy viewer (debug proxy)
-		m.mode = ModeProxyViewer
-		m.updateProxyView()
-		// Start event listener if proxy is running
-		if m.proxyServerState.IsRunning() && m.proxyServerState.GetServer() != nil {
-			return m.listenForProxyLogs()
+	case keybinds.ActionDeleteFile:
+		if len(m.fileExplorer.GetFiles()) > 0 {
+			m.mode = ModeDelete
 		}
 		return nil
 
-	case keybinds.ActionOpenTagFilter:
-		// Category filter mode
-		m.mode = ModeTagFilter
-		m.inputValue = ""
-		m.inputCursor = 0
-		m.statusMsg = "Enter category to filter (press T to clear)"
+	case keybinds.ActionRenameFile:
+		m.mode = ModeRename
+		m.renameState.Reset()
+		return nil
 
-	case keybinds.ActionClearTagFilter:
-		// Clear category filter (Shift+t)
-		if len(m.fileExplorer.GetTagFilter()) > 0 {
-			m.fileExplorer.SetTagFilter(nil)
-			m.statusMsg = "Category filter cleared"
+	case keybinds.ActionCreateFile:
+		m.mode = ModeCreateFile
+		m.createFileInput = ""
+		m.createFileCursor = 0
+		m.createFileType = 0 // Default to .http
+		m.errorMsg = ""
+		return nil
+
+	case keybinds.ActionRefreshFiles:
+		m.statusMsg = "Loading files..."
+		return m.refreshFiles()
+
+	default:
+		return nil
+	}
+}
+
+// handleSearchNavigationAction handles search result navigation (next/previous match, refresh)
+func (m *Model) handleSearchNavigationAction(action keybinds.Action) {
+	// ActionRefresh is an alias for next match (ctrl+r shortcut)
+	isNext := action == keybinds.ActionSearchNext || action == keybinds.ActionRefresh
+
+	if m.searchInResponseCtx {
+		// Navigate in response search results
+		if len(m.responseSearchMatches) == 0 {
+			return
 		}
 
-	case keybinds.ActionOpenHelp:
-		m.mode = ModeHelp
-		m.updateHelpView()
-		return m.checkForUpdate()
-
-	case keybinds.ActionOpenOAuth:
-		return m.startOAuthFlow()
-
-	case keybinds.ActionOpenOAuthDetail:
-		m.mode = ModeOAuthConfig
-
-	case keybinds.ActionOpenSearch:
-		m.mode = ModeSearch
-		// Clear search input text for new search
-		m.searchInput = ""
-		m.searchCursor = 0
-		// Clear both file and response search state
-		m.fileExplorer.ClearSearch()
-		m.responseSearchMatches = nil
-		m.responseSearchIndex = 0
-		// Clear cached highlighting
-		m.cachedHighlightedBody = ""
-		m.cachedSearchMatchCount = 0
-		// Clear search context flag and update response view to remove highlighting
-		if m.searchInResponseCtx {
-			m.searchInResponseCtx = false
-			if m.currentResponse != nil {
-				m.updateResponseView()
+		if isNext {
+			m.responseSearchIndex = (m.responseSearchIndex + 1) % len(m.responseSearchMatches)
+		} else {
+			m.responseSearchIndex--
+			if m.responseSearchIndex < 0 {
+				m.responseSearchIndex = len(m.responseSearchMatches) - 1
 			}
 		}
 
-	case keybinds.ActionRefresh:
-		// Next search result (ctrl+r alternative)
+		m.responseView.SetYOffset(m.centerLineInViewport(m.responseSearchMatches[m.responseSearchIndex]))
+		query, _, _ := m.fileExplorer.GetSearchInfo()
+		context := "text"
+		if isRegexPattern(query) {
+			context = "regex"
+		}
+		m.statusMsg = fmt.Sprintf("[Response] Match %d of %d (%s)", m.responseSearchIndex+1, len(m.responseSearchMatches), context)
+	} else {
+		// Navigate in file search results
 		_, _, totalMatches := m.fileExplorer.GetSearchInfo()
 		if totalMatches > 0 {
 			pageSize := m.getFileListHeight()
-			m.fileExplorer.NextSearchMatch(pageSize)
+			if isNext {
+				m.fileExplorer.NextSearchMatch(pageSize)
+			} else {
+				m.fileExplorer.PrevSearchMatch(pageSize)
+			}
 			m.loadRequestsFromCurrentFile()
-			_, currentMatch, total := m.fileExplorer.GetSearchInfo()
-			m.statusMsg = fmt.Sprintf("Match %d of %d", currentMatch, total)
-		} else {
+			query, currentMatch, total := m.fileExplorer.GetSearchInfo()
+			context := "text"
+			if isRegexPattern(query) {
+				context = "regex"
+			}
+			m.statusMsg = fmt.Sprintf("[Files] Match %d of %d (%s)", currentMatch, total, context)
+		} else if action == keybinds.ActionRefresh {
+			// ActionRefresh with no active search: show help message
 			m.statusMsg = "No active search - press / to search"
+		} else if isNext {
+			// ActionSearchNext with no active search: create new profile (legacy 'n' behavior)
+			m.mode = ModeProfileCreate
+			m.profileName = ""
 		}
+	}
+}
 
-	case keybinds.ActionOpenRecentFiles:
-		// Open MRU (Most Recently Used) files list
-		m.mode = ModeMRU
-		m.mruIndex = 0
-		m.errorMsg = ""
-
-	case keybinds.ActionOpenConfigView:
-		m.mode = ModeConfigView
-
-	case keybinds.ActionNoOp:
-		// External config editors (mapped to different keys)
-		if msg.String() == "P" {
-			return m.openProfilesInEditor()
-		} else if msg.String() == "ctrl+x" {
-			return m.openSessionInEditor()
+// handleNavigationAction handles navigation key actions (up, down, page, goto, etc.)
+// Returns true if the action was handled, false otherwise
+func (m *Model) handleNavigationAction(action keybinds.Action) bool {
+	switch action {
+	case keybinds.ActionNavigateUp:
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.ScrollUp(1)
+			}
+		} else {
+			m.navigateFiles(-1)
 		}
+		return true
+
+	case keybinds.ActionNavigateDown:
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.ScrollDown(1)
+			}
+		} else {
+			m.navigateFiles(1)
+		}
+		return true
+
+	case keybinds.ActionPageUp:
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.PageUp()
+			}
+		} else {
+			m.navigateFiles(-10)
+		}
+		return true
+
+	case keybinds.ActionPageDown:
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.PageDown()
+			}
+		} else {
+			m.navigateFiles(10)
+		}
+		return true
+
+	case keybinds.ActionHalfPageUp:
+		halfPage := m.getFileListHeight() / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.ScrollUp(halfPage)
+			}
+		} else {
+			m.navigateFiles(-halfPage)
+		}
+		return true
+
+	case keybinds.ActionHalfPageDown:
+		halfPage := m.getFileListHeight() / 2
+		if halfPage < 1 {
+			halfPage = 5
+		}
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.ScrollDown(halfPage)
+			}
+		} else {
+			m.navigateFiles(halfPage)
+		}
+		return true
+
+	case keybinds.ActionGoToTop:
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.GotoTop()
+			}
+		} else {
+			pageSize := m.getFileListHeight()
+			m.fileExplorer.GoToTop(pageSize)
+			m.loadRequestsFromCurrentFile()
+		}
+		return true
+
+	case keybinds.ActionGoToBottom:
+		if m.focusedPanel == "response" {
+			if m.showBody && m.currentResponse != nil {
+				m.responseView.GotoBottom()
+			}
+		} else {
+			pageSize := m.getFileListHeight()
+			m.fileExplorer.GoToBottom(pageSize)
+			m.loadRequestsFromCurrentFile()
+		}
+		return true
+
+	default:
+		return false
+	}
+}
+
+// handleEscapeKey handles ESC key press in normal mode with priority-based cancellation
+func (m *Model) handleEscapeKey() tea.Cmd {
+	// First priority: Cancel running request
+	if m.loading {
+		if m.streamState.IsActive() {
+			// Cancel streaming request
+			m.streamState.Cancel()
+		} else {
+			// Cancel regular request or chain
+			m.requestState.Cancel()
+		}
+		m.loading = false
+		m.statusMsg = "Request cancelled by user"
+		m.updateResponseView() // Remove loading indicator
+		return nil
+	}
+
+	// Second priority: Exit fullscreen mode
+	if m.fullscreen {
+		m.fullscreen = false
+		m.updateViewport()
+		m.updateResponseView()
+		return nil
+	}
+
+	// Third priority: Clear active search
+	_, _, fileMatches := m.fileExplorer.GetSearchInfo()
+	hasResponseSearch := len(m.responseSearchMatches) > 0
+
+	if fileMatches > 0 || hasResponseSearch {
+		// Clear active search
+		wasSearchingResponse := m.searchInResponseCtx
+		m.fileExplorer.ClearSearch()
+		m.responseSearchMatches = nil
+		m.responseSearchIndex = 0
+		m.searchInResponseCtx = false
+		m.statusMsg = "Search cleared"
+		// Clear highlighting from response if we were searching there
+		if wasSearchingResponse && m.currentResponse != nil {
+			m.updateResponseView()
+		}
+		return nil
+	}
+
+	// Default: Clear error and status messages
+	m.errorMsg = ""
+	m.statusMsg = ""
+	return nil
+}
+
+// handleNormalKeys handles keys in normal mode
+func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
+	// If filter editing is active, handle filter keys first
+	if m.filterEditing {
+		return m.handleFilterInlineKeys(msg)
+	}
+
+	// Handle ESC for cancellation BEFORE keybinds matching
+	// This allows ESC to cancel requests even though it's not bound in ContextNormal
+	if msg.String() == "esc" {
+		return m.handleEscapeKey()
+	}
+
+	// Match key to action using keybinds registry
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextNormal, msg.String())
+	if partial {
+		// This is a partial match (e.g., first 'g' in 'gg' sequence)
+		return nil
+	}
+
+	if !ok {
+		// No action bound, clear gPressed state and return
+		m.gPressed = false
+		return nil
+	}
+
+	// Handle actions
+	switch action {
+	case keybinds.ActionQuit:
+		m.Cleanup()
+		return tea.Quit
+
+	case keybinds.ActionSwitchFocus:
+		m.handleFocusSwitchAction()
+
+	case keybinds.ActionNavigateUp, keybinds.ActionNavigateDown,
+		keybinds.ActionPageUp, keybinds.ActionPageDown,
+		keybinds.ActionHalfPageUp, keybinds.ActionHalfPageDown,
+		keybinds.ActionGoToTop, keybinds.ActionGoToBottom:
+		m.handleNavigationAction(action)
+
+	case keybinds.ActionOpenGoto:
+		m.mode = ModeGoto
+		m.gotoInput = ""
+
+	case keybinds.ActionExecute:
+		return m.handleExecuteAction()
+
+	case keybinds.ActionOpenInspect:
+		if m.currentRequest == nil {
+			return m.setErrorMessage("No request loaded (select a file first)")
+		}
+		m.mode = ModeInspect
+		m.updateInspectView() // Set content once when entering modal
+
+	case keybinds.ActionOpenEditor, keybinds.ActionConfigureEditor, keybinds.ActionNoOp:
+		return m.handleEditorAction(action, msg)
+
+	case keybinds.ActionDuplicateFile, keybinds.ActionDeleteFile,
+		keybinds.ActionRenameFile, keybinds.ActionCreateFile,
+		keybinds.ActionRefreshFiles:
+		return m.handleFileOperationAction(action)
+
+	case keybinds.ActionSaveResponse, keybinds.ActionCopyToClipboard,
+		keybinds.ActionPinResponse, keybinds.ActionShowDiff,
+		keybinds.ActionFilterResponse:
+		return m.handleResponseAction(action)
+
+	case keybinds.ActionToggleBody, keybinds.ActionToggleHeaders, keybinds.ActionToggleFullscreen:
+		m.handleToggleAction(action)
+
+	case keybinds.ActionOpenVariables, keybinds.ActionOpenHeaders,
+		keybinds.ActionOpenErrorDetail, keybinds.ActionShowStatusDetail,
+		keybinds.ActionOpenProfiles, keybinds.ActionOpenMockServer,
+		keybinds.ActionOpenOAuthDetail, keybinds.ActionOpenRecentFiles,
+		keybinds.ActionOpenConfigView:
+		return m.handleModalOpenAction(action)
+
+	case keybinds.ActionOpenBodyOverride, keybinds.ActionOpenDocumentation,
+		keybinds.ActionOpenHistory, keybinds.ActionOpenAnalytics,
+		keybinds.ActionOpenStressTest, keybinds.ActionOpenProxy,
+		keybinds.ActionOpenHelp, keybinds.ActionOpenOAuth,
+		keybinds.ActionOpenSearch:
+		return m.handleComplexModalAction(action)
+
+	case keybinds.ActionSearchNext, keybinds.ActionSearchPrevious, keybinds.ActionRefresh:
+		m.handleSearchNavigationAction(action)
+
+	case keybinds.ActionOpenTagFilter, keybinds.ActionClearTagFilter:
+		m.handleTagFilterAction(action)
 	}
 
 	return nil
@@ -1193,7 +1312,8 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		idx := m.docState.GetSelectedIdx() - pageSize; m.docState.SetSelectedIdx(idx)
+		idx := m.docState.GetSelectedIdx() - pageSize
+		m.docState.SetSelectedIdx(idx)
 		if m.docState.GetSelectedIdx() < 0 {
 			m.docState.SetSelectedIdx(0)
 		}
@@ -1204,7 +1324,8 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		idx := m.docState.GetSelectedIdx() + pageSize; m.docState.SetSelectedIdx(idx)
+		idx := m.docState.GetSelectedIdx() + pageSize
+		m.docState.SetSelectedIdx(idx)
 		if m.docState.GetSelectedIdx() >= m.docState.GetItemCount() {
 			m.docState.SetSelectedIdx(m.docState.GetItemCount() - 1)
 		}
@@ -1218,7 +1339,8 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if halfPage < 1 {
 			halfPage = 5
 		}
-		idx := m.docState.GetSelectedIdx() - halfPage; m.docState.SetSelectedIdx(idx)
+		idx := m.docState.GetSelectedIdx() - halfPage
+		m.docState.SetSelectedIdx(idx)
 		if m.docState.GetSelectedIdx() < 0 {
 			m.docState.SetSelectedIdx(0)
 		}
@@ -1229,7 +1351,8 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 		if halfPage < 1 {
 			halfPage = 5
 		}
-		idx := m.docState.GetSelectedIdx() + halfPage; m.docState.SetSelectedIdx(idx)
+		idx := m.docState.GetSelectedIdx() + halfPage
+		m.docState.SetSelectedIdx(idx)
 		if m.docState.GetSelectedIdx() >= m.docState.GetItemCount() {
 			m.docState.SetSelectedIdx(m.docState.GetItemCount() - 1)
 		}
@@ -1274,7 +1397,8 @@ func (m *Model) countDocItems() int {
 				responseKey := 100 + respIdx
 				if !m.docState.GetCollapsed(responseKey) && len(resp.Fields) > 0 {
 					// Fields are expanded - use cached tree
-					allFields := m.docState.GetFieldTreeCache(respIdx); ok := allFields != nil
+					allFields := m.docState.GetFieldTreeCache(respIdx)
+					ok := allFields != nil
 					if !ok {
 						// Build and cache the tree
 						allFields = buildVirtualFieldTree(resp.Fields)
@@ -1327,7 +1451,7 @@ func (m *Model) toggleDocSection() {
 		if currentIdx == m.docState.GetSelectedIdx() {
 			m.docState.SetCollapsed(0, !m.docState.GetCollapsed(0))
 			m.updateDocumentationView()
-			m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
+			m.docState.SetItemCount(m.countDocItems()) // Recalculate after toggle
 			return
 		}
 		currentIdx++
@@ -1341,7 +1465,7 @@ func (m *Model) toggleDocSection() {
 		if currentIdx == m.docState.GetSelectedIdx() {
 			m.docState.SetCollapsed(1, !m.docState.GetCollapsed(1))
 			m.updateDocumentationView()
-			m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
+			m.docState.SetItemCount(m.countDocItems()) // Recalculate after toggle
 			return
 		}
 		currentIdx++
@@ -1356,7 +1480,8 @@ func (m *Model) toggleDocSection() {
 				responseKey := 100 + respIdx
 				if !m.docState.GetCollapsed(responseKey) && len(resp.Fields) > 0 {
 					// Fields are expanded - use cached tree
-					allFields := m.docState.GetFieldTreeCache(respIdx); ok := allFields != nil
+					allFields := m.docState.GetFieldTreeCache(respIdx)
+					ok := allFields != nil
 					if !ok {
 						// Build and cache the tree
 						allFields = buildVirtualFieldTree(resp.Fields)
@@ -1376,7 +1501,7 @@ func (m *Model) toggleDocSection() {
 						}
 
 						m.updateDocumentationView()
-						m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
+						m.docState.SetItemCount(m.countDocItems()) // Recalculate after toggle
 						return
 					}
 					currentIdx++
@@ -1396,7 +1521,7 @@ func (m *Model) toggleFieldInTree(respIdx int, parentPath string, allFields []Do
 			fieldKey := 200 + respIdx*1000 + hashString(field.Name)
 			m.docState.SetCollapsed(fieldKey, !m.docState.GetCollapsed(fieldKey))
 			m.updateDocumentationView()
-			m.docState.SetItemCount(m.countDocItems())  // Recalculate after toggle
+			m.docState.SetItemCount(m.countDocItems()) // Recalculate after toggle
 			return
 		}
 		*currentIdx++
@@ -1481,6 +1606,15 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionCloseModal:
 		m.mode = ModeNormal
 
+	case keybinds.ActionSwitchPane:
+		m.historyState.ToggleFocus()
+		if m.historyState.GetFocusedPane() == "list" {
+			m.statusMsg = "Focus: History list"
+		} else {
+			m.statusMsg = "Focus: Response preview"
+		}
+		return nil
+
 	case keybinds.ActionOpenSearch:
 		m.historyState.SetSearchActive(true)
 		m.historyState.SetSearchQuery("")
@@ -1488,13 +1622,21 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 
 	case keybinds.ActionNavigateUp:
-		if m.historyState.GetIndex() > 0 {
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.LineUp(1)
+			m.historyState.SetPreviewView(previewView)
+		} else if m.historyState.GetIndex() > 0 {
 			m.historyState.Navigate(-1)
 			m.updateHistoryView()
 		}
 
 	case keybinds.ActionNavigateDown:
-		if m.historyState.GetIndex() < len(m.historyState.GetEntries())-1 {
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.LineDown(1)
+			m.historyState.SetPreviewView(previewView)
+		} else if m.historyState.GetIndex() < len(m.historyState.GetEntries())-1 {
 			m.historyState.Navigate(1)
 			m.updateHistoryView()
 		}
@@ -1510,7 +1652,7 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case keybinds.ActionHistoryPaginate:
-		m.historyState.TogglePreview(); // m.historyState.GetPreviewVisible()
+		m.historyState.TogglePreview() // m.historyState.GetPreviewVisible()
 		if m.historyState.GetPreviewVisible() {
 			m.statusMsg = "Preview pane shown"
 		} else {
@@ -1522,67 +1664,99 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeHistoryClearConfirm
 
 	case keybinds.ActionPageUp:
-		pageSize := m.modalView.Height
-		if pageSize < 1 {
-			pageSize = 10
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.ViewUp()
+			m.historyState.SetPreviewView(previewView)
+		} else {
+			pageSize := m.modalView.Height
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			newIndex := m.historyState.GetIndex() - pageSize
+			if newIndex < 0 {
+				newIndex = 0
+			}
+			m.historyState.SetIndex(newIndex)
+			m.updateHistoryView()
 		}
-		newIndex := m.historyState.GetIndex() - pageSize
-		if newIndex < 0 {
-			newIndex = 0
-		}
-		m.historyState.SetIndex(newIndex)
-		m.updateHistoryView()
 
 	case keybinds.ActionPageDown:
-		pageSize := m.modalView.Height
-		if pageSize < 1 {
-			pageSize = 10
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.ViewDown()
+			m.historyState.SetPreviewView(previewView)
+		} else {
+			pageSize := m.modalView.Height
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			newIndex := m.historyState.GetIndex() + pageSize
+			if newIndex >= len(m.historyState.GetEntries()) {
+				newIndex = len(m.historyState.GetEntries()) - 1
+			}
+			if newIndex < 0 {
+				newIndex = 0
+			}
+			m.historyState.SetIndex(newIndex)
+			m.updateHistoryView()
 		}
-		newIndex := m.historyState.GetIndex() + pageSize
-		if newIndex >= len(m.historyState.GetEntries()) {
-			newIndex = len(m.historyState.GetEntries()) - 1
-		}
-		if newIndex < 0 {
-			newIndex = 0
-		}
-		m.historyState.SetIndex(newIndex)
-		m.updateHistoryView()
 
 	case keybinds.ActionHalfPageUp:
-		halfPage := m.modalView.Height / 2
-		if halfPage < 1 {
-			halfPage = 5
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.HalfViewUp()
+			m.historyState.SetPreviewView(previewView)
+		} else {
+			halfPage := m.modalView.Height / 2
+			if halfPage < 1 {
+				halfPage = 5
+			}
+			newIndex := m.historyState.GetIndex() - halfPage
+			if newIndex < 0 {
+				newIndex = 0
+			}
+			m.historyState.SetIndex(newIndex)
+			m.updateHistoryView()
 		}
-		newIndex := m.historyState.GetIndex() - halfPage
-		if newIndex < 0 {
-			newIndex = 0
-		}
-		m.historyState.SetIndex(newIndex)
-		m.updateHistoryView()
 
 	case keybinds.ActionHalfPageDown:
-		halfPage := m.modalView.Height / 2
-		if halfPage < 1 {
-			halfPage = 5
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.HalfViewDown()
+			m.historyState.SetPreviewView(previewView)
+		} else {
+			halfPage := m.modalView.Height / 2
+			if halfPage < 1 {
+				halfPage = 5
+			}
+			newIndex := m.historyState.GetIndex() + halfPage
+			if newIndex >= len(m.historyState.GetEntries()) {
+				newIndex = len(m.historyState.GetEntries()) - 1
+			}
+			if newIndex < 0 {
+				newIndex = 0
+			}
+			m.historyState.SetIndex(newIndex)
+			m.updateHistoryView()
 		}
-		newIndex := m.historyState.GetIndex() + halfPage
-		if newIndex >= len(m.historyState.GetEntries()) {
-			newIndex = len(m.historyState.GetEntries()) - 1
-		}
-		if newIndex < 0 {
-			newIndex = 0
-		}
-		m.historyState.SetIndex(newIndex)
-		m.updateHistoryView()
 
 	case keybinds.ActionGoToTop:
-		if len(m.historyState.GetEntries()) > 0 {
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.GotoTop()
+			m.historyState.SetPreviewView(previewView)
+		} else if len(m.historyState.GetEntries()) > 0 {
 			m.historyState.SetIndex(0)
 			m.updateHistoryView()
 		}
 
 	case keybinds.ActionGoToBottom:
-		if len(m.historyState.GetEntries()) > 0 {
+		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
+			previewView := m.historyState.GetPreviewView()
+			previewView.GotoBottom()
+			m.historyState.SetPreviewView(previewView)
+		} else if len(m.historyState.GetEntries()) > 0 {
 			m.historyState.SetIndex(len(m.historyState.GetEntries()) - 1)
 			m.updateHistoryView()
 		}
@@ -1711,7 +1885,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionNavigateUp:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.LineUp(1); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.LineUp(1)
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			if m.analyticsState.GetIndex() > 0 {
@@ -1723,7 +1899,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionNavigateDown:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.LineDown(1); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.LineDown(1)
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			if m.analyticsState.GetIndex() < len(m.analyticsState.GetStats())-1 {
@@ -1780,7 +1958,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionPageUp:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewUp(); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.HalfViewUp()
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			pageSize := 10
@@ -1795,7 +1975,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionPageDown:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewDown(); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.HalfViewDown()
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			pageSize := 10
@@ -1813,7 +1995,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionHalfPageUp:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewUp(); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.HalfViewUp()
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			halfPage := 5
@@ -1828,7 +2012,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionHalfPageDown:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.HalfViewDown(); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.HalfViewDown()
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			halfPage := 5
@@ -1846,7 +2032,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionGoToTop:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.GotoTop(); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.GotoTop()
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			if len(m.analyticsState.GetStats()) > 0 {
@@ -1858,7 +2046,9 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionGoToBottom:
 		if m.analyticsState.GetFocusedPane() == "details" {
 			if m.analyticsState.GetPreviewVisible() {
-				detailView := m.analyticsState.GetDetailView(); detailView.GotoBottom(); m.analyticsState.SetDetailView(detailView)
+				detailView := m.analyticsState.GetDetailView()
+				detailView.GotoBottom()
+				m.analyticsState.SetDetailView(detailView)
 			}
 		} else {
 			if len(m.analyticsState.GetStats()) > 0 {
@@ -1893,7 +2083,9 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 			m.analyticsState.SetStats(nil)
 			m.analyticsState.SetIndex(0)
 			m.analyticsState.SetFocusedPane("list")
-			detailView := m.analyticsState.GetDetailView(); detailView.SetContent(""); m.analyticsState.SetDetailView(detailView)
+			detailView := m.analyticsState.GetDetailView()
+			detailView.SetContent("")
+			m.analyticsState.SetDetailView(detailView)
 			m.mode = ModeAnalytics
 			m.statusMsg = "All analytics cleared"
 			m.updateAnalyticsView()

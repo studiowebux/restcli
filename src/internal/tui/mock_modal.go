@@ -198,10 +198,10 @@ func (m *Model) findMockConfigs() []string {
 	paths := []string{
 		filepath.Join(workdir, "mocks"),
 		workdir,
-		"mocks",     // Current dir mocks/
-		".",         // Current directory
-		"../mocks",  // Parent dir mocks/ (common when running from src/)
-		"..",        // Parent directory
+		"mocks",    // Current dir mocks/
+		".",        // Current directory
+		"../mocks", // Parent dir mocks/ (common when running from src/)
+		"..",       // Parent directory
 	}
 
 	for _, dir := range paths {

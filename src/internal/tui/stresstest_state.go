@@ -20,10 +20,10 @@ type StressTestState struct {
 	activeRequest *types.HttpRequest
 
 	// Configs and runs
-	configs       []*stresstest.Config
-	configIndex   int
-	runs          []*stresstest.Run
-	runIndex      int
+	configs     []*stresstest.Config
+	configIndex int
+	runs        []*stresstest.Run
+	runIndex    int
 
 	// Viewports for split view
 	listView   viewport.Model
@@ -33,14 +33,14 @@ type StressTestState struct {
 	focusedPane string // "list" or "details"
 
 	// Config editing state
-	configEdit         *stresstest.Config
-	configField        int
-	configInput        string
-	configCursor       int
-	configInsertMode   bool
-	filePickerActive   bool
-	filePickerFiles    []types.FileInfo
-	filePickerIndex    int
+	configEdit       *stresstest.Config
+	configField      int
+	configInput      string
+	configCursor     int
+	configInsertMode bool
+	filePickerActive bool
+	filePickerFiles  []types.FileInfo
+	filePickerIndex  int
 
 	// Execution state
 	stopping bool

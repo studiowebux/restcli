@@ -176,7 +176,7 @@ func (m *Model) renderDiffModal() string {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBlue).
 			Width(modalWidth).
-			Height(modalHeight - 2). // Reduce height to account for footer
+			Height(modalHeight-2). // Reduce height to account for footer
 			Padding(1, 2).
 			Render(styleTitle.Render("Response Comparison") + "\n\n" + m.diffView.View())
 

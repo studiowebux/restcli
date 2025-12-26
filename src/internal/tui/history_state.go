@@ -21,6 +21,7 @@ type HistoryState struct {
 
 	// UI state
 	previewVisible bool   // Toggle for showing/hiding response preview pane
+	focusedPane    string // "list" or "preview" - which pane has focus in split view
 	searchActive   bool   // True when search input is active
 	searchQuery    string // Search query for filtering history
 }
@@ -33,6 +34,7 @@ func NewHistoryState() *HistoryState {
 		index:          0,
 		previewView:    viewport.New(80, 20),
 		previewVisible: true,
+		focusedPane:    "list",
 		searchActive:   false,
 		searchQuery:    "",
 	}
@@ -205,4 +207,29 @@ func (s *HistoryState) ClearSearch() {
 	defer s.mu.Unlock()
 	s.searchQuery = ""
 	s.searchActive = false
+}
+
+// GetFocusedPane returns the focused pane
+func (s *HistoryState) GetFocusedPane() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.focusedPane
+}
+
+// SetFocusedPane sets the focused pane
+func (s *HistoryState) SetFocusedPane(pane string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.focusedPane = pane
+}
+
+// ToggleFocus toggles focus between list and preview panes
+func (s *HistoryState) ToggleFocus() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.focusedPane == "list" {
+		s.focusedPane = "preview"
+	} else {
+		s.focusedPane = "list"
+	}
 }

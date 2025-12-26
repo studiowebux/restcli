@@ -289,7 +289,7 @@ func TestFileExplorerState_ScrollOffset(t *testing.T) {
 
 	files := make([]types.FileInfo, 20)
 	for i := range files {
-		files[i] = types.FileInfo{Name: string(rune('a' + i)) + ".http"}
+		files[i] = types.FileInfo{Name: string(rune('a'+i)) + ".http"}
 	}
 	state.SetFiles(files, files)
 

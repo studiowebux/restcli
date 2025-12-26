@@ -243,7 +243,8 @@ func registerDocumentationBindings(r *Registry) {
 
 // registerHistoryBindings sets up keybindings for history browser
 func registerHistoryBindings(r *Registry) {
-	r.RegisterMultiple(ContextHistory, []string{"esc", "H", "q", "tab"}, ActionCloseModal)
+	r.RegisterMultiple(ContextHistory, []string{"esc", "H", "q"}, ActionCloseModal)
+	r.Register(ContextHistory, "tab", ActionSwitchPane)
 	r.RegisterMultiple(ContextHistory, []string{"up", "k"}, ActionNavigateUp)
 	r.RegisterMultiple(ContextHistory, []string{"down", "j"}, ActionNavigateDown)
 	r.Register(ContextHistory, "/", ActionOpenSearch)

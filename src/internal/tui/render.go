@@ -58,7 +58,7 @@ var (
 			Foreground(colorYellow)
 
 	styleSearchMatch = lipgloss.NewStyle().
-			Foreground(colorYellow)
+				Foreground(colorYellow)
 
 	styleSubtle = lipgloss.NewStyle().
 			Foreground(colorGray)
@@ -181,7 +181,7 @@ func (m Model) renderMain() string {
 			BorderForeground(colorCyan). // Cyan for focused (fullscreen) panel
 			Width(m.width - MinimalBorderMargin).
 			Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
-			Padding(0).           // No padding inside box border
+			Padding(0).                           // No padding inside box border
 			AlignVertical(lipgloss.Top).
 			Render(response)
 
@@ -220,7 +220,7 @@ func (m Model) renderMain() string {
 		BorderForeground(sidebarBorderColor).
 		Width(sidebarWidth).
 		Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
-		Padding(0).           // No padding inside box border
+		Padding(0).                           // No padding inside box border
 		AlignVertical(lipgloss.Top).
 		Render(sidebar)
 
@@ -229,7 +229,7 @@ func (m Model) renderMain() string {
 		BorderForeground(responseBorderColor).
 		Width(responseWidth).
 		Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
-		Padding(0).           // No padding inside box border
+		Padding(0).                           // No padding inside box border
 		AlignVertical(lipgloss.Top).
 		Render(response)
 
@@ -564,6 +564,22 @@ func addCursor(text string) string {
 	return text + "█"
 }
 
+// isSuccessMessage returns true if the message indicates a successful operation
+func isSuccessMessage(msg string) bool {
+	return strings.Contains(msg, "✓") ||
+		strings.Contains(msg, "saved") ||
+		strings.Contains(msg, "copied") ||
+		strings.Contains(msg, "Created") ||
+		strings.Contains(msg, "Switched") ||
+		strings.Contains(msg, "Renamed") ||
+		strings.Contains(msg, "Match")
+}
+
+// isWarningMessage returns true if the message indicates a warning
+func isWarningMessage(msg string) bool {
+	return strings.Contains(msg, "exists")
+}
+
 // renderStatusBar renders the status bar at the bottom
 func (m Model) renderStatusBar() string {
 	profile := m.sessionMgr.GetActiveProfile()
@@ -581,9 +597,9 @@ func (m Model) renderStatusBar() string {
 			right += " " + styleError.Render(m.filterError)
 		} else if m.statusMsg != "" {
 			// Show status message (e.g., "Bookmark saved")
-			if strings.Contains(m.statusMsg, "✓") || strings.Contains(m.statusMsg, "saved") {
+			if isSuccessMessage(m.statusMsg) {
 				right += " " + styleSuccess.Render(m.statusMsg)
-			} else if strings.Contains(m.statusMsg, "exists") {
+			} else if isWarningMessage(m.statusMsg) {
 				right += " " + styleWarning.Render(m.statusMsg)
 			} else {
 				right += " " + m.statusMsg
@@ -616,9 +632,7 @@ func (m Model) renderStatusBar() string {
 			right += styleError.Render(m.errorMsg)
 		} else if m.statusMsg != "" {
 			// Make success messages green
-			if strings.Contains(m.statusMsg, "saved") || strings.Contains(m.statusMsg, "copied") ||
-				strings.Contains(m.statusMsg, "Created") || strings.Contains(m.statusMsg, "Switched") ||
-				strings.Contains(m.statusMsg, "Renamed") || strings.Contains(m.statusMsg, "Match") {
+			if isSuccessMessage(m.statusMsg) {
 				right += styleSuccess.Render(m.statusMsg)
 			} else {
 				right += m.statusMsg
@@ -1358,7 +1372,7 @@ func (m Model) renderConfigView() string {
 func (m *Model) updateDocumentationView() {
 	// Set viewport dimensions for the modal (nearly full screen: m.width-6, m.height-3)
 	// Account for: border (2), padding (2), title+blank (2), footer+blank (2) = 8 total
-	m.modalView.Width = m.width - ModalWidthMarginNarrow  // Modal content width minus padding
+	m.modalView.Width = m.width - ModalWidthMarginNarrow // Modal content width minus padding
 	m.modalView.Height = m.height - ContentOffsetSidebar // Modal content height with footer
 
 	// Check if we have a request and documentation
@@ -1475,7 +1489,8 @@ func (m *Model) updateDocumentationView() {
 
 					if !responseFieldsCollapsed {
 						// Response fields are expanded - use cached tree
-						allFields := m.docState.GetFieldTreeCache(respIdx); ok := allFields != nil
+						allFields := m.docState.GetFieldTreeCache(respIdx)
+						ok := allFields != nil
 						if !ok {
 							// Build and cache the tree
 							allFields = buildVirtualFieldTree(resp.Fields)
@@ -1527,7 +1542,7 @@ func (m *Model) updateDocumentationView() {
 // updateInspectView updates the inspect viewport content
 func (m *Model) updateInspectView() {
 	// Set viewport dimensions for the modal (nearly full screen: m.width-6, m.height-3)
-	m.modalView.Width = m.width - ModalWidthMarginNarrow  // Modal content width minus padding
+	m.modalView.Width = m.width - ModalWidthMarginNarrow // Modal content width minus padding
 	m.modalView.Height = m.height - ContentOffsetSidebar // Modal content height minus padding, title lines, and footer
 
 	if m.currentRequest == nil {
@@ -1832,7 +1847,7 @@ func (m *Model) updateHistoryView() {
 		previewWidth := modalWidth - listWidth - SplitPaneBorderWidth // Right pane width
 
 		// Set viewport dimensions for left pane (history list)
-		m.modalView.Width = listWidth - ViewportPaddingHorizontal   // Account for padding and borders
+		m.modalView.Width = listWidth - ViewportPaddingHorizontal // Account for padding and borders
 		m.modalView.Height = paneHeight - ViewportPaddingVertical // Account for title
 
 		// Set viewport dimensions for right pane (response preview)
@@ -1842,8 +1857,8 @@ func (m *Model) updateHistoryView() {
 		m.historyState.SetPreviewView(previewView)
 	} else {
 		// Preview hidden: expand list to full width
-		m.modalView.Width = modalWidth - ViewportPaddingHorizontal  // Account for padding and borders
-		m.modalView.Height = paneHeight - ViewportPaddingVertical // Account for title
+		m.modalView.Width = modalWidth - ViewportPaddingHorizontal // Account for padding and borders
+		m.modalView.Height = paneHeight - ViewportPaddingVertical  // Account for title
 	}
 
 	// Build content for left pane (history list)

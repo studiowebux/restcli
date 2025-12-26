@@ -77,16 +77,16 @@ const (
 // Model represents the TUI state
 type Model struct {
 	// Core state
-	sessionMgr        *session.Manager
-	analyticsManager  *analytics.Manager
-	historyManager    *history.Manager
-	bookmarkManager   *jsonpath.BookmarkManager
-	keybinds          *keybinds.Registry
-	mode              Mode
-	version           string
-	updateAvailable   bool
-	latestVersion     string
-	updateURL         string
+	sessionMgr       *session.Manager
+	analyticsManager *analytics.Manager
+	historyManager   *history.Manager
+	bookmarkManager  *jsonpath.BookmarkManager
+	keybinds         *keybinds.Registry
+	mode             Mode
+	version          string
+	updateAvailable  bool
+	latestVersion    string
+	updateURL        string
 
 	// File explorer state (encapsulates file navigation, search, and filtering)
 	fileExplorer *FileExplorerState
@@ -101,11 +101,11 @@ type Model struct {
 	searchCursor          int    // Cursor position in search input
 
 	// Request/Response
-	currentRequests       []types.HttpRequest
-	currentRequest        *types.HttpRequest
-	currentResponse       *types.RequestResult
-	responseView          viewport.Model
-	responseContent       string // Full formatted response content for searching
+	currentRequests []types.HttpRequest
+	currentRequest  *types.HttpRequest
+	currentResponse *types.RequestResult
+	responseView    viewport.Model
+	responseContent string // Full formatted response content for searching
 
 	// Response content cache tracking
 	cachedResponsePtr      *types.RequestResult // Pointer to response that was cached
@@ -115,38 +115,38 @@ type Model struct {
 	cachedHighlightedBody  string               // Pre-highlighted body to avoid re-rendering
 	cachedSearchMatchCount int                  // Number of matches used for cached highlighting
 
-	helpView              viewport.Model
-	modalView             viewport.Model // For scrollable modal content
+	helpView  viewport.Model
+	modalView viewport.Model // For scrollable modal content
 
 	// Streaming state
-	streamState           *StreamState          // Thread-safe streaming state management
-	streamedBody          string                // Accumulated streamed response body
-	streamChannel         chan streamChunkMsg   // Channel for receiving stream chunks
+	streamState   *StreamState        // Thread-safe streaming state management
+	streamedBody  string              // Accumulated streamed response body
+	streamChannel chan streamChunkMsg // Channel for receiving stream chunks
 
 	// Request cancellation (for regular non-streaming requests)
-	requestState          *RequestState         // Thread-safe request cancellation
+	requestState *RequestState // Thread-safe request cancellation
 
 	// UI state
-	width        int
-	height       int
-	statusMsg    string
-	errorMsg     string      // Truncated error for footer
-	fullErrorMsg   string // Full error message for detail modal
-	fullStatusMsg  string // Full status message for detail modal
-	focusedPanel   string // "sidebar" or "response"
+	width         int
+	height        int
+	statusMsg     string
+	errorMsg      string // Truncated error for footer
+	fullErrorMsg  string // Full error message for detail modal
+	fullStatusMsg string // Full status message for detail modal
+	focusedPanel  string // "sidebar" or "response"
 
 	// Variable editor state
-	varEditIndex     int
-	varEditName      string
-	varEditValue     string
-	varEditCursor    int // Which field (0=name, 1=value)
-	varEditNamePos   int // Cursor position in name field
-	varEditValuePos  int // Cursor position in value field
-	varOptionIndex   int
+	varEditIndex    int
+	varEditName     string
+	varEditValue    string
+	varEditCursor   int // Which field (0=name, 1=value)
+	varEditNamePos  int // Cursor position in name field
+	varEditValuePos int // Cursor position in value field
+	varOptionIndex  int
 
 	// Alias editor state
-	varAliasInput      string // Alias name being typed
-	varAliasTargetIdx  int    // Option index being aliased
+	varAliasInput     string // Alias name being typed
+	varAliasTargetIdx int    // Option index being aliased
 
 	// Header editor state
 	headerEditIndex    int
@@ -157,9 +157,9 @@ type Model struct {
 	headerEditValuePos int // Cursor position in value field
 
 	// Profile state
-	profileIndex  int
-	profileName   string
-	profileCursor int
+	profileIndex   int
+	profileName    string
+	profileCursor  int
 	profileNamePos int // Cursor position in profile name
 
 	// Profile edit state (encapsulates all profile editing UI state)
@@ -204,7 +204,7 @@ type Model struct {
 
 	// Help search state
 	helpSearchQuery  string
-	helpSearchCursor int  // Cursor position in help search query
+	helpSearchCursor int // Cursor position in help search query
 	helpSearchActive bool
 
 	// Shell errors state
@@ -228,15 +228,15 @@ type Model struct {
 	diffRightView  viewport.Model       // Right pane viewport (current) for split mode
 
 	// Interactive variable prompt state
-	interactiveVarNames      []string          // Queue of variables to prompt for
-	interactiveVarValues     map[string]string // Collected values
-	interactiveVarInput      string            // Current input value
-	interactiveVarCursor     int               // Cursor position in input
-	interactiveVarMode       string            // "select" or "input" - selection list or text input
-	interactiveVarOptions    []string          // Available options for selection
-	interactiveVarAliases    map[int][]string  // Aliases for each option (index -> alias names)
-	interactiveVarActiveIdx  int               // Currently active option index
-	interactiveVarSelectIdx  int               // Selected option in list
+	interactiveVarNames     []string          // Queue of variables to prompt for
+	interactiveVarValues    map[string]string // Collected values
+	interactiveVarInput     string            // Current input value
+	interactiveVarCursor    int               // Cursor position in input
+	interactiveVarMode      string            // "select" or "input" - selection list or text input
+	interactiveVarOptions   []string          // Available options for selection
+	interactiveVarAliases   map[int][]string  // Aliases for each option (index -> alias names)
+	interactiveVarActiveIdx int               // Currently active option index
+	interactiveVarSelectIdx int               // Selected option in list
 
 	// Streaming state
 	isStreaming  bool   // True when actively streaming response
@@ -248,43 +248,44 @@ type Model struct {
 	bodyOverride       string // Applied body override (cleared after send)
 
 	// Filter state
-	filterInput         string // JMESPath filter/query expression
-	filterCursor        int    // Cursor position in filter input
-	filteredResponse    string // Cached filtered response
-	filterError         string // Filter error message
-	filterActive        bool   // True when viewing filtered result
-	filterEditing       bool   // True when actively editing filter in footer
+	filterInput      string // JMESPath filter/query expression
+	filterCursor     int    // Cursor position in filter input
+	filteredResponse string // Cached filtered response
+	filterError      string // Filter error message
+	filterActive     bool   // True when viewing filtered result
+	filterEditing    bool   // True when actively editing filter in footer
 
 	// JSONPath history state
-	jsonpathBookmarks       []jsonpath.Bookmark // Loaded bookmarks
-	jsonpathHistoryCursor   int                 // Selected bookmark index
-	jsonpathHistorySearch   string              // Search filter for bookmarks
-	jsonpathHistoryMatches  []jsonpath.Bookmark // Filtered bookmarks
+	jsonpathBookmarks        []jsonpath.Bookmark // Loaded bookmarks
+	jsonpathHistoryCursor    int                 // Selected bookmark index
+	jsonpathHistorySearch    string              // Search filter for bookmarks
+	jsonpathHistoryMatches   []jsonpath.Bookmark // Filtered bookmarks
 	jsonpathHistorySearching bool                // True when in search mode
 
 	// WebSocket state (Phase 2: Split-pane modal)
-	wsState                 *WebSocketState            // Thread-safe WebSocket state management
-	wsMessages              []types.ReceivedMessage    // Message history (left pane)
-	wsConnectionStatus      string                     // Connection status: "connecting", "connected", "disconnected", "error"
-	wsHistoryView           viewport.Model             // Left pane: message history viewport
-	wsMessageMenuView       viewport.Model             // Right pane: predefined message menu viewport
-	wsMessageChannel        chan types.ReceivedMessage // Channel for receiving messages from executor
-	wsSendChannel           chan string                // Channel for sending user messages
-	wsURL                   string                     // WebSocket URL being connected to
-	wsError                 string                     // WebSocket error message if any
-	wsPredefinedMessages    []types.WebSocketMessage   // All predefined messages from .ws file
-	wsSendableMessages      []types.WebSocketMessage   // Filtered "send" messages for menu
-	wsSelectedMessageIndex  int                        // Selected message in right pane menu
-	wsFocusedPane           string                     // "history" or "menu" - which pane has focus
-	wsConn                  interface{}                // Active WebSocket connection (for persistent mode)
-	wsPendingMessageIndex   int                        // Message to send after connection completes (-1 = none)
-	wsLastKey               string                     // Last key pressed (for detecting gg)
-	wsShowClearConfirm      bool                       // True when showing clear history confirmation dialog
-	wsSearchMode            bool                       // True when in search mode
-	wsSearchQuery           string                     // Current search query
-	wsStatusMsg             string                     // WebSocket-specific status message for footer
-	wsComposerMode          bool                       // True when in custom message composer mode
-	wsComposerMessage       string                     // Custom message being composed
+	wsState                *WebSocketState            // Thread-safe WebSocket state management
+	wsMessages             []types.ReceivedMessage    // Message history (left pane)
+	wsConnectionStatus     string                     // Connection status: "connecting", "connected", "disconnected", "error"
+	wsHistoryView          viewport.Model             // Left pane: message history viewport
+	wsMessageMenuView      viewport.Model             // Right pane: predefined message menu viewport
+	wsMessageChannel       chan types.ReceivedMessage // Channel for receiving messages from executor
+	wsSendChannel          chan string                // Channel for sending user messages
+	wsURL                  string                     // WebSocket URL being connected to
+	wsError                string                     // WebSocket error message if any
+	wsPredefinedMessages   []types.WebSocketMessage   // All predefined messages from .ws file
+	wsSendableMessages     []types.WebSocketMessage   // Filtered "send" messages for menu
+	wsSelectedMessageIndex int                        // Selected message in right pane menu
+	wsFocusedPane          string                     // "history" or "menu" - which pane has focus
+	wsConn                 interface{}                // Active WebSocket connection (for persistent mode)
+	wsPendingMessageIndex  int                        // Message to send after connection completes (-1 = none)
+	wsLastKey              string                     // Last key pressed (for detecting gg)
+	wsShowClearConfirm     bool                       // True when showing clear history confirmation dialog
+	wsSearchMode           bool                       // True when in search mode
+	wsSearchQuery          string                     // Current search query
+	wsStatusMsg            string                     // WebSocket-specific status message for footer
+	wsComposerMode         bool                       // True when in custom message composer mode
+	wsComposerMessage      string                     // Custom message being composed
+	wsComposerCursor       int                        // Cursor position in composer message
 }
 
 // Init initializes the TUI
@@ -365,7 +366,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case requestExecutedMsg:
-		m.loading = false // Clear loading flag
+		m.loading = false      // Clear loading flag
 		m.requestState.Clear() // Clear cancel function
 		m.currentResponse = msg.result
 		// Clear any previous errors since request completed successfully
@@ -788,10 +789,10 @@ type streamChunkMsg struct {
 }
 
 type versionCheckMsg struct {
-	available      bool
-	latestVersion  string
-	url            string
-	err            error
+	available     bool
+	latestVersion string
+	url           string
+	err           error
 }
 
 type clearStatusMsg struct{}

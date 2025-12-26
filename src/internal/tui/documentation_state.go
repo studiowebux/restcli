@@ -14,8 +14,8 @@ type DocumentationState struct {
 	itemCount   int          // Cached total navigable items count
 
 	// Caches for performance
-	fieldTreeCache map[int][]DocField             // Cached field trees per response index
-	childrenCache  map[int]map[string]bool        // Cached hasChildren results per response index
+	fieldTreeCache map[int][]DocField      // Cached field trees per response index
+	childrenCache  map[int]map[string]bool // Cached hasChildren results per response index
 }
 
 // NewDocumentationState creates a new documentation state

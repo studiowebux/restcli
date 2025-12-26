@@ -14,10 +14,10 @@ type SplitPaneConfig struct {
 	IsSplitView bool // If false, shows only left pane at full width
 
 	// Left pane
-	LeftTitle      string
-	LeftContent    string
+	LeftTitle       string
+	LeftContent     string
 	LeftBorderColor lipgloss.AdaptiveColor
-	LeftIsFocused  bool
+	LeftIsFocused   bool
 
 	// Right pane (only used if IsSplitView is true)
 	RightTitle       string

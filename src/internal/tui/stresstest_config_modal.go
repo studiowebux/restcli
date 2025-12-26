@@ -140,7 +140,7 @@ func (m *Model) renderStressTestConfig() string {
 
 		// Show hint for current field
 		if isFocused {
-			content.WriteString(styleSubtle.Render("  ↳ " + field.hint) + "\n")
+			content.WriteString(styleSubtle.Render("  ↳ "+field.hint) + "\n")
 		}
 
 		// Show file picker dropdown for Request File field
@@ -167,7 +167,7 @@ func (m *Model) renderStressTestConfig() string {
 				file := m.stressTestState.GetFilePickerFiles()[j]
 				line := fmt.Sprintf("  %s", file.Name)
 				if j == m.stressTestState.GetFilePickerIndex() {
-					content.WriteString(styleSelected.Render("> " + line) + "\n")
+					content.WriteString(styleSelected.Render("> "+line) + "\n")
 				} else {
 					content.WriteString("  " + line + "\n")
 				}

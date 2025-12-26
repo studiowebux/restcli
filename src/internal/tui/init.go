@@ -102,34 +102,34 @@ func New(mgr *session.Manager, version string) (Model, error) {
 	renameState := NewRenameState()
 
 	m := Model{
-		sessionMgr:            mgr,
-		analyticsManager:      analyticsManager,
-		historyManager:        historyManager,
-		bookmarkManager:       bookmarkManager,
-		keybinds:              keybindRegistry,
-		mode:                  ModeNormal,
-		version:               version,
-		fileExplorer:          fileExplorer,
-		historyState:          historyState,
-		analyticsState:        analyticsState,
-		stressTestState:       stressTestState,
-		docState:              docState,
-		profileEditState:      profileEditState,
-		mockServerState:       mockServerState,
-		proxyServerState:      proxyServerState,
-		renameState:           renameState,
-		showHeaders:           false,
-		showBody:              true,
-		fullscreen:            false,
-		focusedPanel:            "sidebar", // Start with sidebar focused
-		streamState:             &StreamState{},
-		requestState:            &RequestState{},
-		wsState:                 &WebSocketState{},
-		responseView:            viewport.New(80, 20),
-		modalView:               viewport.New(80, 20), // For scrollable modals
-		wsHistoryView:           viewport.New(80, 20), // Left pane: message history
-		wsMessageMenuView:       viewport.New(80, 20), // Right pane: predefined messages
-		wsFocusedPane:           "menu",               // Start with menu focused
+		sessionMgr:        mgr,
+		analyticsManager:  analyticsManager,
+		historyManager:    historyManager,
+		bookmarkManager:   bookmarkManager,
+		keybinds:          keybindRegistry,
+		mode:              ModeNormal,
+		version:           version,
+		fileExplorer:      fileExplorer,
+		historyState:      historyState,
+		analyticsState:    analyticsState,
+		stressTestState:   stressTestState,
+		docState:          docState,
+		profileEditState:  profileEditState,
+		mockServerState:   mockServerState,
+		proxyServerState:  proxyServerState,
+		renameState:       renameState,
+		showHeaders:       false,
+		showBody:          true,
+		fullscreen:        false,
+		focusedPanel:      "sidebar", // Start with sidebar focused
+		streamState:       &StreamState{},
+		requestState:      &RequestState{},
+		wsState:           &WebSocketState{},
+		responseView:      viewport.New(80, 20),
+		modalView:         viewport.New(80, 20), // For scrollable modals
+		wsHistoryView:     viewport.New(80, 20), // Left pane: message history
+		wsMessageMenuView: viewport.New(80, 20), // Right pane: predefined messages
+		wsFocusedPane:     "menu",               // Start with menu focused
 	}
 
 	// Load requests from first file

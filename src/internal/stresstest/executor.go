@@ -484,21 +484,19 @@ func (e *Executor) collectResults() {
 		isValidationError := false
 		validationErrorMsg := ""
 
-		// Only validate if no network error occurred
-		if !isNetworkError {
-			// Check status code validation
-			if !e.config.Request.IsExpectedStatus(result.StatusCode) {
-				isValidationError = true
-				validationErrorMsg = fmt.Sprintf("unexpected status %d", result.StatusCode)
-			} else {
-				// Status code is valid, check body validation
-				bodyValidationErr := e.validateBody(result.Body)
-				if bodyValidationErr != "" {
-					isValidationError = true
-					validationErrorMsg = bodyValidationErr
-				}
-			}
+		// Skip validation if network error occurred
+		if isNetworkError {
+			// No validation needed for network errors
+		} else if !e.config.Request.IsExpectedStatus(result.StatusCode) {
+			// Status code validation failed
+			isValidationError = true
+			validationErrorMsg = fmt.Sprintf("unexpected status %d", result.StatusCode)
+		} else if bodyValidationErr := e.validateBody(result.Body); bodyValidationErr != "" {
+			// Body validation failed
+			isValidationError = true
+			validationErrorMsg = bodyValidationErr
 		}
+		// If we reach here: either network error, or all validations passed
 
 		// Update statistics
 		e.statsMu.Lock()

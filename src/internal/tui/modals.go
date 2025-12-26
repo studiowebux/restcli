@@ -29,8 +29,8 @@ func (m Model) renderHelp() string {
 	helpView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorBlue).
-		Width(m.width - ModalWidthMarginNarrow).
-		Height(m.height - ModalHeightMarginMed).
+		Width(m.width-ModalWidthMarginNarrow).
+		Height(m.height-ModalHeightMarginMed).
 		Padding(1, 2).
 		Render(fullContent)
 
@@ -97,7 +97,7 @@ func (m *Model) renderHistory() string {
 			footerText += fmt.Sprintf(" [%d results]", len(m.historyState.GetEntries()))
 		}
 	} else {
-		footerText = "/: Search | ↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
+		footerText = "TAB: Switch Focus | /: Search | ↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
 
 		// Add scroll indicator if there are entries
 		if len(m.historyState.GetEntries()) > 0 {
@@ -109,6 +109,26 @@ func (m *Model) renderHistory() string {
 		}
 	}
 
+	// Determine border colors based on focus
+	listBorderColor := colorGray
+	previewBorderColor := colorGray
+	leftIsFocused := false
+	rightIsFocused := false
+
+	if m.historyState.GetFocusedPane() == "list" {
+		listBorderColor = colorCyan
+		leftIsFocused = true
+	} else if m.historyState.GetFocusedPane() == "preview" {
+		previewBorderColor = colorCyan
+		rightIsFocused = true
+	}
+
+	// When in single pane mode, always focus the list
+	if !m.historyState.GetPreviewVisible() {
+		listBorderColor = colorCyan
+		leftIsFocused = true
+	}
+
 	// Configure split-pane modal
 	cfg := SplitPaneConfig{
 		ModalWidth:       modalWidth,
@@ -116,12 +136,12 @@ func (m *Model) renderHistory() string {
 		IsSplitView:      m.historyState.GetPreviewVisible(),
 		LeftTitle:        "History",
 		LeftContent:      m.modalView.View(),
-		LeftBorderColor:  colorBlue,
-		LeftIsFocused:    true,
+		LeftBorderColor:  listBorderColor,
+		LeftIsFocused:    leftIsFocused,
 		RightTitle:       "Response Preview",
 		RightContent:     m.historyState.GetPreviewView().View(),
-		RightBorderColor: colorGreen,
-		RightIsFocused:   false,
+		RightBorderColor: previewBorderColor,
+		RightIsFocused:   rightIsFocused,
 		Footer:           footerText,
 		LeftWidthRatio:   SplitViewEqual,
 	}
@@ -143,8 +163,8 @@ func (m *Model) renderModalWithFooter(title, content, footer string, width, heig
 // Pass selectedLine=-1 to preserve existing scroll position
 func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, width, height, selectedLine int) string {
 	// For small terminals, use almost full screen
-	maxWidth := m.width - ViewportPaddingHorizontal   // Leave minimal margin
-	maxHeight := m.height - ModalHeightMarginSmall // Leave minimal margin
+	maxWidth := m.width - ViewportPaddingHorizontal // Leave minimal margin
+	maxHeight := m.height - ModalHeightMarginSmall  // Leave minimal margin
 
 	// Adjust requested dimensions to fit screen
 	if width > maxWidth {

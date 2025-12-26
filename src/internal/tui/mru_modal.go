@@ -19,7 +19,7 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		// Quick select by number (1-9)
 		num := int(msg.String()[0] - '0') // Convert '1'-'9' to 1-9
-		index := num - 1                   // Convert to 0-based index
+		index := num - 1                  // Convert to 0-based index
 		if index < len(recentFiles) {
 			m.mruIndex = index
 			// Immediately select the file (simulate enter key)

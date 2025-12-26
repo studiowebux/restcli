@@ -179,14 +179,14 @@ func (m *Model) handleProfileDuplicateKeys(msg tea.KeyMsg) tea.Cmd {
 
 			// Create new profile with all settings from source
 			newProfile := types.Profile{
-				Name:              m.profileName,
-				Workdir:           sourceProfile.Workdir,
-				Editor:            sourceProfile.Editor,
-				Output:            sourceProfile.Output,
-				HistoryEnabled:    sourceProfile.HistoryEnabled,
-				AnalyticsEnabled:  sourceProfile.AnalyticsEnabled,
-				Headers:           make(map[string]string),
-				Variables:         make(map[string]types.VariableValue),
+				Name:             m.profileName,
+				Workdir:          sourceProfile.Workdir,
+				Editor:           sourceProfile.Editor,
+				Output:           sourceProfile.Output,
+				HistoryEnabled:   sourceProfile.HistoryEnabled,
+				AnalyticsEnabled: sourceProfile.AnalyticsEnabled,
+				Headers:          make(map[string]string),
+				Variables:        make(map[string]types.VariableValue),
 			}
 
 			// Deep copy headers

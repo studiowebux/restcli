@@ -9,19 +9,19 @@ type ProfileEditState struct {
 	mu sync.RWMutex
 
 	// Field selection and input values
-	field            int    // 0=name, 1=workdir, 2=editor, 3=output, 4=history, 5=analytics
+	field            int // 0=name, 1=workdir, 2=editor, 3=output, 4=history, 5=analytics
 	name             string
 	workdir          string
 	editor           string
 	output           string
-	historyEnabled   *bool  // nil=default, true/false=override
-	analyticsEnabled *bool  // nil=default (false), true/false=override
+	historyEnabled   *bool // nil=default, true/false=override
+	analyticsEnabled *bool // nil=default (false), true/false=override
 
 	// Cursor positions for each text field
-	namePos      int
-	workdirPos   int
-	editorPos    int
-	outputPos    int
+	namePos    int
+	workdirPos int
+	editorPos  int
+	outputPos  int
 }
 
 // NewProfileEditState creates a new profile edit state

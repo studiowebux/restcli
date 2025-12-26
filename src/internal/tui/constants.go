@@ -12,9 +12,9 @@ const (
 	ModalHeightMarginMed   = 4  // Medium vertical margin (m.height - 4)
 
 	// Viewport Padding and Borders
-	ViewportBorderWidth      = 2  // Width consumed by borders
-	ViewportPaddingHorizontal = 4  // Horizontal padding (left + right)
-	ViewportPaddingVertical   = 2  // Vertical padding (top + bottom)
+	ViewportBorderWidth       = 2 // Width consumed by borders
+	ViewportPaddingHorizontal = 4 // Horizontal padding (left + right)
+	ViewportPaddingVertical   = 2 // Vertical padding (top + bottom)
 
 	// Content Area Offsets
 	// These are calculated offsets used in viewport sizing
@@ -25,13 +25,13 @@ const (
 	MainViewHeightOffset  = 5  // m.height - 5 for main render (status + borders + top visibility)
 
 	// Layout Margins
-	MinimalBorderMargin   = 2  // m.width - 2 or m.height - 2 for minimal borders
-	HelpViewWidthOffset   = 14 // m.width - 14 for help viewport width
+	MinimalBorderMargin = 2  // m.width - 2 or m.height - 2 for minimal borders
+	HelpViewWidthOffset = 14 // m.width - 14 for help viewport width
 
 	// Modal Content Calculations
-	ModalOverheadLines     = 6 // Title (2) + padding (2) + border (2)
-	ModalOverheadMinimal   = 4 // Border + title for minimal modals
-	ModalFooterLines       = 2 // Footer + blank line
+	ModalOverheadLines   = 6 // Title (2) + padding (2) + border (2)
+	ModalOverheadMinimal = 4 // Border + title for minimal modals
+	ModalFooterLines     = 2 // Footer + blank line
 
 	// Buffer Sizes
 	WebSocketMessageBuffer = 100 // Buffer size for WebSocket message channel
