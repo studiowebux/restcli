@@ -57,6 +57,9 @@ var (
 	styleWarning = lipgloss.NewStyle().
 			Foreground(colorYellow)
 
+	styleSearchMatch = lipgloss.NewStyle().
+				Foreground(colorYellow)
+
 	styleSubtle = lipgloss.NewStyle().
 			Foreground(colorGray)
 
@@ -172,13 +175,13 @@ func (m Model) renderMain() string {
 
 	// Fullscreen mode - show only response
 	if m.fullscreen {
-		response := m.renderResponse(m.width-4, m.height-5)
+		response := m.renderResponse(m.width-ViewportPaddingHorizontal, m.height-MainViewHeightOffset)
 		responseBox := lipgloss.NewStyle().
 			Border(lipgloss.ThickBorder()).
 			BorderForeground(colorCyan). // Cyan for focused (fullscreen) panel
-			Width(m.width - 2).
-			Height(m.height - 3). // Leave room for status bar + top border visibility
-			Padding(0).           // No padding inside box border
+			Width(m.width - MinimalBorderMargin).
+			Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
+			Padding(0).                           // No padding inside box border
 			AlignVertical(lipgloss.Top).
 			Render(response)
 
@@ -197,11 +200,11 @@ func (m Model) renderMain() string {
 	if m.width < 100 {
 		sidebarWidth = m.width / 2
 	}
-	responseWidth := m.width - sidebarWidth - 4 // Account for borders
+	responseWidth := m.width - sidebarWidth - ViewportPaddingHorizontal // Account for borders
 
 	// Render components with borders
-	sidebar := m.renderSidebar(sidebarWidth-2, m.height-5) // -5 = -1 (status) -2 (borders) -2 (top visibility)
-	response := m.renderResponse(responseWidth-2, m.height-5)
+	sidebar := m.renderSidebar(sidebarWidth-MinimalBorderMargin, m.height-MainViewHeightOffset) // -5 = -1 (status) -2 (borders) -2 (top visibility)
+	response := m.renderResponse(responseWidth-MinimalBorderMargin, m.height-MainViewHeightOffset)
 
 	// Add borders - highlight the focused panel with cyan, unfocused with gray
 	sidebarBorderColor := colorGray
@@ -216,8 +219,8 @@ func (m Model) renderMain() string {
 		Border(lipgloss.ThickBorder()).
 		BorderForeground(sidebarBorderColor).
 		Width(sidebarWidth).
-		Height(m.height - 3). // Leave room for status bar + top border visibility
-		Padding(0).           // No padding inside box border
+		Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
+		Padding(0).                           // No padding inside box border
 		AlignVertical(lipgloss.Top).
 		Render(sidebar)
 
@@ -225,8 +228,8 @@ func (m Model) renderMain() string {
 		Border(lipgloss.ThickBorder()).
 		BorderForeground(responseBorderColor).
 		Width(responseWidth).
-		Height(m.height - 3). // Leave room for status bar + top border visibility
-		Padding(0).           // No padding inside box border
+		Height(m.height - ModalHeightMargin). // Leave room for status bar + top border visibility
+		Padding(0).                           // No padding inside box border
 		AlignVertical(lipgloss.Top).
 		Render(response)
 
@@ -292,25 +295,28 @@ func (m Model) renderSidebar(width, height int) string {
 		titleStyle = styleTitleFocused
 	}
 	title := "Files"
-	if len(m.tagFilter) > 0 {
-		title = fmt.Sprintf("Files (%s)", strings.Join(m.tagFilter, ","))
+	tagFilter := m.fileExplorer.GetTagFilter()
+	if len(tagFilter) > 0 {
+		title = fmt.Sprintf("Files (%s)", strings.Join(tagFilter, ","))
 	}
 	lines = append(lines, titleStyle.Render(title))
 	lines = append(lines, "")
 
 	// File list
-	pageSize := height - 4 // Reserve space for title, blank lines, footer, and padding
+	pageSize := height - ViewportPaddingHorizontal // Reserve space for title, blank lines, footer, and padding
 	if pageSize < 1 {
 		pageSize = 1
 	}
 
-	endIdx := m.fileOffset + pageSize
-	if endIdx > len(m.files) {
-		endIdx = len(m.files)
+	files := m.fileExplorer.GetFiles()
+	fileOffset := m.fileExplorer.GetScrollOffset()
+	endIdx := fileOffset + pageSize
+	if endIdx > len(files) {
+		endIdx = len(files)
 	}
 
-	for i := m.fileOffset; i < endIdx; i++ {
-		file := m.files[i]
+	for i := fileOffset; i < endIdx; i++ {
+		file := files[i]
 
 		// Hex number
 		hexNum := fmt.Sprintf("%x", i)
@@ -364,31 +370,31 @@ func (m Model) renderSidebar(width, height int) string {
 
 		line := fmt.Sprintf("%s %s%s%s%s", hexNum, methodPrefix, name, styleSubtle.Render(chainIndicator), styleSubtle.Render(tagsSuffix))
 
-		// Check if this file is a search match (only when searching files, not response)
-		isSearchMatch := false
-		if !m.searchInResponseCtx {
-			for _, matchIdx := range m.searchMatches {
-				if i == matchIdx {
-					isSearchMatch = true
-					break
-				}
+		// Apply styling - selected gets green, search matches get yellow
+		fileIndex := m.fileExplorer.GetCurrentIndex()
+		searchMatches := m.fileExplorer.GetSearchMatches()
+		isMatch := false
+		for _, matchIdx := range searchMatches {
+			if matchIdx == i {
+				isMatch = true
+				break
 			}
 		}
 
-		// Apply styling - selected gets green, search matches get yellow
-		if i == m.fileIndex {
+		if i == fileIndex {
 			line = styleSelected.Render(line)
-		} else if isSearchMatch {
-			line = styleWarning.Render(line) // Yellow for search matches
+		} else if isMatch {
+			line = styleSearchMatch.Render(line)
 		}
 
 		lines = append(lines, line)
 	}
 
 	// Footer - show position
-	if len(m.files) > 0 {
+	if len(files) > 0 {
 		lines = append(lines, "")
-		footer := fmt.Sprintf("[%d/%d]", m.fileIndex+1, len(m.files))
+		fileIndex := m.fileExplorer.GetCurrentIndex()
+		footer := fmt.Sprintf("[%d/%d]", fileIndex+1, len(files))
 		lines = append(lines, styleSubtle.Render(footer))
 	} else {
 		lines = append(lines, "")
@@ -558,6 +564,22 @@ func addCursor(text string) string {
 	return text + "█"
 }
 
+// isSuccessMessage returns true if the message indicates a successful operation
+func isSuccessMessage(msg string) bool {
+	return strings.Contains(msg, "✓") ||
+		strings.Contains(msg, "saved") ||
+		strings.Contains(msg, "copied") ||
+		strings.Contains(msg, "Created") ||
+		strings.Contains(msg, "Switched") ||
+		strings.Contains(msg, "Renamed") ||
+		strings.Contains(msg, "Match")
+}
+
+// isWarningMessage returns true if the message indicates a warning
+func isWarningMessage(msg string) bool {
+	return strings.Contains(msg, "exists")
+}
+
 // renderStatusBar renders the status bar at the bottom
 func (m Model) renderStatusBar() string {
 	profile := m.sessionMgr.GetActiveProfile()
@@ -575,9 +597,9 @@ func (m Model) renderStatusBar() string {
 			right += " " + styleError.Render(m.filterError)
 		} else if m.statusMsg != "" {
 			// Show status message (e.g., "Bookmark saved")
-			if strings.Contains(m.statusMsg, "✓") || strings.Contains(m.statusMsg, "saved") {
+			if isSuccessMessage(m.statusMsg) {
 				right += " " + styleSuccess.Render(m.statusMsg)
-			} else if strings.Contains(m.statusMsg, "exists") {
+			} else if isWarningMessage(m.statusMsg) {
 				right += " " + styleWarning.Render(m.statusMsg)
 			} else {
 				right += " " + m.statusMsg
@@ -596,24 +618,21 @@ func (m Model) renderStatusBar() string {
 	case ModeGoto:
 		right = fmt.Sprintf("Goto: :%s", addCursor(m.gotoInput))
 	case ModeSearch:
-		right = fmt.Sprintf("Search: %s", addCursor(m.searchQuery))
+		right = fmt.Sprintf("Search: %s", addCursor(m.searchInput))
 	case ModeTagFilter:
 		// Build cursor string manually for category filter
 		cursorStr := m.inputValue[:m.inputCursor] + "█" + m.inputValue[m.inputCursor:]
 		right = fmt.Sprintf("Category: %s", cursorStr)
 	default:
-		// Show search results if active
-		if len(m.searchMatches) > 0 {
-			right = styleWarning.Render(fmt.Sprintf("Search: %d of %d | ", m.searchIndex+1, len(m.searchMatches)))
-		}
+		// Show search results if active (check both file and response search)
+		_, _, fileMatches := m.fileExplorer.GetSearchInfo()
+		hasSearch := fileMatches > 0 || len(m.responseSearchMatches) > 0
 
 		if m.errorMsg != "" {
 			right += styleError.Render(m.errorMsg)
 		} else if m.statusMsg != "" {
 			// Make success messages green
-			if strings.Contains(m.statusMsg, "saved") || strings.Contains(m.statusMsg, "copied") ||
-				strings.Contains(m.statusMsg, "Created") || strings.Contains(m.statusMsg, "Switched") ||
-				strings.Contains(m.statusMsg, "Renamed") || strings.Contains(m.statusMsg, "Match") {
+			if isSuccessMessage(m.statusMsg) {
 				right += styleSuccess.Render(m.statusMsg)
 			} else {
 				right += m.statusMsg
@@ -622,7 +641,7 @@ func (m Model) renderStatusBar() string {
 			if len(m.fullStatusMsg) > 100 {
 				right += styleSubtle.Render(" [press 'I' for full message]")
 			}
-		} else if len(m.searchMatches) == 0 {
+		} else if !hasSearch {
 			right += styleSubtle.Render("Press / to search | J to filter | ? for help | q to quit")
 		}
 	}
@@ -641,7 +660,7 @@ func (m Model) getFileListHeight() int {
 	// Must match the actual pageSize calculation in renderSidebar
 	// renderSidebar receives: m.height - 5 (from renderMain line 146)
 	// pageSize = height - 4 = (m.height - 5) - 4 = m.height - 9
-	return m.height - 9
+	return m.height - ContentOffsetSidebar
 }
 
 // updateViewport updates the response viewport
@@ -651,36 +670,36 @@ func (m *Model) updateViewport() {
 	var responseWidth int
 	if m.fullscreen {
 		// In fullscreen, use full width
-		responseWidth = m.width - 2 // Just account for borders
+		responseWidth = m.width - MinimalBorderMargin // Just account for borders
 	} else {
 		// In split view, account for sidebar
 		sidebarWidth := max(40, m.width*40/100)
 		if m.width < 100 {
 			sidebarWidth = m.width / 2
 		}
-		responseWidth = m.width - sidebarWidth - 4 // Account for borders
+		responseWidth = m.width - sidebarWidth - ViewportPaddingHorizontal // Account for borders
 	}
 
 	// Viewport width = renderResponse width - content padding
-	m.responseView.Width = responseWidth - 4 // -2 for renderResponse param, -2 for " " prefix padding in content
+	m.responseView.Width = responseWidth - ViewportPaddingHorizontal // -2 for renderResponse param, -2 for " " prefix padding in content
 	// Viewport height calculation:
 	// renderResponse gets: m.height - 5
 	// Applies Height(height): m.height - 5
 	// Content has: title (1) + blank (1) + viewport
 	// So viewport = m.height - 5 - 2 = m.height - 7
-	m.responseView.Height = m.height - 7
+	m.responseView.Height = m.height - ContentOffsetStandard
 
 	// Initialize help viewport
 	// Modal width: m.width - 10, Padding: 2 horizontal each side = 4, Border: included
 	// So viewport width = (m.width - 10) - 4 (horizontal padding) = m.width - 14
-	m.helpView.Width = m.width - 14
+	m.helpView.Width = m.width - HelpViewWidthOffset
 	if m.helpView.Width < 10 {
 		m.helpView.Width = 10
 	}
 	// Modal height: m.height - 4, Padding: 1 vertical each side = 2
 	// Content: title (1) + blank (1) + viewport + blank (1) + footer (1) = viewport + 4
 	// So viewport height = (m.height - 4) - 2 (padding) - 4 (non-viewport lines) = m.height - 10
-	m.helpView.Height = m.height - 10
+	m.helpView.Height = m.height - ContentOffsetHelp
 	if m.helpView.Height < 5 {
 		m.helpView.Height = 5
 	}
@@ -712,6 +731,35 @@ func (m *Model) updateResponseView() {
 		// Otherwise show empty state
 		m.responseContent = ""
 		m.responseView.SetContent("")
+		return
+	}
+
+	// Check if we can use cached content (performance optimization for large responses)
+	cacheValid := m.cachedResponsePtr == m.currentResponse &&
+		m.cachedViewWidth == m.responseView.Width &&
+		m.cachedFilterActive == m.filterActive &&
+		m.cachedSearchActive == m.searchInResponseCtx &&
+		m.cachedShowHeaders == m.showHeaders &&
+		m.cachedShowBody == m.showBody
+
+	if cacheValid && !m.loading {
+		// Use cached content
+		contentStr := m.responseContent
+
+		// Check if we need to re-highlight or can use cached highlighted version
+		if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
+			// Only re-highlight if search matches have changed
+			if len(m.responseSearchMatches) != m.cachedSearchMatchCount || m.cachedHighlightedBody == "" {
+				contentStr = m.highlightSearchMatches(contentStr)
+				m.cachedHighlightedBody = contentStr
+				m.cachedSearchMatchCount = len(m.responseSearchMatches)
+			} else {
+				// Reuse cached highlighted content
+				contentStr = m.cachedHighlightedBody
+			}
+		}
+
+		m.responseView.SetContent(contentStr)
 		return
 	}
 
@@ -909,7 +957,7 @@ func (m *Model) updateResponseView() {
 		if wrapWidth < 40 {
 			wrapWidth = 40
 		}
-		errorText := "Error: " + m.currentResponse.Error
+		errorText := categorizeRequestError(m.currentResponse.Error)
 		wrappedError := wrapText(errorText, wrapWidth)
 		content.WriteString(styleError.Render(wrappedError))
 	}
@@ -917,9 +965,23 @@ func (m *Model) updateResponseView() {
 	contentStr := content.String()
 	m.responseContent = contentStr
 
+	// Update cache tracking
+	m.cachedResponsePtr = m.currentResponse
+	m.cachedViewWidth = m.responseView.Width
+	m.cachedFilterActive = m.filterActive
+	m.cachedSearchActive = m.searchInResponseCtx
+	m.cachedShowHeaders = m.showHeaders
+	m.cachedShowBody = m.showBody
+
 	// Apply search highlighting if we're searching in response
-	if m.searchInResponseCtx && len(m.searchMatches) > 0 {
+	if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
 		contentStr = m.highlightSearchMatches(contentStr)
+		m.cachedHighlightedBody = contentStr
+		m.cachedSearchMatchCount = len(m.responseSearchMatches)
+	} else {
+		// Clear cached highlighting when not searching
+		m.cachedHighlightedBody = ""
+		m.cachedSearchMatchCount = 0
 	}
 
 	m.responseView.SetContent(contentStr)
@@ -931,7 +993,7 @@ func (m *Model) highlightSearchMatches(content string) string {
 
 	// Create a map of line numbers to highlight for faster lookup
 	matchLines := make(map[int]bool)
-	for _, lineNum := range m.searchMatches {
+	for _, lineNum := range m.responseSearchMatches {
 		matchLines[lineNum] = true
 	}
 
@@ -1314,8 +1376,8 @@ func (m Model) renderConfigView() string {
 func (m *Model) updateDocumentationView() {
 	// Set viewport dimensions for the modal (nearly full screen: m.width-6, m.height-3)
 	// Account for: border (2), padding (2), title+blank (2), footer+blank (2) = 8 total
-	m.modalView.Width = m.width - 10  // Modal content width minus padding
-	m.modalView.Height = m.height - 9 // Modal content height with footer
+	m.modalView.Width = m.width - ModalWidthMarginNarrow // Modal content width minus padding
+	m.modalView.Height = m.height - ContentOffsetSidebar // Modal content height with footer
 
 	// Check if we have a request and documentation
 	if m.currentRequest == nil {
@@ -1342,7 +1404,7 @@ func (m *Model) updateDocumentationView() {
 
 	// Helper to render a collapsible section
 	renderSection := func(title string, index int, renderContent func()) {
-		collapsed := m.docCollapsed[index]
+		collapsed := m.docState.GetCollapsed(index)
 		marker := "▼" // Expanded
 		if collapsed {
 			marker = "▶" // Collapsed
@@ -1350,7 +1412,7 @@ func (m *Model) updateDocumentationView() {
 
 		// Highlight if selected
 		line := fmt.Sprintf("%s %s", marker, title)
-		if currentIdx == m.docSelectedIdx {
+		if currentIdx == m.docState.GetSelectedIdx() {
 			line = styleSelected.Render(line)
 			selectedLineNum = strings.Count(content.String(), "\n")
 		} else {
@@ -1393,7 +1455,7 @@ func (m *Model) updateDocumentationView() {
 				line += required
 
 				// Highlight if this parameter is selected
-				if currentIdx == m.docSelectedIdx {
+				if currentIdx == m.docState.GetSelectedIdx() {
 					line = styleSelected.Render(line)
 					selectedLineNum = strings.Count(content.String(), "\n")
 				}
@@ -1417,7 +1479,7 @@ func (m *Model) updateDocumentationView() {
 			for respIdx, resp := range doc.Responses {
 				// Response code and description
 				line := fmt.Sprintf("  %s: %s", styleSuccess.Render(resp.Code), resp.Description)
-				if currentIdx == m.docSelectedIdx {
+				if currentIdx == m.docState.GetSelectedIdx() {
 					line = styleSelected.Render(line)
 					selectedLineNum = strings.Count(content.String(), "\n")
 				}
@@ -1426,24 +1488,18 @@ func (m *Model) updateDocumentationView() {
 
 				// Response fields - lazy rendering (only build tree when response is expanded)
 				if len(resp.Fields) > 0 {
-					responseKey := 100 + respIdx
-					responseFieldsCollapsed := m.docCollapsed[responseKey]
+					responseKey := getCollapseKeyForResponseFields(respIdx)
+					responseFieldsCollapsed := m.docState.GetCollapsed(responseKey)
 
 					if !responseFieldsCollapsed {
-						// Response fields are expanded - use cached tree
-						allFields, ok := m.docFieldTreeCache[respIdx]
-						if !ok {
-							// Build and cache the tree
-							allFields = buildVirtualFieldTree(resp.Fields)
-							m.docFieldTreeCache[respIdx] = allFields
-							m.docChildrenCache[respIdx] = buildHasChildrenCache(allFields)
-						}
-						hasChildrenCache := m.docChildrenCache[respIdx]
+						// Response fields are expanded - get or build cached tree
+						allFields := m.getOrBuildFieldTree(respIdx, resp.Fields)
+						hasChildrenCache := m.docState.GetChildrenCache(respIdx)
 						m.renderResponseFieldsTree(respIdx, "", allFields, hasChildrenCache, &currentIdx, &content, 0, &selectedLineNum)
 					} else {
 						// Response fields are collapsed - show indicator only (no tree building!)
 						line := fmt.Sprintf("    ▶ %d fields", len(resp.Fields))
-						if currentIdx == m.docSelectedIdx {
+						if currentIdx == m.docState.GetSelectedIdx() {
 							line = styleSelected.Render(line)
 							selectedLineNum = strings.Count(content.String(), "\n")
 						}
@@ -1483,8 +1539,8 @@ func (m *Model) updateDocumentationView() {
 // updateInspectView updates the inspect viewport content
 func (m *Model) updateInspectView() {
 	// Set viewport dimensions for the modal (nearly full screen: m.width-6, m.height-3)
-	m.modalView.Width = m.width - 10  // Modal content width minus padding
-	m.modalView.Height = m.height - 9 // Modal content height minus padding, title lines, and footer
+	m.modalView.Width = m.width - ModalWidthMarginNarrow // Modal content width minus padding
+	m.modalView.Height = m.height - ContentOffsetSidebar // Modal content height minus padding, title lines, and footer
 
 	if m.currentRequest == nil {
 		m.modalView.SetContent("No request selected\n\nPress ESC to close")
@@ -1636,9 +1692,10 @@ func (m *Model) updateInspectView() {
 				graph := chain.NewGraph(profile.Workdir)
 
 				// Get current file path
+				currentFileInfo := m.fileExplorer.GetCurrentFile()
 				currentFile := ""
-				if len(m.files) > 0 && m.fileIndex < len(m.files) {
-					currentFile = m.files[m.fileIndex].Path
+				if currentFileInfo != nil {
+					currentFile = currentFileInfo.Path
 				}
 
 				if currentFile != "" {
@@ -1776,36 +1833,38 @@ func (m *Model) updateInspectView() {
 // updateHistoryView updates the history viewport content for split view (Telescope-style)
 func (m *Model) updateHistoryView() {
 	// Calculate dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
-	paneHeight := modalHeight - 4 // Account for borders and padding
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
+	paneHeight := modalHeight - ViewportPaddingHorizontal // Account for borders and padding
 
 	// Adjust viewport widths based on preview visibility
-	if m.historyPreviewVisible {
+	if m.historyState.GetPreviewVisible() {
 		// Split view mode: calculate widths for both panes
-		listWidth := (modalWidth - 3) / 2          // Left pane width
-		previewWidth := modalWidth - listWidth - 3 // Right pane width
+		listWidth := (modalWidth - SplitPaneBorderWidth) / 2          // Left pane width
+		previewWidth := modalWidth - listWidth - SplitPaneBorderWidth // Right pane width
 
 		// Set viewport dimensions for left pane (history list)
-		m.modalView.Width = listWidth - 4   // Account for padding and borders
-		m.modalView.Height = paneHeight - 2 // Account for title
+		m.modalView.Width = listWidth - ViewportPaddingHorizontal // Account for padding and borders
+		m.modalView.Height = paneHeight - ViewportPaddingVertical // Account for title
 
 		// Set viewport dimensions for right pane (response preview)
-		m.historyPreviewView.Width = previewWidth - 4
-		m.historyPreviewView.Height = paneHeight - 2
+		previewView := m.historyState.GetPreviewView()
+		previewView.Width = previewWidth - ViewportPaddingHorizontal
+		previewView.Height = paneHeight - ViewportPaddingVertical
+		m.historyState.SetPreviewView(previewView)
 	} else {
 		// Preview hidden: expand list to full width
-		m.modalView.Width = modalWidth - 4  // Account for padding and borders
-		m.modalView.Height = paneHeight - 2 // Account for title
+		m.modalView.Width = modalWidth - ViewportPaddingHorizontal // Account for padding and borders
+		m.modalView.Height = paneHeight - ViewportPaddingVertical  // Account for title
 	}
 
 	// Build content for left pane (history list)
 	var listContent strings.Builder
-	if len(m.historyEntries) == 0 {
+	if len(m.historyState.GetEntries()) == 0 {
 		listContent.WriteString("No history entries")
 	} else {
 		// Show ALL entries (not just first 10) - viewport handles scrolling
-		for i, entry := range m.historyEntries {
+		for i, entry := range m.historyState.GetEntries() {
 			statusStyle := styleSuccess
 			if entry.ResponseStatus >= 400 {
 				statusStyle = styleError
@@ -1818,7 +1877,7 @@ func (m *Model) updateHistoryView() {
 				statusStyle.Render(fmt.Sprintf("%d", entry.ResponseStatus)))
 
 			// Highlight selected entry
-			if i == m.historyIndex {
+			if i == m.historyState.GetIndex() {
 				line = styleSelected.Render(line)
 			}
 
@@ -1827,10 +1886,10 @@ func (m *Model) updateHistoryView() {
 	}
 
 	// Build content for right pane (response preview) - ONLY if preview is visible
-	if m.historyPreviewVisible {
+	if m.historyState.GetPreviewVisible() {
 		var previewContent strings.Builder
-		if len(m.historyEntries) > 0 && m.historyIndex >= 0 && m.historyIndex < len(m.historyEntries) {
-			entry := m.historyEntries[m.historyIndex]
+		if len(m.historyState.GetEntries()) > 0 && m.historyState.GetIndex() >= 0 && m.historyState.GetIndex() < len(m.historyState.GetEntries()) {
+			entry := m.historyState.GetEntries()[m.historyState.GetIndex()]
 
 			// Show response metadata
 			previewContent.WriteString(fmt.Sprintf("%s %s\n", entry.Method, entry.URL))
@@ -1838,43 +1897,71 @@ func (m *Model) updateHistoryView() {
 			previewContent.WriteString(fmt.Sprintf("Size: %d bytes\n", entry.ResponseSize))
 			previewContent.WriteString(fmt.Sprintf("Time: %s\n\n", entry.Timestamp[:19]))
 
-			// Show response body with JSON formatting and wrapping
-			bodyText := entry.ResponseBody
-			isJSON := false
-
-			// Try to pretty-print JSON
-			var jsonData interface{}
-			if err := json.Unmarshal([]byte(entry.ResponseBody), &jsonData); err == nil {
-				if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
-					bodyText = string(prettyJSON)
-					isJSON = true
-				}
-			}
-
-			// Wrap text to viewport width
-			wrapWidth := m.historyPreviewView.Width
+			// Determine viewport width for wrapping
+			wrapWidth := m.historyState.GetPreviewView().Width
 			if wrapWidth < 40 {
 				wrapWidth = 40
 			}
-			wrappedBody := wrapText(bodyText, wrapWidth)
 
-			// Apply syntax highlighting for JSON
-			if isJSON {
-				profile := m.sessionMgr.GetActiveProfile()
-				wrappedBody = highlightJSON(wrappedBody, profile)
+			// Check cache for final rendered content (includes wrapping + highlighting)
+			if cached, ok := m.historyState.GetRenderedCache(entry.Timestamp, wrapWidth); ok {
+				previewContent.WriteString(cached)
+			} else {
+				// Not cached - perform expensive rendering operations
+				bodyText := entry.ResponseBody
+				isJSON := false
+				isTruncated := false
+
+				// Try to pretty-print JSON first (parse FULL body to check validity)
+				var jsonData interface{}
+				if err := json.Unmarshal([]byte(entry.ResponseBody), &jsonData); err == nil {
+					if prettyJSON, err := json.MarshalIndent(jsonData, "", "  "); err == nil {
+						bodyText = string(prettyJSON)
+						isJSON = true
+					}
+				}
+
+				// Truncate huge formatted bodies to prevent performance issues
+				// 150KB limit for wrapping/highlighting (after JSON formatting)
+				const maxBodySize = 150 * 1024
+				if len(bodyText) > maxBodySize {
+					bodyText = bodyText[:maxBodySize]
+					isTruncated = true
+				}
+
+				// Wrap text to viewport width (expensive for large text)
+				wrappedBody := wrapText(bodyText, wrapWidth)
+
+				// Apply syntax highlighting for JSON (expensive for large text)
+				if isJSON {
+					profile := m.sessionMgr.GetActiveProfile()
+					wrappedBody = highlightJSON(wrappedBody, profile)
+				}
+
+				// Add truncation notice if body was cut
+				if isTruncated {
+					wrappedBody += "\n\n[Response body truncated - showing first 150KB only]"
+				}
+
+				// Cache the final rendered result for this width
+				m.historyState.SetRenderedCache(entry.Timestamp, wrapWidth, wrappedBody)
+
+				previewContent.WriteString(wrappedBody)
 			}
-
-			previewContent.WriteString(wrappedBody)
 		} else {
 			previewContent.WriteString("No history entry selected")
 		}
 
 		// Set preview content (always start from top when selection changes)
-		m.historyPreviewView.SetContent(previewContent.String())
-		m.historyPreviewView.GotoTop()
+		previewView := m.historyState.GetPreviewView()
+		previewView.SetContent(previewContent.String())
+		previewView.GotoTop()
+		m.historyState.SetPreviewView(previewView)
 	} else {
 		// Clear preview content when hidden (security/privacy)
-		m.historyPreviewView.SetContent("")
+		previewView := m.historyState.GetPreviewView()
+		previewView.SetContent("")
+		m.historyState.SetPreviewView(previewView)
 	}
 
 	// Save current scroll positions before updating content
@@ -1882,8 +1969,8 @@ func (m *Model) updateHistoryView() {
 	m.modalView.SetContent(listContent.String())
 
 	// Auto-scroll list to keep selected item visible
-	if len(m.historyEntries) > 0 && m.historyIndex >= 0 {
-		selectedLine := m.historyIndex
+	if len(m.historyState.GetEntries()) > 0 && m.historyState.GetIndex() >= 0 {
+		selectedLine := m.historyState.GetIndex()
 
 		// Ensure selected item is visible in viewport
 		if selectedLine < m.modalView.YOffset {

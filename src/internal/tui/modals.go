@@ -29,8 +29,8 @@ func (m Model) renderHelp() string {
 	helpView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorBlue).
-		Width(m.width - 10).
-		Height(m.height - 4).
+		Width(m.width-ModalWidthMarginNarrow).
+		Height(m.height-ModalHeightMarginMed).
 		Padding(1, 2).
 		Render(fullContent)
 
@@ -47,8 +47,8 @@ func (m Model) renderHelp() string {
 // renderDocumentation renders the documentation viewer modal with collapsible tree structure
 func (m *Model) renderDocumentation() string {
 	// Use nearly full screen but leave small margin
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	// Footer with keybinds
 	// Note: viewport dimensions are set in updateDocumentationView()
@@ -85,88 +85,68 @@ func min(a, b int) int {
 // renderHistory renders the history viewer modal with split view (Telescope-style)
 func (m *Model) renderHistory() string {
 	// Use nearly full screen but leave small margin
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
-	paneHeight := modalHeight - 4 // Account for borders and padding
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
-	var mainView string
-
-	if m.historyPreviewVisible {
-		// Split view mode: show both list and preview
-		listWidth := (modalWidth - 3) / 2          // Left pane: history list
-		previewWidth := modalWidth - listWidth - 3 // Right pane: response preview
-
-		// Left pane: History list
-		leftPane := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
-			Width(listWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(styleTitle.Render("History") + "\n" + m.modalView.View())
-
-		// Right pane: Response preview (content populated by updateHistoryView)
-		rightPane := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorGreen).
-			Width(previewWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(styleTitle.Render("Response Preview") + "\n" + m.historyPreviewView.View())
-
-		// Join panes horizontally (Telescope-style split)
-		mainView = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			leftPane,
-			rightPane,
-		)
-	} else {
-		// Preview hidden: expand list to full width
-		mainView = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
-			Width(modalWidth).
-			Height(paneHeight).
-			Padding(0, 1).
-			Render(styleTitle.Render("History") + "\n" + m.modalView.View())
-	}
-
-	// Add footer with instructions and scroll position
+	// Build footer with instructions and scroll position
 	var footerText string
-	if m.historySearchActive {
+	if m.historyState.GetSearchActive() {
 		// Show search input when active
-		footerText = fmt.Sprintf("Search: %s█", m.historySearchQuery)
-		if len(m.historyEntries) > 0 {
-			footerText += fmt.Sprintf(" [%d results]", len(m.historyEntries))
+		footerText = fmt.Sprintf("Search: %s█", m.historyState.GetSearchQuery())
+		if len(m.historyState.GetEntries()) > 0 {
+			footerText += fmt.Sprintf(" [%d results]", len(m.historyState.GetEntries()))
 		}
 	} else {
-		footerText = "/: Search | ↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
+		footerText = "TAB: Switch Focus | /: Search | ↑/↓ j/k: Navigate | Enter: Load | r: Replay | p: Toggle Preview | C: Clear All | ESC/H/q: Close"
 
 		// Add scroll indicator if there are entries
-		if len(m.historyEntries) > 0 {
-			current := m.historyIndex + 1
-			total := len(m.historyEntries)
+		if len(m.historyState.GetEntries()) > 0 {
+			current := m.historyState.GetIndex() + 1
+			total := len(m.historyState.GetEntries())
 			percentage := int(float64(current) / float64(total) * 100)
 			scrollInfo := fmt.Sprintf(" [%d/%d] (%d%%)", current, total, percentage)
 			footerText += scrollInfo
 		}
 	}
 
-	footer := styleSubtle.Render(footerText)
+	// Determine border colors based on focus
+	listBorderColor := colorGray
+	previewBorderColor := colorGray
+	leftIsFocused := false
+	rightIsFocused := false
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		mainView,
-		"\n"+footer,
-	)
+	if m.historyState.GetFocusedPane() == "list" {
+		listBorderColor = colorCyan
+		leftIsFocused = true
+	} else if m.historyState.GetFocusedPane() == "preview" {
+		previewBorderColor = colorCyan
+		rightIsFocused = true
+	}
 
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		content,
-	)
+	// When in single pane mode, always focus the list
+	if !m.historyState.GetPreviewVisible() {
+		listBorderColor = colorCyan
+		leftIsFocused = true
+	}
+
+	// Configure split-pane modal
+	cfg := SplitPaneConfig{
+		ModalWidth:       modalWidth,
+		ModalHeight:      modalHeight,
+		IsSplitView:      m.historyState.GetPreviewVisible(),
+		LeftTitle:        "History",
+		LeftContent:      m.modalView.View(),
+		LeftBorderColor:  listBorderColor,
+		LeftIsFocused:    leftIsFocused,
+		RightTitle:       "Response Preview",
+		RightContent:     m.historyState.GetPreviewView().View(),
+		RightBorderColor: previewBorderColor,
+		RightIsFocused:   rightIsFocused,
+		Footer:           footerText,
+		LeftWidthRatio:   SplitViewEqual,
+	}
+
+	return renderSplitPaneModal(cfg, m.width, m.height)
 }
 
 // renderModal renders a generic modal dialog with scrollable content
@@ -183,8 +163,8 @@ func (m *Model) renderModalWithFooter(title, content, footer string, width, heig
 // Pass selectedLine=-1 to preserve existing scroll position
 func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, width, height, selectedLine int) string {
 	// For small terminals, use almost full screen
-	maxWidth := m.width - 4   // Leave minimal margin
-	maxHeight := m.height - 2 // Leave minimal margin
+	maxWidth := m.width - ViewportPaddingHorizontal // Leave minimal margin
+	maxHeight := m.height - ModalHeightMarginSmall  // Leave minimal margin
 
 	// Adjust requested dimensions to fit screen
 	if width > maxWidth {
@@ -209,16 +189,16 @@ func (m *Model) renderModalWithFooterAndScroll(title, content, footer string, wi
 	if footer != "" {
 		footerLines = 2
 	}
-	contentHeight := height - 6 - footerLines
+	contentHeight := height - ModalOverheadLines - footerLines
 	if contentHeight < 1 {
 		// For very small terminals, reduce overhead
-		contentHeight = height - 4 - footerLines // Just border and title
+		contentHeight = height - ModalOverheadMinimal - footerLines // Just border and title
 		if contentHeight < 1 {
 			contentHeight = 1
 		}
 	}
 
-	m.modalView.Width = width - 4 // Account for horizontal padding (1 left + 1 right) * 2 for border
+	m.modalView.Width = width - ViewportPaddingHorizontal // Account for horizontal padding (1 left + 1 right) * 2 for border
 	if m.modalView.Width < 10 {
 		m.modalView.Width = 10
 	}
@@ -295,8 +275,8 @@ func (m *Model) renderShellErrorsModal() string {
 	}
 
 	// Use existing modal helper with footer
-	width := m.width - 6
-	height := m.height - 4
+	width := m.width - ModalWidthMargin
+	height := m.height - ModalOverheadMinimal
 	if width < 40 {
 		width = 40
 	}
@@ -314,8 +294,8 @@ func (m *Model) updateShellErrorsView() {
 
 func (m *Model) renderErrorDetailModal() string {
 	// Wrap error message for better readability
-	width := m.width - 6
-	height := m.height - 4
+	width := m.width - ModalWidthMargin
+	height := m.height - ModalOverheadMinimal
 	if width < 50 {
 		width = 50
 	}
@@ -324,7 +304,7 @@ func (m *Model) renderErrorDetailModal() string {
 	}
 
 	// Wrap the error text to fit the modal width
-	contentWidth := width - 4 // Account for modal padding/borders
+	contentWidth := width - ViewportPaddingHorizontal // Account for modal padding/borders
 	wrappedError := wrapText(m.fullErrorMsg, contentWidth)
 	content := styleError.Render(wrappedError)
 
@@ -333,8 +313,8 @@ func (m *Model) renderErrorDetailModal() string {
 
 func (m *Model) renderStatusDetailModal() string {
 	// Wrap status message for better readability
-	width := m.width - 6
-	height := m.height - 2
+	width := m.width - ModalWidthMargin
+	height := m.height - ModalHeightMarginSmall
 	if width < 50 {
 		width = 50
 	}
@@ -343,7 +323,7 @@ func (m *Model) renderStatusDetailModal() string {
 	}
 
 	// Wrap the status text to fit the modal width
-	contentWidth := width - 4 // Account for modal padding/borders
+	contentWidth := width - ViewportPaddingHorizontal // Account for modal padding/borders
 	wrappedStatus := wrapText(m.fullStatusMsg, contentWidth)
 	content := wrappedStatus
 

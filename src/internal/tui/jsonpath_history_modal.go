@@ -6,167 +6,113 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/jsonpath"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // handleJSONPathHistoryKeys handles keyboard input in JSONPath history mode
 func (m *Model) handleJSONPathHistoryKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle search mode input first
+	if m.jsonpathHistorySearching {
+		switch msg.String() {
+		case "esc":
+			// Exit search mode
+			m.jsonpathHistorySearching = false
+			m.jsonpathHistorySearch = ""
+			m.loadFilteredBookmarks()
+			m.jsonpathHistoryCursor = 0
+			return nil
+
+		case "backspace":
+			// Delete search character
+			if len(m.jsonpathHistorySearch) > 0 {
+				m.jsonpathHistorySearch = m.jsonpathHistorySearch[:len(m.jsonpathHistorySearch)-1]
+				m.loadFilteredBookmarks()
+				if m.jsonpathHistoryCursor >= len(m.jsonpathHistoryMatches) && len(m.jsonpathHistoryMatches) > 0 {
+					m.jsonpathHistoryCursor = len(m.jsonpathHistoryMatches) - 1
+				}
+			}
+			return nil
+
+		case "enter":
+			// Exit search mode
+			m.jsonpathHistorySearching = false
+			return nil
+
+		default:
+			// All other characters are typed into search
+			if len(msg.String()) == 1 && msg.Type == tea.KeyRunes {
+				m.jsonpathHistorySearch += msg.String()
+				m.loadFilteredBookmarks()
+				m.jsonpathHistoryCursor = 0
+			}
+			return nil
+		}
+	}
+
+	// Not in search mode - handle special keys
 	switch msg.String() {
-	case "esc":
-		// Exit search mode or close modal
-		if m.jsonpathHistorySearching {
-			m.jsonpathHistorySearching = false
-			m.jsonpathHistorySearch = ""
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
-		} else {
-			// Close modal and return to filter editing
-			m.mode = ModeNormal
-			m.filterEditing = true
-			m.jsonpathHistorySearch = ""
-			m.jsonpathHistorySearching = false
-			m.errorMsg = ""
-		}
-
-	case "q":
-		// Close modal (only when not searching, as 'q' is a valid search char)
-		if !m.jsonpathHistorySearching {
-			m.mode = ModeNormal
-			m.filterEditing = true
-			m.jsonpathHistorySearch = ""
-			m.jsonpathHistorySearching = false
-			m.errorMsg = ""
-		} else {
-			// In search mode, 'q' is typed into search
-			m.jsonpathHistorySearch += "q"
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
-		}
-
 	case "/":
 		// Enter search mode
 		m.jsonpathHistorySearching = true
+		return nil
 
-	case "backspace":
-		// Handle search input deletion
-		if m.jsonpathHistorySearching && len(m.jsonpathHistorySearch) > 0 {
-			m.jsonpathHistorySearch = m.jsonpathHistorySearch[:len(m.jsonpathHistorySearch)-1]
-			m.loadFilteredBookmarks()
-			if m.jsonpathHistoryCursor >= len(m.jsonpathHistoryMatches) && len(m.jsonpathHistoryMatches) > 0 {
-				m.jsonpathHistoryCursor = len(m.jsonpathHistoryMatches) - 1
-			}
-		}
-
-	case "j", "down":
-		if !m.jsonpathHistorySearching && len(m.jsonpathHistoryMatches) > 0 {
-			m.jsonpathHistoryCursor = (m.jsonpathHistoryCursor + 1) % len(m.jsonpathHistoryMatches)
-		}
-
-	case "k", "up":
-		if !m.jsonpathHistorySearching && len(m.jsonpathHistoryMatches) > 0 {
-			m.jsonpathHistoryCursor = (m.jsonpathHistoryCursor - 1 + len(m.jsonpathHistoryMatches)) % len(m.jsonpathHistoryMatches)
-		}
-
-	case "g":
-		if !m.jsonpathHistorySearching {
-			// Go to top
-			if m.gPressed {
-				m.jsonpathHistoryCursor = 0
-				m.gPressed = false
-			} else {
-				m.gPressed = true
-			}
-		} else {
-			// In search mode, 'g' is typed into search
-			m.jsonpathHistorySearch += "g"
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
-		}
-
-	case "G":
-		if !m.jsonpathHistorySearching {
-			// Go to bottom
-			if len(m.jsonpathHistoryMatches) > 0 {
-				m.jsonpathHistoryCursor = len(m.jsonpathHistoryMatches) - 1
-			}
-			m.gPressed = false
-		} else {
-			// In search mode, 'G' is typed into search
-			m.jsonpathHistorySearch += "G"
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
-		}
+	case "q":
+		// Close modal
+		m.mode = ModeNormal
+		m.filterEditing = true
+		m.jsonpathHistorySearch = ""
+		m.jsonpathHistorySearching = false
+		m.errorMsg = ""
+		return nil
 
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-		if !m.jsonpathHistorySearching {
-			// Quick select by number (1-9)
-			num := int(msg.String()[0] - '0')
-			index := num - 1
-			if index < len(m.jsonpathHistoryMatches) {
-				m.jsonpathHistoryCursor = index
-				msg.Type = tea.KeyEnter
-				return m.handleJSONPathHistoryKeys(tea.KeyMsg{Type: tea.KeyEnter})
-			}
-		} else {
-			// In search mode, numbers are typed into search
-			m.jsonpathHistorySearch += msg.String()
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
+		// Quick select by number (1-9)
+		num := int(msg.String()[0] - '0')
+		index := num - 1
+		if index < len(m.jsonpathHistoryMatches) {
+			m.jsonpathHistoryCursor = index
+			msg.Type = tea.KeyEnter
+			return m.handleJSONPathHistoryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 		}
+		return nil
 
 	case "0":
-		if !m.jsonpathHistorySearching {
-			// Quick select 10th item
-			index := 9
-			if index < len(m.jsonpathHistoryMatches) {
-				m.jsonpathHistoryCursor = index
-				msg.Type = tea.KeyEnter
-				return m.handleJSONPathHistoryKeys(tea.KeyMsg{Type: tea.KeyEnter})
-			}
-		} else {
-			// In search mode, '0' is typed into search
-			m.jsonpathHistorySearch += "0"
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
+		// Quick select 10th item
+		index := 9
+		if index < len(m.jsonpathHistoryMatches) {
+			m.jsonpathHistoryCursor = index
+			msg.Type = tea.KeyEnter
+			return m.handleJSONPathHistoryKeys(tea.KeyMsg{Type: tea.KeyEnter})
 		}
+		return nil
 
 	case "d", "delete":
-		if !m.jsonpathHistorySearching {
-			// Delete selected bookmark
-			if len(m.jsonpathHistoryMatches) == 0 {
-				m.errorMsg = "No bookmarks to delete"
-				return nil
-			}
-
-			selectedBookmark := m.jsonpathHistoryMatches[m.jsonpathHistoryCursor]
-			if err := m.bookmarkManager.Delete(selectedBookmark.ID); err != nil {
-				m.errorMsg = fmt.Sprintf("Failed to delete bookmark: %v", err)
-				return nil
-			}
-
-			// Reload bookmarks
-			m.loadFilteredBookmarks()
-
-			// Adjust cursor if needed
-			if m.jsonpathHistoryCursor >= len(m.jsonpathHistoryMatches) && len(m.jsonpathHistoryMatches) > 0 {
-				m.jsonpathHistoryCursor = len(m.jsonpathHistoryMatches) - 1
-			}
-
-			m.statusMsg = "Bookmark deleted"
-			m.errorMsg = ""
-		} else {
-			// In search mode, 'd' is typed into search
-			m.jsonpathHistorySearch += "d"
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
-		}
-
-	case "enter":
-		// Apply selected bookmark to filter (exit search mode first if active)
-		if m.jsonpathHistorySearching {
-			m.jsonpathHistorySearching = false
+		// Delete selected bookmark
+		if len(m.jsonpathHistoryMatches) == 0 {
+			m.errorMsg = "No bookmarks to delete"
 			return nil
 		}
 
+		selectedBookmark := m.jsonpathHistoryMatches[m.jsonpathHistoryCursor]
+		if err := m.bookmarkManager.Delete(selectedBookmark.ID); err != nil {
+			m.errorMsg = fmt.Sprintf("Failed to delete bookmark: %v", err)
+			return nil
+		}
+
+		// Reload bookmarks
+		m.loadFilteredBookmarks()
+
+		// Adjust cursor if needed
+		if m.jsonpathHistoryCursor >= len(m.jsonpathHistoryMatches) && len(m.jsonpathHistoryMatches) > 0 {
+			m.jsonpathHistoryCursor = len(m.jsonpathHistoryMatches) - 1
+		}
+
+		m.statusMsg = "Bookmark deleted"
+		m.errorMsg = ""
+		return nil
+
+	case "enter":
+		// Apply selected bookmark to filter
 		if len(m.jsonpathHistoryMatches) == 0 {
 			m.errorMsg = "No bookmarks available"
 			return nil
@@ -181,19 +127,51 @@ func (m *Model) handleJSONPathHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		m.jsonpathHistorySearching = false
 		m.statusMsg = "Bookmark loaded"
 		m.errorMsg = ""
+		return nil
+	}
 
-	default:
-		// Handle search input only when in search mode
-		if m.jsonpathHistorySearching && len(msg.String()) == 1 && msg.Type == tea.KeyRunes {
-			m.jsonpathHistorySearch += msg.String()
-			m.loadFilteredBookmarks()
-			m.jsonpathHistoryCursor = 0
-		} else if !m.jsonpathHistorySearching {
-			// Reset 'g' press on any other key when not searching
-			m.gPressed = false
+	// Use registry for navigation
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextModal, msg.String())
+	if partial {
+		return nil
+	}
+	if !ok {
+		// Reset 'g' press on any other key
+		m.gPressed = false
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		// Close modal and return to filter editing
+		m.mode = ModeNormal
+		m.filterEditing = true
+		m.jsonpathHistorySearch = ""
+		m.jsonpathHistorySearching = false
+		m.errorMsg = ""
+
+	case keybinds.ActionNavigateDown:
+		if len(m.jsonpathHistoryMatches) > 0 {
+			m.jsonpathHistoryCursor = (m.jsonpathHistoryCursor + 1) % len(m.jsonpathHistoryMatches)
+		}
+
+	case keybinds.ActionNavigateUp:
+		if len(m.jsonpathHistoryMatches) > 0 {
+			m.jsonpathHistoryCursor = (m.jsonpathHistoryCursor - 1 + len(m.jsonpathHistoryMatches)) % len(m.jsonpathHistoryMatches)
+		}
+
+	case keybinds.ActionGoToTop:
+		// Go to top (triggered by gg)
+		m.jsonpathHistoryCursor = 0
+
+	case keybinds.ActionGoToBottom:
+		// Go to bottom
+		if len(m.jsonpathHistoryMatches) > 0 {
+			m.jsonpathHistoryCursor = len(m.jsonpathHistoryMatches) - 1
 		}
 	}
 
+	m.gPressed = false
 	return nil
 }
 

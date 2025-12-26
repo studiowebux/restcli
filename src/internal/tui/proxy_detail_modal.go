@@ -7,14 +7,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/proxy"
 )
 
 // updateProxyDetailView updates the proxy detail modal viewport content
 func (m *Model) updateProxyDetailView() {
 	// Set viewport dimensions for the modal
-	m.modalView.Width = m.width - 10  // Modal content width minus padding
-	m.modalView.Height = m.height - 9 // Modal content height minus padding, title lines, and footer
+	m.modalView.Width = m.width - ModalWidthMarginNarrow
+	m.modalView.Height = m.height - ContentOffsetLarge
 
 	// Build and set content
 	m.modalView.SetContent(m.buildProxyDetailContent())
@@ -22,17 +23,17 @@ func (m *Model) updateProxyDetailView() {
 
 // renderProxyDetailModal renders the detailed view of a single proxy request
 func (m Model) renderProxyDetailModal() string {
-	if m.proxySelectedIndex < 0 || m.proxySelectedIndex >= len(m.proxyLogs) {
+	if m.proxyServerState.GetSelectedIndex() < 0 || m.proxyServerState.GetSelectedIndex() >= len(m.proxyServerState.GetLogs()) {
 		return "No request selected"
 	}
 
-	log := m.proxyLogs[m.proxySelectedIndex]
+	log := m.proxyServerState.GetLogs()[m.proxyServerState.GetSelectedIndex()]
 
 	// Fixed footer for keybinds
 	footer := styleSubtle.Render("↑/↓ scroll | Ctrl+d/u half page | g/G top/bottom | ESC close")
 
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	detailView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -53,11 +54,11 @@ func (m Model) renderProxyDetailModal() string {
 
 // buildProxyDetailContent builds the content for the proxy detail modal
 func (m *Model) buildProxyDetailContent() string {
-	if m.proxySelectedIndex < 0 || m.proxySelectedIndex >= len(m.proxyLogs) {
+	if m.proxyServerState.GetSelectedIndex() < 0 || m.proxyServerState.GetSelectedIndex() >= len(m.proxyServerState.GetLogs()) {
 		return "No request selected"
 	}
 
-	log := m.proxyLogs[m.proxySelectedIndex]
+	log := m.proxyServerState.GetLogs()[m.proxyServerState.GetSelectedIndex()]
 	var content strings.Builder
 
 	// Request line
@@ -158,33 +159,39 @@ func (m *Model) buildProxyDetailContent() string {
 
 // handleProxyDetailKeys handles key events in proxy detail mode
 func (m *Model) handleProxyDetailKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q":
-		m.mode = ModeProxyViewer
+	// Use registry for all navigation and close
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
 		return nil
+	}
 
-	case "up", "k":
+	switch action {
+	case keybinds.ActionCloseModal:
+		// Go back to proxy viewer instead of normal mode
+		m.mode = ModeProxyViewer
+
+	case keybinds.ActionNavigateUp:
 		m.modalView.ScrollUp(1)
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		m.modalView.ScrollDown(1)
 
-	case "ctrl+u":
+	case keybinds.ActionHalfPageUp:
 		m.modalView.HalfViewUp()
 
-	case "ctrl+d":
+	case keybinds.ActionHalfPageDown:
 		m.modalView.HalfViewDown()
 
-	case "pgup":
+	case keybinds.ActionPageUp:
 		m.modalView.PageUp()
 
-	case "pgdown":
+	case keybinds.ActionPageDown:
 		m.modalView.PageDown()
 
-	case "g", "home":
+	case keybinds.ActionGoToTop:
 		m.modalView.GotoTop()
 
-	case "G", "end":
+	case keybinds.ActionGoToBottom:
 		m.modalView.GotoBottom()
 	}
 

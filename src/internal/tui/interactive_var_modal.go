@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // initInteractiveVarPrompt initializes the state for the current variable prompt
@@ -59,7 +60,7 @@ func (m *Model) initInteractiveVarPrompt() {
 
 // handleInteractiveVariablePromptKeys handles key input for interactive variable prompt modal
 func (m *Model) handleInteractiveVariablePromptKeys(msg tea.KeyMsg) tea.Cmd {
-	// Handle mode-specific keys first
+	// Handle select mode keys first (special - dual key bindings)
 	if m.interactiveVarMode == "select" {
 		switch msg.String() {
 		case "up", "k":
@@ -97,7 +98,7 @@ func (m *Model) handleInteractiveVariablePromptKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Handle common keys
+	// Handle common keys (esc, enter)
 	switch msg.String() {
 	case "esc":
 		// Cancel - clear the queue and go back to normal mode
@@ -113,52 +114,8 @@ func (m *Model) handleInteractiveVariablePromptKeys(msg tea.KeyMsg) tea.Cmd {
 
 	// Text input keys only apply in input mode
 	if m.interactiveVarMode == "input" {
-		switch msg.String() {
-		case "left":
-			if m.interactiveVarCursor > 0 {
-				m.interactiveVarCursor--
-			}
-			return nil
-
-		case "right":
-			if m.interactiveVarCursor < len(m.interactiveVarInput) {
-				m.interactiveVarCursor++
-			}
-			return nil
-
-		case "home", "ctrl+a":
-			m.interactiveVarCursor = 0
-			return nil
-
-		case "end", "ctrl+e":
-			m.interactiveVarCursor = len(m.interactiveVarInput)
-			return nil
-
-		case "backspace":
-			if m.interactiveVarCursor > 0 {
-				m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor-1] + m.interactiveVarInput[m.interactiveVarCursor:]
-				m.interactiveVarCursor--
-			}
-			return nil
-
-		case "delete":
-			if m.interactiveVarCursor < len(m.interactiveVarInput) {
-				m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor] + m.interactiveVarInput[m.interactiveVarCursor+1:]
-			}
-			return nil
-
-		case "ctrl+u":
-			// Clear from cursor to beginning
-			m.interactiveVarInput = m.interactiveVarInput[m.interactiveVarCursor:]
-			m.interactiveVarCursor = 0
-			return nil
-
-		case "ctrl+k":
-			// Clear from cursor to end
-			m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor]
-			return nil
-
-		case "ctrl+w":
+		// Handle ctrl+w specially (delete word - not in registry)
+		if msg.String() == "ctrl+w" {
 			// Delete word before cursor
 			if m.interactiveVarCursor == 0 {
 				return nil
@@ -174,8 +131,11 @@ func (m *Model) handleInteractiveVariablePromptKeys(msg tea.KeyMsg) tea.Cmd {
 			m.interactiveVarInput = m.interactiveVarInput[:newCursor] + m.interactiveVarInput[m.interactiveVarCursor:]
 			m.interactiveVarCursor = newCursor
 			return nil
+		}
 
-		default:
+		// Use registry for text input actions
+		action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+		if !ok {
 			// Handle character input
 			if len(msg.String()) == 1 {
 				// Insert character at cursor position
@@ -185,6 +145,44 @@ func (m *Model) handleInteractiveVariablePromptKeys(msg tea.KeyMsg) tea.Cmd {
 				m.interactiveVarCursor++
 			}
 			return nil
+		}
+
+		switch action {
+		case keybinds.ActionTextMoveLeft:
+			if m.interactiveVarCursor > 0 {
+				m.interactiveVarCursor--
+			}
+
+		case keybinds.ActionTextMoveRight:
+			if m.interactiveVarCursor < len(m.interactiveVarInput) {
+				m.interactiveVarCursor++
+			}
+
+		case keybinds.ActionTextMoveHome:
+			m.interactiveVarCursor = 0
+
+		case keybinds.ActionTextMoveEnd:
+			m.interactiveVarCursor = len(m.interactiveVarInput)
+
+		case keybinds.ActionTextBackspace:
+			if m.interactiveVarCursor > 0 {
+				m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor-1] + m.interactiveVarInput[m.interactiveVarCursor:]
+				m.interactiveVarCursor--
+			}
+
+		case keybinds.ActionTextDelete:
+			if m.interactiveVarCursor < len(m.interactiveVarInput) {
+				m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor] + m.interactiveVarInput[m.interactiveVarCursor+1:]
+			}
+
+		case keybinds.ActionTextClearBefore:
+			// Clear from cursor to beginning (ctrl+u)
+			m.interactiveVarInput = m.interactiveVarInput[m.interactiveVarCursor:]
+			m.interactiveVarCursor = 0
+
+		case keybinds.ActionTextClearAfter:
+			// Clear from cursor to end (ctrl+k)
+			m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor]
 		}
 	}
 

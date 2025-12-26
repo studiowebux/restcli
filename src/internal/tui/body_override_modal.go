@@ -6,36 +6,18 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // handleBodyOverrideKeys handles key input for body override modal
 func (m *Model) handleBodyOverrideKeys(msg tea.KeyMsg) tea.Cmd {
+	// Handle special keys not in registry (multiline editor with custom behavior)
 	switch msg.String() {
-	case "esc":
-		// Cancel - discard changes
-		m.mode = ModeNormal
-		m.bodyOverrideInput = ""
-		m.bodyOverrideCursor = 0
-		m.statusMsg = "Body override cancelled"
-		return nil
-
 	case "ctrl+s", "ctrl+enter":
 		// Save and return to normal mode
 		m.bodyOverride = m.bodyOverrideInput
 		m.mode = ModeNormal
 		m.statusMsg = "Body override applied (will be used for next request)"
-		return nil
-
-	case "left":
-		if m.bodyOverrideCursor > 0 {
-			m.bodyOverrideCursor--
-		}
-		return nil
-
-	case "right":
-		if m.bodyOverrideCursor < len(m.bodyOverrideInput) {
-			m.bodyOverrideCursor++
-		}
 		return nil
 
 	case "up":
@@ -92,58 +74,6 @@ func (m *Model) handleBodyOverrideKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case "home", "ctrl+a":
-		// Move to start of current line
-		lines := strings.Split(m.bodyOverrideInput[:m.bodyOverrideCursor], "\n")
-		if len(lines) > 0 {
-			currentLinePos := len(lines[len(lines)-1])
-			m.bodyOverrideCursor -= currentLinePos
-		}
-		return nil
-
-	case "end", "ctrl+e":
-		// Move to end of current line
-		remaining := m.bodyOverrideInput[m.bodyOverrideCursor:]
-		if idx := strings.Index(remaining, "\n"); idx != -1 {
-			m.bodyOverrideCursor += idx
-		} else {
-			m.bodyOverrideCursor = len(m.bodyOverrideInput)
-		}
-		return nil
-
-	case "backspace":
-		if m.bodyOverrideCursor > 0 {
-			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor-1] + m.bodyOverrideInput[m.bodyOverrideCursor:]
-			m.bodyOverrideCursor--
-		}
-		return nil
-
-	case "delete":
-		if m.bodyOverrideCursor < len(m.bodyOverrideInput) {
-			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor] + m.bodyOverrideInput[m.bodyOverrideCursor+1:]
-		}
-		return nil
-
-	case "ctrl+u":
-		// Clear from cursor to start of line
-		lines := strings.Split(m.bodyOverrideInput[:m.bodyOverrideCursor], "\n")
-		if len(lines) > 0 {
-			currentLinePos := len(lines[len(lines)-1])
-			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor-currentLinePos] + m.bodyOverrideInput[m.bodyOverrideCursor:]
-			m.bodyOverrideCursor -= currentLinePos
-		}
-		return nil
-
-	case "ctrl+k":
-		// Clear from cursor to end of line
-		remaining := m.bodyOverrideInput[m.bodyOverrideCursor:]
-		if idx := strings.Index(remaining, "\n"); idx != -1 {
-			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor] + remaining[idx:]
-		} else {
-			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor]
-		}
-		return nil
-
 	case "enter":
 		// Insert newline
 		m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor] + "\n" + m.bodyOverrideInput[m.bodyOverrideCursor:]
@@ -155,8 +85,11 @@ func (m *Model) handleBodyOverrideKeys(msg tea.KeyMsg) tea.Cmd {
 		m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor] + "  " + m.bodyOverrideInput[m.bodyOverrideCursor:]
 		m.bodyOverrideCursor += 2
 		return nil
+	}
 
-	default:
+	// Use registry for text input actions
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if !ok {
 		// Handle regular character input
 		if len(msg.String()) == 1 {
 			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor] + msg.String() + m.bodyOverrideInput[m.bodyOverrideCursor:]
@@ -164,6 +97,73 @@ func (m *Model) handleBodyOverrideKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	}
+
+	switch action {
+	case keybinds.ActionTextCancel:
+		// Cancel - discard changes
+		m.mode = ModeNormal
+		m.bodyOverrideInput = ""
+		m.bodyOverrideCursor = 0
+		m.statusMsg = "Body override cancelled"
+
+	case keybinds.ActionTextMoveLeft:
+		if m.bodyOverrideCursor > 0 {
+			m.bodyOverrideCursor--
+		}
+
+	case keybinds.ActionTextMoveRight:
+		if m.bodyOverrideCursor < len(m.bodyOverrideInput) {
+			m.bodyOverrideCursor++
+		}
+
+	case keybinds.ActionTextMoveHome:
+		// Move to start of current line
+		lines := strings.Split(m.bodyOverrideInput[:m.bodyOverrideCursor], "\n")
+		if len(lines) > 0 {
+			currentLinePos := len(lines[len(lines)-1])
+			m.bodyOverrideCursor -= currentLinePos
+		}
+
+	case keybinds.ActionTextMoveEnd:
+		// Move to end of current line
+		remaining := m.bodyOverrideInput[m.bodyOverrideCursor:]
+		if idx := strings.Index(remaining, "\n"); idx != -1 {
+			m.bodyOverrideCursor += idx
+		} else {
+			m.bodyOverrideCursor = len(m.bodyOverrideInput)
+		}
+
+	case keybinds.ActionTextBackspace:
+		if m.bodyOverrideCursor > 0 {
+			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor-1] + m.bodyOverrideInput[m.bodyOverrideCursor:]
+			m.bodyOverrideCursor--
+		}
+
+	case keybinds.ActionTextDelete:
+		if m.bodyOverrideCursor < len(m.bodyOverrideInput) {
+			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor] + m.bodyOverrideInput[m.bodyOverrideCursor+1:]
+		}
+
+	case keybinds.ActionTextClearBefore:
+		// Clear from cursor to start of line (ctrl+u)
+		lines := strings.Split(m.bodyOverrideInput[:m.bodyOverrideCursor], "\n")
+		if len(lines) > 0 {
+			currentLinePos := len(lines[len(lines)-1])
+			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor-currentLinePos] + m.bodyOverrideInput[m.bodyOverrideCursor:]
+			m.bodyOverrideCursor -= currentLinePos
+		}
+
+	case keybinds.ActionTextClearAfter:
+		// Clear from cursor to end of line (ctrl+k)
+		remaining := m.bodyOverrideInput[m.bodyOverrideCursor:]
+		if idx := strings.Index(remaining, "\n"); idx != -1 {
+			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor] + remaining[idx:]
+		} else {
+			m.bodyOverrideInput = m.bodyOverrideInput[:m.bodyOverrideCursor]
+		}
+	}
+
+	return nil
 }
 
 // renderBodyOverrideModal renders the body override editor modal

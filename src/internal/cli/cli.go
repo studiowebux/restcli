@@ -103,7 +103,7 @@ func Run(opts RunOptions) error {
 		return fmt.Errorf("no requests found in file: %s", filePath)
 	}
 
-	// Use first request (TODO: support selecting specific request by name)
+	// Use first request (TODO(#TODO-003): support selecting specific request by name - See TODO.md for details)
 	request := requests[0]
 
 	// Check if confirmation is required

@@ -14,6 +14,7 @@ import (
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/history"
 	"github.com/studiowebux/restcli/internal/jsonpath"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
@@ -47,37 +48,88 @@ func New(mgr *session.Manager, version string) (Model, error) {
 		fmt.Fprintf(os.Stderr, "warning: jsonpath bookmarks disabled: %v\n", err)
 	}
 
+	// Initialize keybindings (load user config or use defaults)
+	configPath, err := keybinds.GetDefaultConfigPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: using default keybindings: %v\n", err)
+		configPath = "" // Will trigger defaults
+	}
+
+	// Auto-create keybinds.json on first run if it doesn't exist
+	if configPath != "" {
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			// Create the config file with examples
+			if err := keybinds.CreateExampleConfig(configPath); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not create keybinds.json: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Created example keybinds configuration: %s\n", configPath)
+			}
+		}
+	}
+
+	keybindRegistry, err := keybinds.LoadOrDefault(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: keybinds config error, using defaults: %v\n", err)
+		keybindRegistry = keybinds.NewDefaultRegistry()
+	}
+
+	// Initialize file explorer state
+	fileExplorer := NewFileExplorerState()
+	fileExplorer.SetFiles(files, files)
+
+	// Initialize documentation state
+	docState := NewDocumentationState()
+
+	// Initialize history state
+	historyState := NewHistoryState()
+
+	// Initialize analytics state
+	analyticsState := NewAnalyticsState(analyticsManager)
+
+	// Initialize stress test state
+	stressTestState := NewStressTestState(stressTestManager)
+
+	// Initialize profile edit state
+	profileEditState := NewProfileEditState()
+
+	// Initialize mock server state
+	mockServerState := NewMockServerState()
+
+	// Initialize proxy server state
+	proxyServerState := NewProxyServerState()
+
+	// Initialize rename state
+	renameState := NewRenameState()
+
 	m := Model{
-		sessionMgr:            mgr,
-		analyticsManager:      analyticsManager,
-		historyManager:        historyManager,
-		stressTestManager:     stressTestManager,
-		bookmarkManager:       bookmarkManager,
-		mode:                  ModeNormal,
-		version:               version,
-		files:                 files,
-		allFiles:              files,  // Store unfiltered list for tag filtering
-		fileIndex:             0,
-		fileOffset:            0,
-		showHeaders:           false,
-		showBody:              true,
-		fullscreen:            false,
-		focusedPanel:            "sidebar", // Start with sidebar focused
-		docCollapsed:            make(map[int]bool),
-		responseView:            viewport.New(80, 20),
-		modalView:               viewport.New(80, 20), // For scrollable modals
-		historyPreviewView:      viewport.New(80, 20),
-		analyticsListView:       viewport.New(80, 20),
-		analyticsDetailView:     viewport.New(80, 20),
-		stressTestListView:      viewport.New(80, 20),
-		stressTestDetailView:    viewport.New(80, 20),
-		wsHistoryView:           viewport.New(80, 20), // Left pane: message history
-		wsMessageMenuView:       viewport.New(80, 20), // Right pane: predefined messages
-		wsFocusedPane:           "menu",               // Start with menu focused
-		historyPreviewVisible:   true,                 // Show preview by default
-		analyticsPreviewVisible: true,                 // Show preview by default
-		analyticsFocusedPane:    "list",               // Start with list focused
-		stressTestFocusedPane:   "list",               // Start with list focused
+		sessionMgr:        mgr,
+		analyticsManager:  analyticsManager,
+		historyManager:    historyManager,
+		bookmarkManager:   bookmarkManager,
+		keybinds:          keybindRegistry,
+		mode:              ModeNormal,
+		version:           version,
+		fileExplorer:      fileExplorer,
+		historyState:      historyState,
+		analyticsState:    analyticsState,
+		stressTestState:   stressTestState,
+		docState:          docState,
+		profileEditState:  profileEditState,
+		mockServerState:   mockServerState,
+		proxyServerState:  proxyServerState,
+		renameState:       renameState,
+		showHeaders:       false,
+		showBody:          true,
+		fullscreen:        false,
+		focusedPanel:      "sidebar", // Start with sidebar focused
+		streamState:       &StreamState{},
+		requestState:      &RequestState{},
+		wsState:           &WebSocketState{},
+		responseView:      viewport.New(80, 20),
+		modalView:         viewport.New(80, 20), // For scrollable modals
+		wsHistoryView:     viewport.New(80, 20), // Left pane: message history
+		wsMessageMenuView: viewport.New(80, 20), // Right pane: predefined messages
+		wsFocusedPane:     "menu",               // Start with menu focused
 	}
 
 	// Load requests from first file
@@ -201,7 +253,7 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 			files = append(files, types.FileInfo{
 				Path:         path,
 				Name:         relPath,
-				RequestCount: 0, // TODO: Count requests in file
+				RequestCount: 0, // TODO(#TODO-002): Count requests in file - See TODO.md for details
 				ModifiedTime: info.ModTime(),
 				HTTPMethod:   httpMethod,
 				Tags:         tags,
@@ -225,8 +277,11 @@ func loadFiles(mgr *session.Manager) ([]types.FileInfo, error) {
 
 // SetProxy sets the proxy server for the model
 func (m *Model) SetProxy(p *proxy.Proxy) {
-	m.proxyServer = p
-	m.proxyRunning = p != nil
+	if p != nil {
+		m.proxyServerState.Start(p)
+	} else {
+		m.proxyServerState.Stop()
+	}
 }
 
 type tickMsg time.Time

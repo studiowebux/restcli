@@ -10,7 +10,7 @@ import (
 
 // renderStressTestProgress renders the stress test progress modal
 func (m *Model) renderStressTestProgress() string {
-	modalWidth := m.width - 10
+	modalWidth := m.width - ModalWidthMarginNarrow
 	if modalWidth > 90 {
 		modalWidth = 90
 	}
@@ -19,20 +19,20 @@ func (m *Model) renderStressTestProgress() string {
 
 	// Title - show stopping state
 	title := "Stress Test - Running"
-	if m.stressTestStopping {
+	if m.stressTestState.GetStopping() {
 		title = "Stress Test - Stopping"
 	}
 	content.WriteString(styleTitle.Render(title) + "\n\n")
 
 	// Request info
-	if m.stressTestActiveRequest != nil {
+	if m.stressTestState.GetActiveRequest() != nil {
 		content.WriteString(styleTitleFocused.Render("Request") + "\n")
 		content.WriteString(fmt.Sprintf("%s %s\n",
-			styleTitleFocused.Render(m.stressTestActiveRequest.Method),
-			m.stressTestActiveRequest.URL))
+			styleTitleFocused.Render(m.stressTestState.GetActiveRequest().Method),
+			m.stressTestState.GetActiveRequest().URL))
 
-		if m.stressTestActiveRequest.Body != "" {
-			bodyPreview := m.stressTestActiveRequest.Body
+		if m.stressTestState.GetActiveRequest().Body != "" {
+			bodyPreview := m.stressTestState.GetActiveRequest().Body
 			if len(bodyPreview) > 100 {
 				bodyPreview = bodyPreview[:97] + "..."
 			}
@@ -43,9 +43,9 @@ func (m *Model) renderStressTestProgress() string {
 
 	// Get current stats
 	var stats *StressTestStats
-	if m.stressTestExecutor != nil {
-		execStats := m.stressTestExecutor.GetStats()
-		run := m.stressTestExecutor.GetRun()
+	if m.stressTestState.GetExecutor() != nil {
+		execStats := m.stressTestState.GetExecutor().GetStats()
+		run := m.stressTestState.GetExecutor().GetRun()
 
 		elapsed := time.Since(run.StartedAt)
 
@@ -88,7 +88,7 @@ func (m *Model) renderStressTestProgress() string {
 	content.WriteString(fmt.Sprintf("Active Workers: %d\n", stats.ActiveWorkers))
 
 	// Show stopping message
-	if m.stressTestStopping {
+	if m.stressTestState.GetStopping() {
 		stoppingMsg := fmt.Sprintf("Waiting for %d active workers to finish...", stats.ActiveWorkers)
 		content.WriteString(styleTitleFocused.Render(stoppingMsg) + "\n")
 	}
@@ -133,7 +133,7 @@ func (m *Model) renderStressTestProgress() string {
 	// Instructions
 	content.WriteString("\n")
 	footer := "ESC/q: Cancel test"
-	if m.stressTestStopping {
+	if m.stressTestState.GetStopping() {
 		footer = "Stopping test gracefully... please wait"
 	}
 	content.WriteString(styleSubtle.Render(footer))

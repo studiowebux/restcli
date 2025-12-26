@@ -8,30 +8,29 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
 // updateWebSocketViews updates the viewport content (call this when data changes)
 func (m *Model) updateWebSocketViews(width, height int) {
 	// Calculate pane dimensions
-	modalWidth := width - 6
-	modalHeight := height - 3
-	paneHeight := modalHeight - 3 // Leave breathing room, matches analytics modal pattern
+	modalWidth := width - ModalWidthMargin
+	modalHeight := height - ModalHeightMargin
+	paneHeight := modalHeight - WebSocketPaneHeightOffset // Leave breathing room for header, status, footer
 
 	// Split width: 60% history, 40% menu
-	historyWidth := (modalWidth * 6) / 10
-	menuWidth := modalWidth - historyWidth - 3 // -3 for border/padding
+	historyWidth := int(float64(modalWidth) * WebSocketHistoryWidthRatio)
+	menuWidth := modalWidth - historyWidth - SplitPaneBorderWidth
 
 	// Update history viewport
-	historyContentWidth := historyWidth - 4
-	// paneHeight includes borders, subtract 2 for border lines
-	historyContentHeight := paneHeight - 2
+	historyContentWidth := historyWidth - ViewportPaddingHorizontal
+	historyContentHeight := paneHeight - ViewportPaddingVertical
 	m.updateWebSocketHistoryView(historyContentWidth, historyContentHeight)
 
 	// Update menu viewport
-	menuContentWidth := menuWidth - 4
-	// paneHeight includes borders, subtract 2 for border lines
-	menuContentHeight := paneHeight - 2
+	menuContentWidth := menuWidth - ViewportPaddingHorizontal
+	menuContentHeight := paneHeight - ViewportPaddingVertical
 	m.updateWebSocketMenuView(menuContentWidth, menuContentHeight)
 }
 
@@ -40,13 +39,13 @@ func (m *Model) updateWebSocketViews(width, height int) {
 // Right pane: predefined message menu
 func (m *Model) renderWebSocketModal() string {
 	// Calculate pane dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
-	paneHeight := modalHeight - 3 // Leave breathing room for header, status, and footer
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
+	paneHeight := modalHeight - WebSocketPaneHeightOffset // Leave breathing room for header, status, and footer
 
 	// Split width: 60% history, 40% menu
-	historyWidth := (modalWidth * 6) / 10
-	menuWidth := modalWidth - historyWidth - 3 // -3 for border/padding
+	historyWidth := int(float64(modalWidth) * WebSocketHistoryWidthRatio)
+	menuWidth := modalWidth - historyWidth - SplitPaneBorderWidth
 
 	// Styles
 	headerStyle := lipgloss.NewStyle().
@@ -89,11 +88,23 @@ func (m *Model) renderWebSocketModal() string {
 		statusIndicator = "✖"
 	}
 
-	statusText := fmt.Sprintf(" Status: %s %s | Messages: %d/%d ",
-		statusIndicator,
-		m.wsConnectionStatus,
-		len(m.wsMessages),
-		len(m.wsSendableMessages))
+	// Include dropped messages count if any were dropped
+	droppedCount := m.wsState.GetDroppedMessages()
+	var statusText string
+	if droppedCount > 0 {
+		statusText = fmt.Sprintf(" Status: %s %s | Messages: %d/%d | Dropped: %d ",
+			statusIndicator,
+			m.wsConnectionStatus,
+			len(m.wsMessages),
+			len(m.wsSendableMessages),
+			droppedCount)
+	} else {
+		statusText = fmt.Sprintf(" Status: %s %s | Messages: %d/%d ",
+			statusIndicator,
+			m.wsConnectionStatus,
+			len(m.wsMessages),
+			len(m.wsSendableMessages))
+	}
 
 	status := statusColorStyle.Render(statusText)
 
@@ -177,7 +188,7 @@ func (m *Model) renderWebSocketModal() string {
 		footer = statusStyle.Render(" Type message | Enter: Send | Esc: Cancel ")
 	} else {
 		connectionAction := "r: Connect/Reconnect"
-		if m.wsActive {
+		if m.wsState.IsActive() {
 			connectionAction = "d: Disconnect | i: Compose"
 		}
 
@@ -241,11 +252,13 @@ func (m *Model) renderWebSocketModal() string {
 			Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "15"}).
 			Bold(true)
 
-		composerInput := inputStyle.Render(fmt.Sprintf("\n> %s█\n", m.wsComposerMessage))
+		// Show cursor at current position
+		composerText := m.wsComposerMessage[:m.wsComposerCursor] + "█" + m.wsComposerMessage[m.wsComposerCursor:]
+		composerInput := inputStyle.Render(fmt.Sprintf("\n> %s\n", composerText))
 
 		composerHint := lipgloss.NewStyle().
 			Foreground(colorGray).
-			Render("Press Enter to send, Esc to cancel")
+			Render("Enter: Send | Esc: Cancel | Arrow keys, Home/End, Ctrl+A/E: Move cursor | Ctrl+W: Delete word")
 
 		composerContent := lipgloss.JoinVertical(lipgloss.Left, composerTitle, composerInput, composerHint)
 		composerBox := composerStyle.Render(composerContent)
@@ -455,18 +468,23 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 
 	// Handle confirmation dialog if showing
 	if m.wsShowClearConfirm {
-		switch key {
-		case "y", "Y":
+		action, ok := m.keybinds.Match(keybinds.ContextConfirm, key)
+		if !ok {
+			return nil
+		}
+
+		switch action {
+		case keybinds.ActionConfirm:
 			// Clear history
 			m.wsMessages = []types.ReceivedMessage{}
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			m.updateWebSocketHistoryView(historyWidth-4, paneHeight-2)
 			m.wsShowClearConfirm = false
 			return nil
-		case "n", "N", "esc":
+		case keybinds.ActionCancel:
 			// Cancel
 			m.wsShowClearConfirm = false
 			return nil
@@ -481,8 +499,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Exit search mode
 			m.wsSearchMode = false
 			m.wsSearchQuery = ""
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			m.updateWebSocketHistoryView(historyWidth-4, paneHeight-2)
@@ -495,8 +513,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Remove last character
 			if len(m.wsSearchQuery) > 0 {
 				m.wsSearchQuery = m.wsSearchQuery[:len(m.wsSearchQuery)-1]
-				modalWidth := m.width - 6
-				modalHeight := m.height - 3
+				modalWidth := m.width - ModalWidthMargin
+				modalHeight := m.height - ModalHeightMargin
 				paneHeight := modalHeight - 3
 				historyWidth := (modalWidth * 6) / 10
 				m.updateWebSocketHistoryView(historyWidth-4, paneHeight-3)
@@ -506,8 +524,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Add character to search query
 			if len(key) == 1 {
 				m.wsSearchQuery += key
-				modalWidth := m.width - 6
-				modalHeight := m.height - 3
+				modalWidth := m.width - ModalWidthMargin
+				modalHeight := m.height - ModalHeightMargin
 				paneHeight := modalHeight - 3
 				historyWidth := (modalWidth * 6) / 10
 				m.updateWebSocketHistoryView(historyWidth-4, paneHeight-3)
@@ -523,13 +541,15 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			// Cancel composer
 			m.wsComposerMode = false
 			m.wsComposerMessage = ""
+			m.wsComposerCursor = 0
 			return nil
 		case "enter":
 			// Send custom message
-			if m.wsActive && m.wsSendChannel != nil && m.wsComposerMessage != "" {
+			if m.wsState.IsActive() && m.wsSendChannel != nil && m.wsComposerMessage != "" {
 				message := m.wsComposerMessage
 				m.wsComposerMode = false
 				m.wsComposerMessage = ""
+				m.wsComposerCursor = 0
 				// Send message via channel
 				go func() {
 					select {
@@ -539,76 +559,27 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				}()
 			}
 			return nil
-		case "backspace":
-			// Remove last character
-			if len(m.wsComposerMessage) > 0 {
-				m.wsComposerMessage = m.wsComposerMessage[:len(m.wsComposerMessage)-1]
-			}
-			return nil
-		case "space":
-			// Add space
-			m.wsComposerMessage += " "
-			return nil
 		default:
-			// Add character to message
+			// Use cursor-based text input handler for advanced editing
+			if _, shouldContinue := handleTextInputWithCursor(&m.wsComposerMessage, &m.wsComposerCursor, msg); shouldContinue {
+				return nil
+			}
+			// Insert character at cursor position
 			if len(key) == 1 {
-				m.wsComposerMessage += key
+				m.wsComposerMessage = m.wsComposerMessage[:m.wsComposerCursor] + key + m.wsComposerMessage[m.wsComposerCursor:]
+				m.wsComposerCursor++
 			}
 		}
 		return nil
 	}
 
+	// Handle special keys not in registry (before registry matching)
 	switch key {
-	case "q", "esc":
-		// Close WebSocket modal
-		m.mode = ModeNormal
-		if m.wsCancelFunc != nil {
-			m.wsCancelFunc()
-		}
-		m.wsActive = false
-		m.wsConnectionStatus = "disconnected"
-		m.wsMessageChannel = nil
-		m.wsCancelFunc = nil
-		m.wsLastKey = ""
-		return nil
-
-	case "tab":
-		// Switch focused pane
-		if m.wsFocusedPane == "menu" {
-			m.wsFocusedPane = "history"
-		} else {
-			m.wsFocusedPane = "menu"
-		}
-		m.wsLastKey = ""
-		return nil
-
-	case "d":
-		// Disconnect WebSocket (keep modal open with history)
-		m.wsLastKey = ""
-		if m.wsActive {
-			if m.wsCancelFunc != nil {
-				m.wsCancelFunc()
-			}
-			m.wsActive = false
-			m.wsConnectionStatus = "disconnected"
-			m.wsMessageChannel = nil
-			m.wsCancelFunc = nil
-		}
-		return nil
-
 	case "r":
 		// Reconnect WebSocket
 		m.wsLastKey = ""
-		if !m.wsActive {
+		if !m.wsState.IsActive() {
 			return m.connectWebSocket()
-		}
-		return nil
-
-	case "C":
-		// Show clear history confirmation
-		m.wsLastKey = ""
-		if len(m.wsMessages) > 0 {
-			m.wsShowClearConfirm = true
 		}
 		return nil
 
@@ -622,9 +593,10 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 	case "i":
 		// Enter composer mode (only when connected)
 		m.wsLastKey = ""
-		if m.wsActive {
+		if m.wsState.IsActive() {
 			m.wsComposerMode = true
 			m.wsComposerMessage = ""
+			m.wsComposerCursor = 0
 		}
 		return nil
 
@@ -652,40 +624,80 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			return m.exportWebSocketMessages()
 		}
 		return nil
+	}
 
-	case "g":
-		// Check for gg (go to top)
-		if m.wsLastKey == "g" {
-			if m.wsFocusedPane == "menu" {
-				// Go to first menu item
-				m.wsSelectedMessageIndex = 0
-				// Update menu to show new highlighting
-				modalWidth := m.width - 6
-				modalHeight := m.height - 3
-				paneHeight := modalHeight - 3
-				historyWidth := (modalWidth * 6) / 10
-				menuWidth := modalWidth - historyWidth - 3
-				m.updateWebSocketMenuView(menuWidth-4, paneHeight-2)
-			} else {
-				// Go to top of history
-				m.wsHistoryView.GotoTop()
-			}
-			m.wsLastKey = ""
-		} else {
-			m.wsLastKey = "g"
-		}
+	// Use registry for WebSocket navigation and actions
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextWebSocket, key)
+	if partial {
 		return nil
+	}
 
-	case "G":
-		// Go to bottom
+	if !ok {
+		m.gPressed = false
+		m.wsLastKey = ""
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		// Close WebSocket modal
+		m.mode = ModeNormal
+		m.wsState.Cancel()
+		m.wsConnectionStatus = "disconnected"
+		m.wsMessageChannel = nil
+		m.wsLastKey = ""
+
+	case keybinds.ActionSwitchPane:
+		// Switch focused pane
+		if m.wsFocusedPane == "menu" {
+			m.wsFocusedPane = "history"
+		} else {
+			m.wsFocusedPane = "menu"
+		}
+		m.wsLastKey = ""
+
+	case keybinds.ActionWSDisconnect:
+		// Disconnect WebSocket (keep modal open with history)
+		m.wsLastKey = ""
+		if m.wsState.IsActive() {
+			m.wsState.Cancel()
+			m.wsConnectionStatus = "disconnected"
+			m.wsMessageChannel = nil
+		}
+
+	case keybinds.ActionWSClear:
+		// Show clear history confirmation
+		m.wsLastKey = ""
+		if len(m.wsMessages) > 0 {
+			m.wsShowClearConfirm = true
+		}
+
+	case keybinds.ActionGoToTop:
+		if m.wsFocusedPane == "menu" {
+			// Go to first menu item
+			m.wsSelectedMessageIndex = 0
+			// Update menu to show new highlighting
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
+			paneHeight := modalHeight - 3
+			historyWidth := (modalWidth * 6) / 10
+			menuWidth := modalWidth - historyWidth - 3
+			m.updateWebSocketMenuView(menuWidth-4, paneHeight-2)
+		} else {
+			// Go to top of history
+			m.wsHistoryView.GotoTop()
+		}
+		m.wsLastKey = ""
+
+	case keybinds.ActionGoToBottom:
 		if m.wsFocusedPane == "menu" {
 			// Go to last menu item
 			if len(m.wsSendableMessages) > 0 {
 				m.wsSelectedMessageIndex = len(m.wsSendableMessages) - 1
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -695,17 +707,16 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.GotoBottom()
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "up", "k":
+	case keybinds.ActionNavigateUp:
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu
 			if m.wsSelectedMessageIndex > 0 {
 				m.wsSelectedMessageIndex--
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -715,17 +726,16 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.LineUp(1)
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "down", "j":
+	case keybinds.ActionNavigateDown:
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu
 			if m.wsSelectedMessageIndex < len(m.wsSendableMessages)-1 {
 				m.wsSelectedMessageIndex++
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -735,9 +745,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.LineDown(1)
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "ctrl+d":
+	case keybinds.ActionHalfPageDown:
 		// Page down (half page)
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu down by half viewport height
@@ -750,8 +759,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				m.wsSelectedMessageIndex = len(m.wsSendableMessages) - 1
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -761,9 +770,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.HalfViewDown()
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "ctrl+u":
+	case keybinds.ActionHalfPageUp:
 		// Page up (half page)
 		if m.wsFocusedPane == "menu" {
 			// Navigate menu up by half viewport height
@@ -776,8 +784,8 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 				m.wsSelectedMessageIndex = 0
 			}
 			// Update menu to show new highlighting
-			modalWidth := m.width - 6
-			modalHeight := m.height - 3
+			modalWidth := m.width - ModalWidthMargin
+			modalHeight := m.height - ModalHeightMargin
 			paneHeight := modalHeight - 3
 			historyWidth := (modalWidth * 6) / 10
 			menuWidth := modalWidth - historyWidth - 3
@@ -787,20 +795,19 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 			m.wsHistoryView.HalfViewUp()
 		}
 		m.wsLastKey = ""
-		return nil
 
-	case "enter":
+	case keybinds.ActionWSSend:
 		// Send selected message (only when menu is focused)
 		m.wsLastKey = ""
 		if m.wsFocusedPane == "menu" {
 			return m.sendWebSocketMessage(m.wsSelectedMessageIndex)
 		}
-		return nil
 
 	default:
-		// Clear last key for any other key
+		// Clear last key for any other action
 		m.wsLastKey = ""
 	}
 
+	m.gPressed = false
 	return nil
 }

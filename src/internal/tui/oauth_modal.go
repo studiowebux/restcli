@@ -7,6 +7,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -127,24 +128,13 @@ func (m *Model) handleOAuthKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// Handle special keys not in registry
 	switch msg.String() {
-	case "esc":
-		m.mode = ModeNormal
-
-	case "up", "k":
-		if m.oauthField > 0 {
-			m.oauthField--
-		}
-
-	case "down", "j":
-		if m.oauthField < oauthFieldCount-1 {
-			m.oauthField++
-		}
-
 	case "t":
 		if m.oauthField == oauthFieldEnabled {
 			profile.OAuth.Enabled = !profile.OAuth.Enabled
 		}
+		return nil
 
 	case "e":
 		// Enter edit mode for the current field
@@ -157,6 +147,28 @@ func (m *Model) handleOAuthKeys(msg tea.KeyMsg) tea.Cmd {
 		m.sessionMgr.SaveProfiles()
 		m.mode = ModeNormal
 		m.statusMsg = "OAuth configuration saved"
+		return nil
+	}
+
+	// Use registry for navigation
+	action, ok := m.keybinds.Match(keybinds.ContextModal, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+
+	case keybinds.ActionNavigateUp:
+		if m.oauthField > 0 {
+			m.oauthField--
+		}
+
+	case keybinds.ActionNavigateDown:
+		if m.oauthField < oauthFieldCount-1 {
+			m.oauthField++
+		}
 	}
 
 	return nil
@@ -174,64 +186,76 @@ func (m *Model) editOAuthField() tea.Cmd {
 func (m *Model) handleOAuthEditKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 
-	switch msg.String() {
-	case "esc":
-		// Cancel edit
-		m.mode = ModeOAuthConfig
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			// Cancel edit
+			m.mode = ModeOAuthConfig
+			return nil
 
-	case "enter":
-		// Save the edited value
-		if profile.OAuth != nil {
-			m.setOAuthFieldValue(profile.OAuth, m.oauthField, m.inputValue)
+		case keybinds.ActionTextSubmit:
+			// Save the edited value
+			if profile.OAuth != nil {
+				m.setOAuthFieldValue(profile.OAuth, m.oauthField, m.inputValue)
+			}
+			m.mode = ModeOAuthConfig
+			return nil
+
+		case keybinds.ActionTextMoveLeft:
+			if m.oauthCursor > 0 {
+				m.oauthCursor--
+			}
+			return nil
+
+		case keybinds.ActionTextMoveRight:
+			if m.oauthCursor < len(m.inputValue) {
+				m.oauthCursor++
+			}
+			return nil
+
+		case keybinds.ActionTextMoveHome:
+			m.oauthCursor = 0
+			return nil
+
+		case keybinds.ActionTextMoveEnd:
+			m.oauthCursor = len(m.inputValue)
+			return nil
+
+		case keybinds.ActionTextBackspace:
+			if m.oauthCursor > 0 {
+				m.inputValue = m.inputValue[:m.oauthCursor-1] + m.inputValue[m.oauthCursor:]
+				m.oauthCursor--
+			}
+			return nil
+
+		case keybinds.ActionTextDelete:
+			if m.oauthCursor < len(m.inputValue) {
+				m.inputValue = m.inputValue[:m.oauthCursor] + m.inputValue[m.oauthCursor+1:]
+			}
+			return nil
+
+		case keybinds.ActionTextClearAfter:
+			// Clear input
+			m.inputValue = ""
+			m.oauthCursor = 0
+			return nil
+
+		case keybinds.ActionTextPaste:
+			// Paste from clipboard
+			if clipText, err := clipboard.ReadAll(); err == nil {
+				m.inputValue = m.inputValue[:m.oauthCursor] + clipText + m.inputValue[m.oauthCursor:]
+				m.oauthCursor += len(clipText)
+			}
+			return nil
 		}
-		m.mode = ModeOAuthConfig
+	}
 
-	case "left":
-		if m.oauthCursor > 0 {
-			m.oauthCursor--
-		}
-
-	case "right":
-		if m.oauthCursor < len(m.inputValue) {
-			m.oauthCursor++
-		}
-
-	case "home":
-		m.oauthCursor = 0
-
-	case "end":
-		m.oauthCursor = len(m.inputValue)
-
-	case "backspace":
-		if m.oauthCursor > 0 {
-			m.inputValue = m.inputValue[:m.oauthCursor-1] + m.inputValue[m.oauthCursor:]
-			m.oauthCursor--
-		}
-
-	case "delete":
-		if m.oauthCursor < len(m.inputValue) {
-			m.inputValue = m.inputValue[:m.oauthCursor] + m.inputValue[m.oauthCursor+1:]
-		}
-
-	case "ctrl+k":
-		// Clear input
-		m.inputValue = ""
-		m.oauthCursor = 0
-
-	case "ctrl+v", "shift+insert", "ctrl+y":
-		// Paste from clipboard
-		if clipText, err := clipboard.ReadAll(); err == nil {
-			m.inputValue = m.inputValue[:m.oauthCursor] + clipText + m.inputValue[m.oauthCursor:]
-			m.oauthCursor += len(clipText)
-		}
-
-	default:
-		// Regular character input
-		if len(msg.String()) == 1 {
-			char := msg.String()
-			m.inputValue = m.inputValue[:m.oauthCursor] + char + m.inputValue[m.oauthCursor:]
-			m.oauthCursor++
-		}
+	// Regular character input
+	if len(msg.String()) == 1 {
+		char := msg.String()
+		m.inputValue = m.inputValue[:m.oauthCursor] + char + m.inputValue[m.oauthCursor:]
+		m.oauthCursor++
 	}
 
 	return nil

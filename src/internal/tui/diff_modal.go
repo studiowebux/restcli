@@ -6,15 +6,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
 // handleDiffKeys handles keyboard input in diff mode
 func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q", "W":
-		m.mode = ModeNormal
-
-	case "tab":
+	// Handle tab key for view toggle (special feature, not a standard keybind)
+	if msg.String() == "tab" {
 		// Toggle between unified and split view
 		if m.diffViewMode == "split" {
 			m.diffViewMode = "unified"
@@ -22,9 +20,25 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 			m.diffViewMode = "split"
 		}
 		m.updateDiffView() // Regenerate content for new mode
+		return nil
+	}
 
-	// Vim-style navigation
-	case "j", "down":
+	// Use registry for all other keys including close/navigation
+	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextModal, msg.String())
+	if partial {
+		return nil
+	}
+	if !ok {
+		m.gPressed = false
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeNormal
+
+	case keybinds.ActionNavigateDown:
+		// Vim-style navigation
 		if m.diffViewMode == "split" {
 			// Synchronized scrolling for split view
 			m.diffLeftView.LineDown(1)
@@ -32,7 +46,8 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.diffView.LineDown(1)
 		}
-	case "k", "up":
+
+	case keybinds.ActionNavigateUp:
 		if m.diffViewMode == "split" {
 			// Synchronized scrolling for split view
 			m.diffLeftView.LineUp(1)
@@ -40,73 +55,59 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.diffView.LineUp(1)
 		}
-	case "ctrl+d":
+
+	case keybinds.ActionHalfPageDown:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.HalfViewDown()
 			m.diffRightView.HalfViewDown()
 		} else {
 			m.diffView.HalfViewDown()
 		}
-	case "ctrl+u":
+
+	case keybinds.ActionHalfPageUp:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.HalfViewUp()
 			m.diffRightView.HalfViewUp()
 		} else {
 			m.diffView.HalfViewUp()
 		}
-	case "ctrl+f", "pgdown":
+
+	case keybinds.ActionPageDown:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.ViewDown()
 			m.diffRightView.ViewDown()
 		} else {
 			m.diffView.ViewDown()
 		}
-	case "ctrl+b", "pgup":
+
+	case keybinds.ActionPageUp:
 		if m.diffViewMode == "split" {
 			m.diffLeftView.ViewUp()
 			m.diffRightView.ViewUp()
 		} else {
 			m.diffView.ViewUp()
 		}
-	case "g":
-		if m.gPressed {
-			if m.diffViewMode == "split" {
-				m.diffLeftView.GotoTop()
-				m.diffRightView.GotoTop()
-			} else {
-				m.diffView.GotoTop()
-			}
-			m.gPressed = false
-		} else {
-			m.gPressed = true
-		}
-	case "G":
-		if m.diffViewMode == "split" {
-			m.diffLeftView.GotoBottom()
-			m.diffRightView.GotoBottom()
-		} else {
-			m.diffView.GotoBottom()
-		}
-		m.gPressed = false
-	case "home":
+
+	case keybinds.ActionGoToTop:
+		// Go to top (triggered by gg or home)
 		if m.diffViewMode == "split" {
 			m.diffLeftView.GotoTop()
 			m.diffRightView.GotoTop()
 		} else {
 			m.diffView.GotoTop()
 		}
-	case "end":
+
+	case keybinds.ActionGoToBottom:
+		// Go to bottom (G or end)
 		if m.diffViewMode == "split" {
 			m.diffLeftView.GotoBottom()
 			m.diffRightView.GotoBottom()
 		} else {
 			m.diffView.GotoBottom()
 		}
-
-	default:
-		m.gPressed = false
 	}
 
+	m.gPressed = false
 	return nil
 }
 
@@ -157,8 +158,8 @@ func (m *Model) renderDiffSplitView(modalWidth, modalHeight int) string {
 // renderDiffModal renders the diff comparison modal
 func (m *Model) renderDiffModal() string {
 	// Use nearly full screen
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	var content string
 
@@ -167,15 +168,24 @@ func (m *Model) renderDiffModal() string {
 		content = m.renderDiffSplitView(modalWidth, modalHeight)
 	} else {
 		// Unified diff view (default)
+		// Footer outside viewport
+		footer := styleSubtle.Render("Tab: Toggle View | ↑/↓ j/k: Scroll | gg/G: Top/Bottom | ESC/W: Close")
+
+		// Viewport with content (footer is separate)
 		diffView := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBlue).
 			Width(modalWidth).
-			Height(modalHeight).
+			Height(modalHeight-2). // Reduce height to account for footer
 			Padding(1, 2).
 			Render(styleTitle.Render("Response Comparison") + "\n\n" + m.diffView.View())
 
-		content = diffView
+		// Combine viewport and footer
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			diffView,
+			"\n"+footer,
+		)
 	}
 
 	return lipgloss.Place(
@@ -196,16 +206,16 @@ func (m *Model) updateDiffView() {
 
 	if m.diffViewMode == "split" {
 		// Split view mode - populate left and right viewports
-		modalWidth := m.width - 6
-		modalHeight := m.height - 3
-		paneWidth := (modalWidth - 3) / 2
-		paneHeight := modalHeight - 6
+		modalWidth := m.width - ModalWidthMargin
+		modalHeight := m.height - ModalHeightMargin
+		paneWidth := (modalWidth - SplitPaneBorderWidth) / 2
+		paneHeight := modalHeight - ModalOverheadLines
 
 		// Set viewport dimensions
-		m.diffLeftView.Width = paneWidth - 4
-		m.diffLeftView.Height = paneHeight - 2
-		m.diffRightView.Width = paneWidth - 4
-		m.diffRightView.Height = paneHeight - 2
+		m.diffLeftView.Width = paneWidth - ViewportPaddingHorizontal
+		m.diffLeftView.Height = paneHeight - ViewportPaddingVertical
+		m.diffRightView.Width = paneWidth - ViewportPaddingHorizontal
+		m.diffRightView.Height = paneHeight - ViewportPaddingVertical
 
 		// Generate diff-styled content with background highlighting
 		leftContent, rightContent := compareTextSplitView(
@@ -224,8 +234,8 @@ func (m *Model) updateDiffView() {
 	} else {
 		// Unified diff view mode
 		// Set viewport dimensions
-		m.diffView.Width = m.width - 10
-		m.diffView.Height = m.height - 7
+		m.diffView.Width = m.width - ModalWidthMarginNarrow
+		m.diffView.Height = m.height - ContentOffsetStandard
 
 		var content strings.Builder
 
@@ -282,7 +292,7 @@ func (m *Model) updateDiffView() {
 		bodyDiff := compareTextLineByLine(m.pinnedResponse.Body, m.currentResponse.Body)
 		content.WriteString(bodyDiff)
 
-		content.WriteString("\n\n" + styleSubtle.Render("Tab: Toggle View | ↑/↓ j/k: Scroll | gg/G: Top/Bottom | ESC/W: Close"))
+		// Footer is now outside viewport, don't add it to content
 
 		m.diffView.SetContent(content.String())
 		m.diffView.GotoTop()

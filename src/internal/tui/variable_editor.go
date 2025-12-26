@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -218,22 +219,57 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 	case ModeVariableList:
 		sortedNames := getSortedVariableNames(profile.Variables)
 
+		// Handle special keys not in registry
 		switch msg.String() {
-		case "esc":
+		case "o":
+			m.mode = ModeVariableOptions
+			m.varEditName = ""
+			m.varEditValue = ""
+			m.varEditCursor = 0
+			m.varEditNamePos = 0
+			m.varEditValuePos = 0
+			return nil
+		case "i":
+			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
+				name := sortedNames[m.varEditIndex]
+				varValue := profile.Variables[name]
+				varValue.Interactive = !varValue.Interactive
+				profile.Variables[name] = varValue
+				m.sessionMgr.SaveProfiles()
+				if varValue.Interactive {
+					m.statusMsg = fmt.Sprintf("Variable '%s' is now interactive", name)
+				} else {
+					m.statusMsg = fmt.Sprintf("Variable '%s' is no longer interactive", name)
+				}
+			}
+			return nil
+		}
+
+		action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextVariableList, msg.String())
+		if partial {
+			return nil
+		}
+
+		if !ok {
+			m.gPressed = false
+			return nil
+		}
+
+		switch action {
+		case keybinds.ActionCloseModal:
 			m.mode = ModeNormal
 
-		case "up", "k":
+		case keybinds.ActionNavigateUp:
 			if m.varEditIndex > 0 {
 				m.varEditIndex--
 			}
 
-		case "down", "j":
+		case keybinds.ActionNavigateDown:
 			if m.varEditIndex < len(sortedNames)-1 {
 				m.varEditIndex++
 			}
 
-		// Page up/down - move cursor by page amount
-		case "pgup":
+		case keybinds.ActionPageUp:
 			pageSize := m.modalView.Height
 			if pageSize < 1 {
 				pageSize = 10
@@ -243,7 +279,7 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 				m.varEditIndex = 0
 			}
 
-		case "pgdown":
+		case keybinds.ActionPageDown:
 			pageSize := m.modalView.Height
 			if pageSize < 1 {
 				pageSize = 10
@@ -256,31 +292,15 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 				m.varEditIndex = 0
 			}
 
-		case "home":
+		case keybinds.ActionGoToTop:
 			m.varEditIndex = 0
 
-		case "end":
+		case keybinds.ActionGoToBottom:
 			if len(sortedNames) > 0 {
 				m.varEditIndex = len(sortedNames) - 1
 			}
 
-		case "g":
-			// Vim-style 'gg' to go to top
-			if m.gPressed {
-				m.gPressed = false
-				m.varEditIndex = 0
-			} else {
-				m.gPressed = true
-			}
-			return nil // Don't reset gPressed
-
-		case "G":
-			// Vim-style 'G' to go to bottom
-			if len(sortedNames) > 0 {
-				m.varEditIndex = len(sortedNames) - 1
-			}
-
-		case "a":
+		case keybinds.ActionVarAdd:
 			m.mode = ModeVariableAdd
 			m.varEditName = ""
 			m.varEditValue = ""
@@ -288,16 +308,15 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 			m.varEditNamePos = 0
 			m.varEditValuePos = 0
 
-		case "e":
+		case keybinds.ActionVarEdit:
 			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
 				name := sortedNames[m.varEditIndex]
 				value := profile.Variables[name]
 				m.mode = ModeVariableEdit
 				m.varEditName = name
 				if value.IsMultiValue() {
-					// Multi-value: only allow editing the name, use 'm' for options
 					m.varEditValue = "[multi-value - use 'm' to manage options]"
-					m.varEditCursor = 0 // Keep focus on name
+					m.varEditCursor = 0
 					m.varEditNamePos = len(name)
 					m.varEditValuePos = 0
 				} else {
@@ -308,13 +327,13 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 				}
 			}
 
-		case "d":
+		case keybinds.ActionVarDelete:
 			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
 				m.mode = ModeVariableDelete
 				m.varEditName = sortedNames[m.varEditIndex]
 			}
 
-		case "m":
+		case keybinds.ActionVarManage:
 			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
 				name := sortedNames[m.varEditIndex]
 				value := profile.Variables[name]
@@ -322,50 +341,33 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 					m.mode = ModeVariableManage
 					m.varEditName = name
 					m.varOptionIndex = 0
-					m.varEditCursor = 0 // Not editing
-					m.modalView.SetYOffset(0) // Reset scroll for new modal content
+					m.varEditCursor = 0
+					m.modalView.SetYOffset(0)
 				} else {
 					m.statusMsg = "Not a multi-value variable"
 				}
 			}
-
-		case "o":
-			m.mode = ModeVariableOptions
-			m.varEditName = ""
-			m.varEditValue = ""
-			m.varEditCursor = 0
-			m.varEditNamePos = 0
-			m.varEditValuePos = 0
-
-		case "i":
-			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
-				name := sortedNames[m.varEditIndex]
-				varValue := profile.Variables[name]
-				// Toggle interactive flag
-				varValue.Interactive = !varValue.Interactive
-				profile.Variables[name] = varValue
-				m.sessionMgr.SaveProfiles()
-				if varValue.Interactive {
-					m.statusMsg = fmt.Sprintf("Variable '%s' is now interactive", name)
-				} else {
-					m.statusMsg = fmt.Sprintf("Variable '%s' is no longer interactive", name)
-				}
-			}
 		}
+
+		m.gPressed = false
 
 	case ModeVariableAdd, ModeVariableEdit:
 		return m.handleVariableInputKeys(msg)
 
 	case ModeVariableDelete:
-		switch msg.String() {
-		case "y":
-			// Delete the variable
+		action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
+		if !ok {
+			return nil
+		}
+
+		switch action {
+		case keybinds.ActionConfirm:
 			delete(profile.Variables, m.varEditName)
 			m.sessionMgr.SaveProfiles()
 			m.mode = ModeVariableList
 			m.statusMsg = fmt.Sprintf("Deleted variable: %s", m.varEditName)
 
-		case "n", "esc":
+		case keybinds.ActionCancel:
 			m.mode = ModeVariableList
 		}
 
@@ -379,8 +381,6 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.handleVariableOptionsKeys(msg)
 	}
 
-	// Reset 'g' state on any key except 'g' itself
-	m.gPressed = false
 	return nil
 }
 
@@ -388,79 +388,82 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleVariableInputKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 
-	switch msg.String() {
-	case "esc":
-		m.mode = ModeVariableList
-
-	case "tab":
-		// Don't allow switching to value field for multi-value variables
+	// Handle tab specially (field switching)
+	if msg.String() == "tab" {
 		if m.varEditValue != "[multi-value - use 'm' to manage options]" {
 			m.varEditCursor = (m.varEditCursor + 1) % 2
 		}
+		return nil
+	}
 
-	case "enter":
-		if m.varEditName == "" {
-			m.errorMsg = "Variable name cannot be empty"
+	action, ok := m.keybinds.Match(keybinds.ContextVariableEdit, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			m.mode = ModeVariableList
+			return nil
+
+		case keybinds.ActionTextSubmit:
+			if m.varEditName == "" {
+				m.errorMsg = "Variable name cannot be empty"
+				return nil
+			}
+
+			if profile.Variables == nil {
+				profile.Variables = make(map[string]types.VariableValue)
+			}
+
+			if m.varEditValue == "[multi-value - use 'm' to manage options]" {
+				sortedNames := getSortedVariableNames(profile.Variables)
+				if m.varEditIndex < len(sortedNames) {
+					oldName := sortedNames[m.varEditIndex]
+					if oldName != m.varEditName {
+						profile.Variables[m.varEditName] = profile.Variables[oldName]
+						delete(profile.Variables, oldName)
+					}
+				}
+			} else {
+				var varValue types.VariableValue
+				if m.mode == ModeVariableEdit {
+					if existingVar, exists := profile.Variables[m.varEditName]; exists {
+						varValue.Interactive = existingVar.Interactive
+					}
+				}
+				varValue.SetValue(m.varEditValue)
+				profile.Variables[m.varEditName] = varValue
+			}
+
+			m.sessionMgr.SaveProfiles()
+			m.mode = ModeVariableList
+			m.statusMsg = fmt.Sprintf("Saved variable: %s", m.varEditName)
+			return nil
+
+		case keybinds.ActionNavigateUp:
+			if m.varEditCursor == 0 {
+				m.varEditCursor = 1
+			} else {
+				m.varEditCursor = 0
+			}
 			return nil
 		}
+	}
 
-		// Create or update variable
-		if profile.Variables == nil {
-			profile.Variables = make(map[string]types.VariableValue)
+	// Handle text input with cursor support
+	if m.varEditCursor == 0 {
+		if _, shouldContinue := handleTextInputWithCursor(&m.varEditName, &m.varEditNamePos, msg); shouldContinue {
+			return nil
 		}
-
-		// Check if this is a multi-value variable being renamed
-		if m.varEditValue == "[multi-value - use 'm' to manage options]" {
-			// Find the original variable name using the edit index
-			sortedNames := getSortedVariableNames(profile.Variables)
-			if m.varEditIndex < len(sortedNames) {
-				oldName := sortedNames[m.varEditIndex]
-				if oldName != m.varEditName {
-					// Rename: copy to new name, delete old
-					profile.Variables[m.varEditName] = profile.Variables[oldName]
-					delete(profile.Variables, oldName)
-				}
-				// If same name, nothing to do
-			}
-		} else {
-			// Regular variable - preserve existing Interactive flag if editing
-			var varValue types.VariableValue
-			if m.mode == ModeVariableEdit {
-				// Editing: preserve existing Interactive flag
-				if existingVar, exists := profile.Variables[m.varEditName]; exists {
-					varValue.Interactive = existingVar.Interactive
-				}
-			}
-			varValue.SetValue(m.varEditValue)
-			profile.Variables[m.varEditName] = varValue
+		if len(msg.String()) == 1 {
+			m.varEditName = m.varEditName[:m.varEditNamePos] + msg.String() + m.varEditName[m.varEditNamePos:]
+			m.varEditNamePos++
 		}
-
-		m.sessionMgr.SaveProfiles()
-		m.mode = ModeVariableList
-		m.statusMsg = fmt.Sprintf("Saved variable: %s", m.varEditName)
-
-	default:
-		// Handle text input with cursor support
-		if m.varEditCursor == 0 {
-			// Editing name field
-			if _, shouldContinue := handleTextInputWithCursor(&m.varEditName, &m.varEditNamePos, msg); shouldContinue {
-				return nil
-			}
-			// Insert character at cursor position
-			if len(msg.String()) == 1 {
-				m.varEditName = m.varEditName[:m.varEditNamePos] + msg.String() + m.varEditName[m.varEditNamePos:]
-				m.varEditNamePos++
-			}
-		} else if m.varEditValue != "[multi-value - use 'm' to manage options]" {
-			// Editing value field (only for regular variables)
-			if _, shouldContinue := handleTextInputWithCursor(&m.varEditValue, &m.varEditValuePos, msg); shouldContinue {
-				return nil
-			}
-			// Insert character at cursor position
-			if len(msg.String()) == 1 {
-				m.varEditValue = m.varEditValue[:m.varEditValuePos] + msg.String() + m.varEditValue[m.varEditValuePos:]
-				m.varEditValuePos++
-			}
+	} else if m.varEditValue != "[multi-value - use 'm' to manage options]" {
+		if _, shouldContinue := handleTextInputWithCursor(&m.varEditValue, &m.varEditValuePos, msg); shouldContinue {
+			return nil
+		}
+		if len(msg.String()) == 1 {
+			m.varEditValue = m.varEditValue[:m.varEditValuePos] + msg.String() + m.varEditValue[m.varEditValuePos:]
+			m.varEditValuePos++
 		}
 	}
 
@@ -517,58 +520,15 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Normal mode (not editing)
+	// Normal mode (not editing) - handle special keys before registry
 	switch msg.String() {
-	case "esc":
-		m.mode = ModeVariableList
-
-	case "up", "k":
-		if m.varOptionIndex > 0 {
-			m.varOptionIndex--
-		}
-
-	case "down", "j":
-		if m.varOptionIndex < len(varValue.MultiValue.Options)-1 {
-			m.varOptionIndex++
-		}
-
-	case "pgup":
-		pageSize := m.modalView.Height
-		if pageSize < 1 {
-			pageSize = 10
-		}
-		m.varOptionIndex -= pageSize
-		if m.varOptionIndex < 0 {
-			m.varOptionIndex = 0
-		}
-
-	case "pgdown":
-		pageSize := m.modalView.Height
-		if pageSize < 1 {
-			pageSize = 10
-		}
-		m.varOptionIndex += pageSize
-		if m.varOptionIndex >= len(varValue.MultiValue.Options) {
-			m.varOptionIndex = len(varValue.MultiValue.Options) - 1
-		}
-		if m.varOptionIndex < 0 {
-			m.varOptionIndex = 0
-		}
-
-	case "home":
-		m.varOptionIndex = 0
-
-	case "end":
-		if len(varValue.MultiValue.Options) > 0 {
-			m.varOptionIndex = len(varValue.MultiValue.Options) - 1
-		}
-
 	case "s":
 		// Set as active
 		varValue.MultiValue.Active = m.varOptionIndex
 		profile.Variables[m.varEditName] = varValue
 		m.sessionMgr.SaveProfiles()
 		m.statusMsg = "Active option updated"
+		return nil
 
 	case "d":
 		// Delete option
@@ -585,6 +545,7 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 			m.statusMsg = "Option deleted"
 		}
+		return nil
 
 	case "e":
 		// Edit current option
@@ -593,6 +554,7 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 			m.varEditValuePos = len(m.varEditValue)
 			m.varEditCursor = 1 // Focus on value field
 		}
+		return nil
 
 	case "a":
 		// Add option - set index past end to indicate new item
@@ -600,6 +562,7 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 		m.varEditValue = ""
 		m.varEditValuePos = 0
 		m.varEditCursor = 1 // Focus on value field
+		return nil
 
 	case "l":
 		// Set alias for current option
@@ -612,6 +575,7 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.statusMsg = "Invalid option index"
 		}
+		return nil
 
 	case "L":
 		// Delete all aliases from current option
@@ -634,6 +598,59 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 		} else {
 			m.statusMsg = "No aliases to delete"
 		}
+		return nil
+	}
+
+	// Use registry for navigation keys
+	action, ok := m.keybinds.Match(keybinds.ContextVariableList, msg.String())
+	if !ok {
+		return nil
+	}
+
+	switch action {
+	case keybinds.ActionCloseModal:
+		m.mode = ModeVariableList
+
+	case keybinds.ActionNavigateUp:
+		if m.varOptionIndex > 0 {
+			m.varOptionIndex--
+		}
+
+	case keybinds.ActionNavigateDown:
+		if m.varOptionIndex < len(varValue.MultiValue.Options)-1 {
+			m.varOptionIndex++
+		}
+
+	case keybinds.ActionPageUp:
+		pageSize := m.modalView.Height
+		if pageSize < 1 {
+			pageSize = 10
+		}
+		m.varOptionIndex -= pageSize
+		if m.varOptionIndex < 0 {
+			m.varOptionIndex = 0
+		}
+
+	case keybinds.ActionPageDown:
+		pageSize := m.modalView.Height
+		if pageSize < 1 {
+			pageSize = 10
+		}
+		m.varOptionIndex += pageSize
+		if m.varOptionIndex >= len(varValue.MultiValue.Options) {
+			m.varOptionIndex = len(varValue.MultiValue.Options) - 1
+		}
+		if m.varOptionIndex < 0 {
+			m.varOptionIndex = 0
+		}
+
+	case keybinds.ActionGoToTop:
+		m.varOptionIndex = 0
+
+	case keybinds.ActionGoToBottom:
+		if len(varValue.MultiValue.Options) > 0 {
+			m.varOptionIndex = len(varValue.MultiValue.Options) - 1
+		}
 	}
 
 	return nil
@@ -643,81 +660,88 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleVariableOptionsKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 
-	switch msg.String() {
-	case "esc":
-		m.mode = ModeVariableList
-
-	case "tab":
+	// Handle tab specially (field switching)
+	if msg.String() == "tab" {
 		m.varEditCursor = (m.varEditCursor + 1) % 2
+		return nil
+	}
 
-	case "enter":
-		if m.varEditName == "" {
-			m.errorMsg = "Variable name cannot be empty"
+	action, ok := m.keybinds.Match(keybinds.ContextVariableEdit, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			m.mode = ModeVariableList
 			return nil
-		}
-		if m.varEditValue == "" {
-			m.errorMsg = "Options cannot be empty"
-			return nil
-		}
 
-		// Parse comma-separated options
-		options := strings.Split(m.varEditValue, ",")
-		for i := range options {
-			options[i] = strings.TrimSpace(options[i])
-		}
-
-		// Filter out empty options
-		var cleanOptions []string
-		for _, opt := range options {
-			if opt != "" {
-				cleanOptions = append(cleanOptions, opt)
-			}
-		}
-
-		if len(cleanOptions) == 0 {
-			m.errorMsg = "No valid options provided"
-			return nil
-		}
-
-		// Create multi-value variable
-		if profile.Variables == nil {
-			profile.Variables = make(map[string]types.VariableValue)
-		}
-
-		varValue := types.VariableValue{
-			MultiValue: &types.MultiValueVariable{
-				Options: cleanOptions,
-				Active:  0,
-			},
-		}
-		profile.Variables[m.varEditName] = varValue
-
-		m.sessionMgr.SaveProfiles()
-		m.mode = ModeVariableList
-		m.statusMsg = fmt.Sprintf("Created multi-value variable: %s", m.varEditName)
-
-	default:
-		// Handle text input with cursor support
-		if m.varEditCursor == 0 {
-			// Editing name field
-			if _, shouldContinue := handleTextInputWithCursor(&m.varEditName, &m.varEditNamePos, msg); shouldContinue {
+		case keybinds.ActionTextSubmit:
+			if m.varEditName == "" {
+				m.errorMsg = "Variable name cannot be empty"
 				return nil
 			}
-			// Insert character at cursor position
-			if len(msg.String()) == 1 {
-				m.varEditName = m.varEditName[:m.varEditNamePos] + msg.String() + m.varEditName[m.varEditNamePos:]
-				m.varEditNamePos++
-			}
-		} else {
-			// Editing value field
-			if _, shouldContinue := handleTextInputWithCursor(&m.varEditValue, &m.varEditValuePos, msg); shouldContinue {
+			if m.varEditValue == "" {
+				m.errorMsg = "Options cannot be empty"
 				return nil
 			}
-			// Insert character at cursor position
-			if len(msg.String()) == 1 {
-				m.varEditValue = m.varEditValue[:m.varEditValuePos] + msg.String() + m.varEditValue[m.varEditValuePos:]
-				m.varEditValuePos++
+
+			// Parse comma-separated options
+			options := strings.Split(m.varEditValue, ",")
+			for i := range options {
+				options[i] = strings.TrimSpace(options[i])
 			}
+
+			// Filter out empty options
+			var cleanOptions []string
+			for _, opt := range options {
+				if opt != "" {
+					cleanOptions = append(cleanOptions, opt)
+				}
+			}
+
+			if len(cleanOptions) == 0 {
+				m.errorMsg = "No valid options provided"
+				return nil
+			}
+
+			// Create multi-value variable
+			if profile.Variables == nil {
+				profile.Variables = make(map[string]types.VariableValue)
+			}
+
+			varValue := types.VariableValue{
+				MultiValue: &types.MultiValueVariable{
+					Options: cleanOptions,
+					Active:  0,
+				},
+			}
+			profile.Variables[m.varEditName] = varValue
+
+			m.sessionMgr.SaveProfiles()
+			m.mode = ModeVariableList
+			m.statusMsg = fmt.Sprintf("Created multi-value variable: %s", m.varEditName)
+			return nil
+		}
+	}
+
+	// Handle text input with cursor support
+	if m.varEditCursor == 0 {
+		// Editing name field
+		if _, shouldContinue := handleTextInputWithCursor(&m.varEditName, &m.varEditNamePos, msg); shouldContinue {
+			return nil
+		}
+		// Insert character at cursor position
+		if len(msg.String()) == 1 {
+			m.varEditName = m.varEditName[:m.varEditNamePos] + msg.String() + m.varEditName[m.varEditNamePos:]
+			m.varEditNamePos++
+		}
+	} else {
+		// Editing value field
+		if _, shouldContinue := handleTextInputWithCursor(&m.varEditValue, &m.varEditValuePos, msg); shouldContinue {
+			return nil
+		}
+		// Insert character at cursor position
+		if len(msg.String()) == 1 {
+			m.varEditValue = m.varEditValue[:m.varEditValuePos] + msg.String() + m.varEditValue[m.varEditValuePos:]
+			m.varEditValuePos++
 		}
 	}
 
@@ -733,43 +757,48 @@ func (m *Model) handleVariableAliasKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	switch msg.String() {
-	case "esc":
-		m.mode = ModeVariableManage
-		m.varAliasInput = ""
+	action, ok := m.keybinds.Match(keybinds.ContextTextInput, msg.String())
+	if ok {
+		switch action {
+		case keybinds.ActionTextCancel:
+			m.mode = ModeVariableManage
+			m.varAliasInput = ""
+			return nil
 
-	case "enter":
-		if m.varAliasInput == "" {
-			m.errorMsg = "Alias cannot be empty"
+		case keybinds.ActionTextSubmit:
+			if m.varAliasInput == "" {
+				m.errorMsg = "Alias cannot be empty"
+				return nil
+			}
+
+			// Initialize aliases map if needed
+			if varValue.MultiValue.Aliases == nil {
+				varValue.MultiValue.Aliases = make(map[string]int)
+			}
+
+			// Set the alias
+			varValue.MultiValue.Aliases[m.varAliasInput] = m.varAliasTargetIdx
+			profile.Variables[m.varEditName] = varValue
+			m.sessionMgr.SaveProfiles()
+
+			m.statusMsg = fmt.Sprintf("Alias '%s' set", m.varAliasInput)
+			m.mode = ModeVariableManage
+			m.varAliasInput = ""
+			return nil
+
+		case keybinds.ActionTextBackspace:
+			if len(m.varAliasInput) > 0 {
+				m.varAliasInput = m.varAliasInput[:len(m.varAliasInput)-1]
+			}
 			return nil
 		}
+	}
 
-		// Initialize aliases map if needed
-		if varValue.MultiValue.Aliases == nil {
-			varValue.MultiValue.Aliases = make(map[string]int)
-		}
-
-		// Set the alias
-		varValue.MultiValue.Aliases[m.varAliasInput] = m.varAliasTargetIdx
-		profile.Variables[m.varEditName] = varValue
-		m.sessionMgr.SaveProfiles()
-
-		m.statusMsg = fmt.Sprintf("Alias '%s' set", m.varAliasInput)
-		m.mode = ModeVariableManage
-		m.varAliasInput = ""
-
-	case "backspace":
-		if len(m.varAliasInput) > 0 {
-			m.varAliasInput = m.varAliasInput[:len(m.varAliasInput)-1]
-		}
-
-	default:
-		// Only accept alphanumeric characters and common separators for aliases
-		if len(msg.String()) == 1 {
-			ch := msg.String()[0]
-			if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
-				m.varAliasInput += msg.String()
-			}
+	// Only accept alphanumeric characters and common separators for aliases
+	if len(msg.String()) == 1 {
+		ch := msg.String()[0]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			m.varAliasInput += msg.String()
 		}
 	}
 
