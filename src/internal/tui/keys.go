@@ -1369,9 +1369,26 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// countDocItems returns the total number of navigable items in the documentation
+// countDocItems returns the total number of navigable items in the documentation.
+//
+// Calculates the count based on current collapse state. This is used to:
+//   1. Set bounds for navigation (can't navigate beyond itemCount-1)
+//   2. Cache the count to avoid recalculating on every navigation
+//
+// Counting algorithm mirrors rendering order exactly:
+//   - If Parameters section exists: count header (1)
+//   - If Parameters expanded (key 0): count each parameter
+//   - If Responses section exists: count header (1)
+//   - If Responses expanded (key 1): for each response:
+//     - Count response line (1)
+//     - If response fields expanded (key 100+idx): count field tree items recursively
+//     - Else if response has fields: count "▶ N fields" indicator line (1)
+//
+// Uses lazy tree building: only builds field tree if not already cached.
+//
+// Returns total count of navigable items (lines user can select with ↑↓).
 func (m *Model) countDocItems() int {
-	if m.currentRequest == nil || m.currentRequest.Documentation == nil {
+	if !m.hasValidDocumentation() {
 		return 0
 	}
 
@@ -1381,7 +1398,7 @@ func (m *Model) countDocItems() int {
 	// Parameters section header
 	if len(doc.Parameters) > 0 {
 		count++ // Section header
-		if !m.docState.GetCollapsed(0) {
+		if !m.docState.GetCollapsed(getCollapseKeyForSection("parameters")) {
 			count += len(doc.Parameters) // Each parameter
 		}
 	}
@@ -1389,22 +1406,15 @@ func (m *Model) countDocItems() int {
 	// Responses section header
 	if len(doc.Responses) > 0 {
 		count++ // Section header
-		if !m.docState.GetCollapsed(1) {
+		if !m.docState.GetCollapsed(getCollapseKeyForSection("responses")) {
 			for respIdx, resp := range doc.Responses {
 				count++ // Response line
 
 				// Check if THIS response's fields are expanded
-				responseKey := 100 + respIdx
+				responseKey := getCollapseKeyForResponseFields(respIdx)
 				if !m.docState.GetCollapsed(responseKey) && len(resp.Fields) > 0 {
-					// Fields are expanded - use cached tree
-					allFields := m.docState.GetFieldTreeCache(respIdx)
-					ok := allFields != nil
-					if !ok {
-						// Build and cache the tree
-						allFields = buildVirtualFieldTree(resp.Fields)
-						m.docState.SetFieldTreeCache(respIdx, allFields)
-						m.docState.SetChildrenCache(respIdx, buildHasChildrenCache(allFields))
-					}
+					// Fields are expanded - get or build cached tree
+					allFields := m.getOrBuildFieldTree(respIdx, resp.Fields)
 					count += m.countFieldsInTree(respIdx, "", allFields)
 				} else if len(resp.Fields) > 0 {
 					// Fields are collapsed - count the "N fields" indicator line
@@ -1417,7 +1427,23 @@ func (m *Model) countDocItems() int {
 	return count
 }
 
-// countFieldsInTree recursively counts fields in the tree
+// countFieldsInTree recursively counts visible fields in the tree based on collapse state.
+//
+// This mirrors the rendering logic - only counts fields that would actually be displayed.
+// A field is counted if:
+//   1. It is a direct child of parentPath
+//   2. Its parent is not collapsed (so it's visible)
+//
+// For each field:
+//   - Count the field itself (1)
+//   - If field has children AND is not collapsed: recursively count children
+//
+// Parameters:
+//   - respIdx: Response index (for collapse key generation)
+//   - parentPath: Parent field name (empty string for root level)
+//   - allFields: Complete virtual field tree
+//
+// Returns total count of visible navigable fields under this parent.
 func (m *Model) countFieldsInTree(respIdx int, parentPath string, allFields []DocField) int {
 	count := 0
 	children := getDirectChildren(parentPath, allFields)
@@ -1426,7 +1452,7 @@ func (m *Model) countFieldsInTree(respIdx int, parentPath string, allFields []Do
 		count++ // This field
 
 		// Recurse into children if not collapsed
-		fieldKey := 200 + respIdx*1000 + hashString(field.Name)
+		fieldKey := getCollapseKeyForField(respIdx, field.Name)
 		isCollapsed := m.docState.GetCollapsed(fieldKey)
 		fieldHasChildren := hasChildren(field.Name, allFields)
 		if !isCollapsed && fieldHasChildren {
@@ -1437,9 +1463,32 @@ func (m *Model) countFieldsInTree(respIdx int, parentPath string, allFields []Do
 	return count
 }
 
-// toggleDocSection toggles the collapsed state of the currently selected documentation section
+// toggleDocSection toggles the collapsed state of the currently selected documentation section.
+//
+// This function walks through the documentation structure in display order, tracking a currentIdx
+// counter. When currentIdx matches the selected index, it toggles that item's collapse state.
+//
+// Algorithm:
+//   1. Walk through documentation in rendering order:
+//      - Parameters header (idx 0)
+//      - Each parameter (if Parameters expanded)
+//      - Responses header (idx 1)
+//      - Each response and its fields (if Responses expanded)
+//   2. When currentIdx matches selectedIdx:
+//      - Toggle the appropriate collapse key
+//      - If expanding response fields for first time: initializeFieldCollapseState()
+//      - Update view and recalculate item count
+//      - Return early
+//
+// Collapse keys used:
+//   - 0: Parameters section
+//   - 1: Responses section
+//   - 100+respIdx: Response fields toggle
+//   - 200+respIdx*1000+hash(name): Individual field toggle
+//
+// Note: currentIdx must be tracked exactly as in rendering/counting to find the right item.
 func (m *Model) toggleDocSection() {
-	if m.currentRequest == nil || m.currentRequest.Documentation == nil {
+	if !m.hasValidDocumentation() {
 		return
 	}
 
@@ -1449,13 +1498,13 @@ func (m *Model) toggleDocSection() {
 	// Check if we're on the Parameters section header
 	if len(doc.Parameters) > 0 {
 		if currentIdx == m.docState.GetSelectedIdx() {
-			m.docState.SetCollapsed(0, !m.docState.GetCollapsed(0))
+			m.docState.SetCollapsed(getCollapseKeyForSection("parameters"), !m.docState.GetCollapsed(getCollapseKeyForSection("parameters")))
 			m.updateDocumentationView()
 			m.docState.SetItemCount(m.countDocItems()) // Recalculate after toggle
 			return
 		}
 		currentIdx++
-		if !m.docState.GetCollapsed(0) {
+		if !m.docState.GetCollapsed(getCollapseKeyForSection("parameters")) {
 			currentIdx += len(doc.Parameters)
 		}
 	}
@@ -1463,7 +1512,7 @@ func (m *Model) toggleDocSection() {
 	// Check if we're on the Responses section header
 	if len(doc.Responses) > 0 {
 		if currentIdx == m.docState.GetSelectedIdx() {
-			m.docState.SetCollapsed(1, !m.docState.GetCollapsed(1))
+			m.docState.SetCollapsed(getCollapseKeyForSection("responses"), !m.docState.GetCollapsed(getCollapseKeyForSection("responses")))
 			m.updateDocumentationView()
 			m.docState.SetItemCount(m.countDocItems()) // Recalculate after toggle
 			return
@@ -1471,23 +1520,16 @@ func (m *Model) toggleDocSection() {
 		currentIdx++
 
 		// Check if we're on a response or nested field
-		if !m.docState.GetCollapsed(1) {
+		if !m.docState.GetCollapsed(getCollapseKeyForSection("responses")) {
 			for respIdx, resp := range doc.Responses {
 				// Response line (200:) is NOT toggleable - only the "▶ N fields" line below can toggle
 				currentIdx++
 
 				// Only process field toggles if this response's fields are visible
-				responseKey := 100 + respIdx
+				responseKey := getCollapseKeyForResponseFields(respIdx)
 				if !m.docState.GetCollapsed(responseKey) && len(resp.Fields) > 0 {
-					// Fields are expanded - use cached tree
-					allFields := m.docState.GetFieldTreeCache(respIdx)
-					ok := allFields != nil
-					if !ok {
-						// Build and cache the tree
-						allFields = buildVirtualFieldTree(resp.Fields)
-						m.docState.SetFieldTreeCache(respIdx, allFields)
-						m.docState.SetChildrenCache(respIdx, buildHasChildrenCache(allFields))
-					}
+					// Fields are expanded - get or build cached tree
+					allFields := m.getOrBuildFieldTree(respIdx, resp.Fields)
 					m.toggleFieldInTree(respIdx, "", allFields, &currentIdx)
 				} else if len(resp.Fields) > 0 {
 					// Fields are collapsed - check if user is toggling the "▶ N fields" line
@@ -1518,7 +1560,7 @@ func (m *Model) toggleFieldInTree(respIdx int, parentPath string, allFields []Do
 	for _, field := range children {
 		if *currentIdx == m.docState.GetSelectedIdx() {
 			// This is the selected field - toggle it
-			fieldKey := 200 + respIdx*1000 + hashString(field.Name)
+			fieldKey := getCollapseKeyForField(respIdx, field.Name)
 			m.docState.SetCollapsed(fieldKey, !m.docState.GetCollapsed(fieldKey))
 			m.updateDocumentationView()
 			m.docState.SetItemCount(m.countDocItems()) // Recalculate after toggle
@@ -1527,7 +1569,7 @@ func (m *Model) toggleFieldInTree(respIdx int, parentPath string, allFields []Do
 		*currentIdx++
 
 		// Show description if not collapsed and not virtual
-		fieldKey := 200 + respIdx*1000 + hashString(field.Name)
+		fieldKey := getCollapseKeyForField(respIdx, field.Name)
 		isCollapsed := m.docState.GetCollapsed(fieldKey)
 		if !isCollapsed && !field.IsVirtual && field.Description != "" {
 			// Description line doesn't increment selection

@@ -1484,19 +1484,12 @@ func (m *Model) updateDocumentationView() {
 
 				// Response fields - lazy rendering (only build tree when response is expanded)
 				if len(resp.Fields) > 0 {
-					responseKey := 100 + respIdx
+					responseKey := getCollapseKeyForResponseFields(respIdx)
 					responseFieldsCollapsed := m.docState.GetCollapsed(responseKey)
 
 					if !responseFieldsCollapsed {
-						// Response fields are expanded - use cached tree
-						allFields := m.docState.GetFieldTreeCache(respIdx)
-						ok := allFields != nil
-						if !ok {
-							// Build and cache the tree
-							allFields = buildVirtualFieldTree(resp.Fields)
-							m.docState.SetFieldTreeCache(respIdx, allFields)
-							m.docState.SetChildrenCache(respIdx, buildHasChildrenCache(allFields))
-						}
+						// Response fields are expanded - get or build cached tree
+						allFields := m.getOrBuildFieldTree(respIdx, resp.Fields)
 						hasChildrenCache := m.docState.GetChildrenCache(respIdx)
 						m.renderResponseFieldsTree(respIdx, "", allFields, hasChildrenCache, &currentIdx, &content, 0, &selectedLineNum)
 					} else {
