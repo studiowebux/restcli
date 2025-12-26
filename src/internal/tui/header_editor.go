@@ -241,22 +241,24 @@ func (m *Model) handleHeaderInputKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Handle common text input operations (paste, clear, backspace)
+	// Handle text input with cursor support
 	if m.headerEditCursor == 0 {
-		if _, shouldContinue := handleTextInput(&m.headerEditName, msg); shouldContinue {
+		if _, shouldContinue := handleTextInputWithCursor(&m.headerEditName, &m.headerEditNamePos, msg); shouldContinue {
 			return nil
 		}
-		// Append character to name
+		// Insert character at cursor position
 		if len(msg.String()) == 1 {
-			m.headerEditName += msg.String()
+			m.headerEditName = m.headerEditName[:m.headerEditNamePos] + msg.String() + m.headerEditName[m.headerEditNamePos:]
+			m.headerEditNamePos++
 		}
 	} else {
-		if _, shouldContinue := handleTextInput(&m.headerEditValue, msg); shouldContinue {
+		if _, shouldContinue := handleTextInputWithCursor(&m.headerEditValue, &m.headerEditValuePos, msg); shouldContinue {
 			return nil
 		}
-		// Append character to value
+		// Insert character at cursor position
 		if len(msg.String()) == 1 {
-			m.headerEditValue += msg.String()
+			m.headerEditValue = m.headerEditValue[:m.headerEditValuePos] + msg.String() + m.headerEditValue[m.headerEditValuePos:]
+			m.headerEditValuePos++
 		}
 	}
 

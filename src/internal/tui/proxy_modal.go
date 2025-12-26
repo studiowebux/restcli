@@ -13,8 +13,8 @@ import (
 // updateProxyView updates the proxy viewer modal content
 func (m *Model) updateProxyView() {
 	// Get logs from proxy if running
-	if m.proxyRunning && m.proxyServer != nil {
-		m.proxyLogs = m.proxyServer.GetLogs()
+	if m.proxyServerState.IsRunning() && m.proxyServerState.GetServer() != nil {
+		m.proxyServerState.SetLogs(m.proxyServerState.GetServer().GetLogs())
 	}
 }
 
@@ -23,11 +23,11 @@ func (m Model) renderProxyModal() string {
 	var content strings.Builder
 
 	// Calculate dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
-	contentWidth := modalWidth - 4
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
+	contentWidth := modalWidth - ViewportPaddingHorizontal
 
-	if !m.proxyRunning || m.proxyServer == nil {
+	if !m.proxyServerState.IsRunning() || m.proxyServerState.GetServer() == nil {
 		content.WriteString(styleTitleFocused.Render("Debug Proxy") + "\n\n")
 		content.WriteString(styleSubtle.Render("○ Proxy Stopped") + "\n\n")
 
@@ -65,14 +65,14 @@ func (m Model) renderProxyModal() string {
 	}
 
 	// Header
-	content.WriteString(styleTitleFocused.Render(fmt.Sprintf("Debug Proxy - Port %d", m.proxyServer.Port)) + "\n")
-	content.WriteString(styleSubtle.Render(fmt.Sprintf("Captured: %d requests | Updates in real-time", len(m.proxyLogs))) + "\n\n")
+	content.WriteString(styleTitleFocused.Render(fmt.Sprintf("Debug Proxy - Port %d", m.proxyServerState.GetServer().Port)) + "\n")
+	content.WriteString(styleSubtle.Render(fmt.Sprintf("Captured: %d requests | Updates in real-time", len(m.proxyServerState.GetLogs()))) + "\n\n")
 
-	if len(m.proxyLogs) == 0 {
+	if len(m.proxyServerState.GetLogs()) == 0 {
 		content.WriteString("No requests captured yet.\n\n")
 		content.WriteString("Configure your application:\n")
-		content.WriteString(fmt.Sprintf("  export HTTP_PROXY=http://localhost:%d\n", m.proxyServer.Port))
-		content.WriteString(fmt.Sprintf("  export http_proxy=http://localhost:%d\n", m.proxyServer.Port))
+		content.WriteString(fmt.Sprintf("  export HTTP_PROXY=http://localhost:%d\n", m.proxyServerState.GetServer().Port))
+		content.WriteString(fmt.Sprintf("  export http_proxy=http://localhost:%d\n", m.proxyServerState.GetServer().Port))
 
 		m.modalView.Width = contentWidth
 		m.modalView.Height = modalHeight - 6
@@ -95,8 +95,8 @@ func (m Model) renderProxyModal() string {
 	content.WriteString(strings.Repeat("─", contentWidth) + "\n")
 
 	// Show all requests (chronological order - oldest first)
-	for i := 0; i < len(m.proxyLogs); i++ {
-		log := m.proxyLogs[i]
+	for i := 0; i < len(m.proxyServerState.GetLogs()); i++ {
+		log := m.proxyServerState.GetLogs()[i]
 
 		// Format method with color
 		var methodStyle lipgloss.Style
@@ -125,7 +125,7 @@ func (m Model) renderProxyModal() string {
 
 		// Highlight selected
 		lineStyle := lipgloss.NewStyle()
-		if i == m.proxySelectedIndex {
+		if i == m.proxyServerState.GetSelectedIndex() {
 			lineStyle = lineStyle.Background(lipgloss.Color("237"))
 		}
 
@@ -165,13 +165,10 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "s":
 		// Start or stop proxy
-		if m.proxyRunning && m.proxyServer != nil {
+		if m.proxyServerState.IsRunning() && m.proxyServerState.GetServer() != nil {
 			// Stop proxy
-			m.proxyServer.Stop()
-			m.proxyServer = nil
-			m.proxyRunning = false
-			m.proxyLogs = nil
-			m.proxySelectedIndex = 0
+			m.proxyServerState.GetServer().Stop()
+			m.proxyServerState.Stop()
 			m.statusMsg = "Proxy stopped"
 			return nil
 		} else {
@@ -183,8 +180,7 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 				m.errorMsg = fmt.Sprintf("Failed to start proxy: %v", err)
 				return nil
 			} else {
-				m.proxyServer = p
-				m.proxyRunning = true
+				m.proxyServerState.Start(p)
 				m.statusMsg = fmt.Sprintf("Proxy started on port %d", proxyPort)
 				// Start event-based listener
 				return m.listenForProxyLogs()
@@ -193,15 +189,18 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "c":
 		// Clear captured logs
-		if m.proxyServer != nil {
-			m.proxyServer.ClearLogs()
-			m.proxyLogs = nil
-			m.proxySelectedIndex = 0
+		if m.proxyServerState.GetServer() != nil {
+			m.proxyServerState.GetServer().ClearLogs()
+			m.proxyServerState.ClearLogs()
+			m.proxyServerState.SetSelectedIndex(0)
+			// Reset viewport scroll position
+			m.modalView.SetYOffset(0)
+			m.statusMsg = "Proxy logs cleared"
 		}
 		return nil
 
 	case "enter":
-		if m.proxySelectedIndex >= 0 && m.proxySelectedIndex < len(m.proxyLogs) {
+		if m.proxyServerState.GetSelectedIndex() >= 0 && m.proxyServerState.GetSelectedIndex() < len(m.proxyServerState.GetLogs()) {
 			m.mode = ModeProxyDetail
 			m.updateProxyDetailView() // Set content once when entering modal
 		}
@@ -219,33 +218,27 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 		m.mode = ModeNormal
 
 	case keybinds.ActionNavigateDown:
-		if len(m.proxyLogs) > 0 && m.proxySelectedIndex < len(m.proxyLogs)-1 {
-			m.proxySelectedIndex++
+		if len(m.proxyServerState.GetLogs()) > 0 && m.proxyServerState.GetSelectedIndex() < len(m.proxyServerState.GetLogs())-1 {
+			m.proxyServerState.Navigate(1)
 		}
 
 	case keybinds.ActionNavigateUp:
-		if len(m.proxyLogs) > 0 && m.proxySelectedIndex > 0 {
-			m.proxySelectedIndex--
+		if len(m.proxyServerState.GetLogs()) > 0 && m.proxyServerState.GetSelectedIndex() > 0 {
+			m.proxyServerState.Navigate(-1)
 		}
 
 	case keybinds.ActionHalfPageDown:
 		// Half page down
-		if len(m.proxyLogs) > 0 {
+		if len(m.proxyServerState.GetLogs()) > 0 {
 			halfPage := m.modalView.Height / 2
-			m.proxySelectedIndex += halfPage
-			if m.proxySelectedIndex >= len(m.proxyLogs) {
-				m.proxySelectedIndex = len(m.proxyLogs) - 1
-			}
+			m.proxyServerState.Navigate(halfPage)
 		}
 
 	case keybinds.ActionHalfPageUp:
 		// Half page up
-		if len(m.proxyLogs) > 0 {
+		if len(m.proxyServerState.GetLogs()) > 0 {
 			halfPage := m.modalView.Height / 2
-			m.proxySelectedIndex -= halfPage
-			if m.proxySelectedIndex < 0 {
-				m.proxySelectedIndex = 0
-			}
+			m.proxyServerState.Navigate(-halfPage)
 		}
 
 	case keybinds.ActionPageUp:
@@ -255,14 +248,14 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 		m.modalView.PageDown()
 
 	case keybinds.ActionGoToTop:
-		if len(m.proxyLogs) > 0 {
-			m.proxySelectedIndex = 0
+		if len(m.proxyServerState.GetLogs()) > 0 {
+			m.proxyServerState.SetSelectedIndex(0)
 		}
 		m.modalView.GotoTop()
 
 	case keybinds.ActionGoToBottom:
-		if len(m.proxyLogs) > 0 {
-			m.proxySelectedIndex = len(m.proxyLogs) - 1
+		if len(m.proxyServerState.GetLogs()) > 0 {
+			m.proxyServerState.SetSelectedIndex(len(m.proxyServerState.GetLogs()) - 1)
 		}
 		m.modalView.GotoBottom()
 	}

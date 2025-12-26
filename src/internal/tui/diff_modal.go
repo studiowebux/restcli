@@ -11,9 +11,8 @@ import (
 
 // handleDiffKeys handles keyboard input in diff mode
 func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
-	// Handle special keys not in registry
-	switch msg.String() {
-	case "tab":
+	// Handle tab key for view toggle (special feature, not a standard keybind)
+	if msg.String() == "tab" {
 		// Toggle between unified and split view
 		if m.diffViewMode == "split" {
 			m.diffViewMode = "unified"
@@ -22,14 +21,9 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		m.updateDiffView() // Regenerate content for new mode
 		return nil
-
-	case "W":
-		// Close modal
-		m.mode = ModeNormal
-		return nil
 	}
 
-	// Use registry for navigation
+	// Use registry for all other keys including close/navigation
 	action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextModal, msg.String())
 	if partial {
 		return nil
@@ -164,8 +158,8 @@ func (m *Model) renderDiffSplitView(modalWidth, modalHeight int) string {
 // renderDiffModal renders the diff comparison modal
 func (m *Model) renderDiffModal() string {
 	// Use nearly full screen
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	var content string
 
@@ -174,15 +168,24 @@ func (m *Model) renderDiffModal() string {
 		content = m.renderDiffSplitView(modalWidth, modalHeight)
 	} else {
 		// Unified diff view (default)
+		// Footer outside viewport
+		footer := styleSubtle.Render("Tab: Toggle View | ↑/↓ j/k: Scroll | gg/G: Top/Bottom | ESC/W: Close")
+
+		// Viewport with content (footer is separate)
 		diffView := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBlue).
 			Width(modalWidth).
-			Height(modalHeight).
+			Height(modalHeight-2). // Reduce height to account for footer
 			Padding(1, 2).
 			Render(styleTitle.Render("Response Comparison") + "\n\n" + m.diffView.View())
 
-		content = diffView
+		// Combine viewport and footer
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			diffView,
+			"\n"+footer,
+		)
 	}
 
 	return lipgloss.Place(
@@ -203,16 +206,16 @@ func (m *Model) updateDiffView() {
 
 	if m.diffViewMode == "split" {
 		// Split view mode - populate left and right viewports
-		modalWidth := m.width - 6
-		modalHeight := m.height - 3
-		paneWidth := (modalWidth - 3) / 2
-		paneHeight := modalHeight - 6
+		modalWidth := m.width - ModalWidthMargin
+		modalHeight := m.height - ModalHeightMargin
+		paneWidth := (modalWidth - SplitPaneBorderWidth) / 2
+		paneHeight := modalHeight - ModalOverheadLines
 
 		// Set viewport dimensions
-		m.diffLeftView.Width = paneWidth - 4
-		m.diffLeftView.Height = paneHeight - 2
-		m.diffRightView.Width = paneWidth - 4
-		m.diffRightView.Height = paneHeight - 2
+		m.diffLeftView.Width = paneWidth - ViewportPaddingHorizontal
+		m.diffLeftView.Height = paneHeight - ViewportPaddingVertical
+		m.diffRightView.Width = paneWidth - ViewportPaddingHorizontal
+		m.diffRightView.Height = paneHeight - ViewportPaddingVertical
 
 		// Generate diff-styled content with background highlighting
 		leftContent, rightContent := compareTextSplitView(
@@ -231,8 +234,8 @@ func (m *Model) updateDiffView() {
 	} else {
 		// Unified diff view mode
 		// Set viewport dimensions
-		m.diffView.Width = m.width - 10
-		m.diffView.Height = m.height - 7
+		m.diffView.Width = m.width - ModalWidthMarginNarrow
+		m.diffView.Height = m.height - ContentOffsetStandard
 
 		var content strings.Builder
 
@@ -289,7 +292,7 @@ func (m *Model) updateDiffView() {
 		bodyDiff := compareTextLineByLine(m.pinnedResponse.Body, m.currentResponse.Body)
 		content.WriteString(bodyDiff)
 
-		content.WriteString("\n\n" + styleSubtle.Render("Tab: Toggle View | ↑/↓ j/k: Scroll | gg/G: Top/Bottom | ESC/W: Close"))
+		// Footer is now outside viewport, don't add it to content
 
 		m.diffView.SetContent(content.String())
 		m.diffView.GotoTop()

@@ -81,8 +81,10 @@ func (r *Registry) MatchMultiKey(context Context, key string) (Action, bool, boo
 			return action, true, false
 		}
 
-		// No match for sequence, return no match
-		return "", false, false
+		// No match for sequence, try matching current key as standalone
+		// This allows 'g' followed by 'q' to close a modal instead of failing
+		action, ok := r.Match(context, key)
+		return action, ok, false
 	}
 
 	// Check if this key could start a sequence (currently only 'g' for 'gg')

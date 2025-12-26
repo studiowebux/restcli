@@ -14,8 +14,8 @@ import (
 // updateProxyDetailView updates the proxy detail modal viewport content
 func (m *Model) updateProxyDetailView() {
 	// Set viewport dimensions for the modal
-	m.modalView.Width = m.width - 10  // Modal content width minus padding
-	m.modalView.Height = m.height - 9 // Modal content height minus padding, title lines, and footer
+	m.modalView.Width = m.width - ModalWidthMarginNarrow
+	m.modalView.Height = m.height - ContentOffsetLarge
 
 	// Build and set content
 	m.modalView.SetContent(m.buildProxyDetailContent())
@@ -23,17 +23,17 @@ func (m *Model) updateProxyDetailView() {
 
 // renderProxyDetailModal renders the detailed view of a single proxy request
 func (m Model) renderProxyDetailModal() string {
-	if m.proxySelectedIndex < 0 || m.proxySelectedIndex >= len(m.proxyLogs) {
+	if m.proxyServerState.GetSelectedIndex() < 0 || m.proxyServerState.GetSelectedIndex() >= len(m.proxyServerState.GetLogs()) {
 		return "No request selected"
 	}
 
-	log := m.proxyLogs[m.proxySelectedIndex]
+	log := m.proxyServerState.GetLogs()[m.proxyServerState.GetSelectedIndex()]
 
 	// Fixed footer for keybinds
 	footer := styleSubtle.Render("↑/↓ scroll | Ctrl+d/u half page | g/G top/bottom | ESC close")
 
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	detailView := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -54,11 +54,11 @@ func (m Model) renderProxyDetailModal() string {
 
 // buildProxyDetailContent builds the content for the proxy detail modal
 func (m *Model) buildProxyDetailContent() string {
-	if m.proxySelectedIndex < 0 || m.proxySelectedIndex >= len(m.proxyLogs) {
+	if m.proxyServerState.GetSelectedIndex() < 0 || m.proxyServerState.GetSelectedIndex() >= len(m.proxyServerState.GetLogs()) {
 		return "No request selected"
 	}
 
-	log := m.proxyLogs[m.proxySelectedIndex]
+	log := m.proxyServerState.GetLogs()[m.proxyServerState.GetSelectedIndex()]
 	var content strings.Builder
 
 	// Request line

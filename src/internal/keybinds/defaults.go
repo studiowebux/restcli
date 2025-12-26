@@ -188,10 +188,10 @@ func registerHeaderBindings(r *Registry) {
 	r.RegisterMultiple(ContextHeaderList, []string{"down", "j"}, ActionNavigateDown)
 	r.RegisterMultiple(ContextHeaderList, []string{"shift+up", "K"}, ActionNavigateUp) // Move header up
 	r.RegisterMultiple(ContextHeaderList, []string{"shift+down", "J"}, ActionNavigateDown) // Move header down
-	r.Register(ContextHeaderList, "enter", ActionHeaderEdit)
-	r.Register(ContextHeaderList, "r", ActionHeaderDelete)
+	r.RegisterMultiple(ContextHeaderList, []string{"enter", "e"}, ActionHeaderEdit) // 'e' for edit (matches footer)
+	r.RegisterMultiple(ContextHeaderList, []string{"r", "d"}, ActionHeaderDelete) // 'd' for delete (matches footer)
 	r.Register(ContextHeaderList, "p", ActionTextPaste)
-	r.Register(ContextHeaderList, "C", ActionHeaderAdd)
+	r.RegisterMultiple(ContextHeaderList, []string{"C", "a"}, ActionHeaderAdd) // 'a' for add (matches footer)
 	r.Register(ContextHeaderList, "pgup", ActionPageUp)
 	r.Register(ContextHeaderList, "pgdown", ActionPageDown)
 	r.Register(ContextHeaderList, "ctrl+u", ActionHalfPageUp)
@@ -243,7 +243,8 @@ func registerDocumentationBindings(r *Registry) {
 
 // registerHistoryBindings sets up keybindings for history browser
 func registerHistoryBindings(r *Registry) {
-	r.RegisterMultiple(ContextHistory, []string{"esc", "H", "q", "tab"}, ActionCloseModal)
+	r.RegisterMultiple(ContextHistory, []string{"esc", "H", "q"}, ActionCloseModal)
+	r.Register(ContextHistory, "tab", ActionSwitchPane)
 	r.RegisterMultiple(ContextHistory, []string{"up", "k"}, ActionNavigateUp)
 	r.RegisterMultiple(ContextHistory, []string{"down", "j"}, ActionNavigateDown)
 	r.Register(ContextHistory, "/", ActionOpenSearch)
@@ -285,8 +286,9 @@ func registerAnalyticsBindings(r *Registry) {
 
 // registerStressTestBindings sets up keybindings for stress test modes
 func registerStressTestBindings(r *Registry) {
-	r.RegisterMultiple(ContextStressTest, []string{"esc", "n", "N"}, ActionCloseModal)
+	r.RegisterMultiple(ContextStressTest, []string{"esc", "q", "n", "N"}, ActionCloseModal)
 	r.RegisterMultiple(ContextStressTest, []string{"y", "Y"}, ActionConfirm)
+	r.Register(ContextStressTest, "tab", ActionSwitchPane)
 	r.Register(ContextStressTest, "ctrl+l", ActionStressTestLoad)
 	r.RegisterMultiple(ContextStressTest, []string{"up", "k"}, ActionNavigateUp)
 	r.RegisterMultiple(ContextStressTest, []string{"down", "j"}, ActionNavigateDown)
@@ -358,6 +360,10 @@ func registerModalBindings(r *Registry) {
 	r.RegisterMultiple(ContextModal, []string{"esc", "q"}, ActionCloseModal)
 	r.RegisterMultiple(ContextModal, []string{"j", "down"}, ActionNavigateDown)
 	r.RegisterMultiple(ContextModal, []string{"k", "up"}, ActionNavigateUp)
+	r.Register(ContextModal, "pgup", ActionPageUp)
+	r.Register(ContextModal, "pgdown", ActionPageDown)
+	r.Register(ContextModal, "ctrl+u", ActionHalfPageUp)
+	r.Register(ContextModal, "ctrl+d", ActionHalfPageDown)
 	r.Register(ContextModal, "g", ActionGoToTopPrepare)
 	r.Register(ContextModal, "gg", ActionGoToTop)
 	r.Register(ContextModal, "G", ActionGoToBottom)

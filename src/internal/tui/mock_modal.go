@@ -18,17 +18,17 @@ func (m *Model) renderMockServer() string {
 	content.WriteString(styleTitle.Render("Mock Server Management") + "\n\n")
 
 	// Server status
-	if m.mockServerRunning {
-		address := m.mockServer.GetAddress()
+	if m.mockServerState.IsRunning() {
+		address := m.mockServerState.GetServer().GetAddress()
 		content.WriteString(styleSuccess.Render("● Server Running") + "\n")
 		content.WriteString(fmt.Sprintf("  Address: %s\n", address))
-		if m.mockConfigPath != "" {
-			content.WriteString(fmt.Sprintf("  Config: %s\n", filepath.Base(m.mockConfigPath)))
+		if m.mockServerState.GetConfigPath() != "" {
+			content.WriteString(fmt.Sprintf("  Config: %s\n", filepath.Base(m.mockServerState.GetConfigPath())))
 		}
 		content.WriteString("\n")
 
 		// Recent logs
-		logs := m.mockServer.GetLogs()
+		logs := m.mockServerState.GetServer().GetLogs()
 		if len(logs) > 0 {
 			content.WriteString(styleTitle.Render("Recent Requests") + " (last 10)\n\n")
 
@@ -93,13 +93,13 @@ func (m *Model) renderMockServer() string {
 	}
 
 	// Calculate dimensions
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	// Set viewport dimensions BEFORE setting content
 	// Account for padding (1 top, 1 bottom) + title lines + footer
-	m.modalView.Width = modalWidth - 4  // Subtract horizontal padding
-	m.modalView.Height = modalHeight - 6 // Subtract vertical padding, title, footer
+	m.modalView.Width = modalWidth - ViewportPaddingHorizontal
+	m.modalView.Height = modalHeight - ModalOverheadLines
 
 	// Set modal content
 	m.modalView.SetContent(content.String())
@@ -129,7 +129,7 @@ func (m *Model) handleMockServerKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle special keys not in registry
 	switch msg.String() {
 	case "s":
-		if m.mockServerRunning {
+		if m.mockServerState.IsRunning() {
 			// Stop server
 			return m.stopMockServer()
 		} else {
@@ -138,8 +138,8 @@ func (m *Model) handleMockServerKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "c":
-		if m.mockServerRunning && m.mockServer != nil {
-			m.mockServer.ClearLogs()
+		if m.mockServerState.IsRunning() && m.mockServerState.GetServer() != nil {
+			m.mockServerState.GetServer().ClearLogs()
 			m.statusMsg = "Mock server logs cleared"
 		}
 		return nil
@@ -198,10 +198,10 @@ func (m *Model) findMockConfigs() []string {
 	paths := []string{
 		filepath.Join(workdir, "mocks"),
 		workdir,
-		"mocks",     // Current dir mocks/
-		".",         // Current directory
-		"../mocks",  // Parent dir mocks/ (common when running from src/)
-		"..",        // Parent directory
+		"mocks",    // Current dir mocks/
+		".",        // Current directory
+		"../mocks", // Parent dir mocks/ (common when running from src/)
+		"..",       // Parent directory
 	}
 
 	for _, dir := range paths {

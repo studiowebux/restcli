@@ -10,8 +10,8 @@ import (
 func (m *Model) renderInspect() string {
 	// Render viewport with scrolling support (like help modal)
 	// Use nearly full screen but leave small margin
-	modalWidth := m.width - 6
-	modalHeight := m.height - 3
+	modalWidth := m.width - ModalWidthMargin
+	modalHeight := m.height - ModalHeightMargin
 
 	// Fixed footer for keybinds
 	footer := styleSubtle.Render("↑/↓ scroll [Enter] execute [ESC] close")
