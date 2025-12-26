@@ -112,6 +112,8 @@ type Model struct {
 	cachedViewWidth        int                  // Viewport width used for cached content
 	cachedFilterActive     bool                 // Filter state when cached
 	cachedSearchActive     bool                 // Search highlight state when cached
+	cachedShowHeaders      bool                 // Headers visibility when cached
+	cachedShowBody         bool                 // Body visibility when cached
 	cachedHighlightedBody  string               // Pre-highlighted body to avoid re-rendering
 	cachedSearchMatchCount int                  // Number of matches used for cached highlighting
 

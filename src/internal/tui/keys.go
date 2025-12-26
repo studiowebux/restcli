@@ -543,13 +543,28 @@ func (m *Model) handleToggleAction(action keybinds.Action) {
 	switch action {
 	case keybinds.ActionToggleBody:
 		m.showBody = !m.showBody
+		if m.showBody {
+			m.statusMsg = "Body shown"
+		} else {
+			m.statusMsg = "Body hidden"
+		}
 
 	case keybinds.ActionToggleHeaders:
 		m.showHeaders = !m.showHeaders
+		if m.showHeaders {
+			m.statusMsg = "Headers shown"
+		} else {
+			m.statusMsg = "Headers hidden"
+		}
 		m.updateResponseView() // Regenerate response content
 
 	case keybinds.ActionToggleFullscreen:
 		m.fullscreen = !m.fullscreen
+		if m.fullscreen {
+			m.statusMsg = "Fullscreen enabled"
+		} else {
+			m.statusMsg = "Fullscreen disabled"
+		}
 		m.updateViewport()     // Recalculate viewport width for fullscreen
 		m.updateResponseView() // Regenerate content (wrapping changes based on fullscreen)
 	}

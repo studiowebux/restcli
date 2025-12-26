@@ -738,7 +738,9 @@ func (m *Model) updateResponseView() {
 	cacheValid := m.cachedResponsePtr == m.currentResponse &&
 		m.cachedViewWidth == m.responseView.Width &&
 		m.cachedFilterActive == m.filterActive &&
-		m.cachedSearchActive == m.searchInResponseCtx
+		m.cachedSearchActive == m.searchInResponseCtx &&
+		m.cachedShowHeaders == m.showHeaders &&
+		m.cachedShowBody == m.showBody
 
 	if cacheValid && !m.loading {
 		// Use cached content
@@ -968,6 +970,8 @@ func (m *Model) updateResponseView() {
 	m.cachedViewWidth = m.responseView.Width
 	m.cachedFilterActive = m.filterActive
 	m.cachedSearchActive = m.searchInResponseCtx
+	m.cachedShowHeaders = m.showHeaders
+	m.cachedShowBody = m.showBody
 
 	// Apply search highlighting if we're searching in response
 	if m.searchInResponseCtx && len(m.responseSearchMatches) > 0 {
