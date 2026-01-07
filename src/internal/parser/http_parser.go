@@ -29,6 +29,11 @@ func ParseHTTPFile(filePath string) ([]types.HttpRequest, error) {
 		line := scanner.Text()
 		lineNum++
 
+		// Detect malformed request separator (## instead of ###)
+		if strings.HasPrefix(line, "##") && !strings.HasPrefix(line, "###") {
+			return nil, fmt.Errorf("invalid .http format at %s:%d - found '##' but expected '###' for request separator", filePath, lineNum)
+		}
+
 		// New request separator
 		if strings.HasPrefix(line, "###") {
 			// Save previous request if exists

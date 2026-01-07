@@ -81,6 +81,7 @@ const (
 	ActionExecute          Action = "execute"            // Execute request
 	ActionOpenEditor       Action = "open_editor"        // Open in external editor
 	ActionConfigureEditor  Action = "configure_editor"   // Configure editor
+	ActionOpenTerminal     Action = "open_terminal"      // Open terminal in workdir
 	ActionDuplicateFile    Action = "duplicate_file"     // Duplicate file
 	ActionDeleteFile       Action = "delete_file"        // Delete file (with confirm)
 	ActionRenameFile       Action = "rename_file"        // Rename file
@@ -90,10 +91,11 @@ const (
 	// Response operations (Normal mode)
 	ActionSaveResponse     Action = "save_response"      // Save response to file
 	ActionCopyToClipboard  Action = "copy_to_clipboard"  // Copy response to clipboard
-	ActionToggleBody       Action = "toggle_body"        // Toggle body visibility
-	ActionToggleHeaders    Action = "toggle_headers"     // Toggle headers visibility
-	ActionToggleFullscreen Action = "toggle_fullscreen"  // Toggle fullscreen mode
-	ActionPinResponse      Action = "pin_response"       // Pin response for comparison
+	ActionToggleBody       Action = "toggle_body"         // Toggle body visibility
+	ActionToggleHeaders    Action = "toggle_headers"      // Toggle headers visibility
+	ActionToggleFullscreen Action = "toggle_fullscreen"   // Toggle fullscreen mode
+	ActionToggleResponse   Action = "toggle_response"     // Toggle response pane visibility
+	ActionPinResponse      Action = "pin_response"        // Pin response for comparison
 	ActionShowDiff         Action = "show_diff"          // Show diff with pinned response
 	ActionFilterResponse   Action = "filter_response"    // Filter response with JMESPath
 	ActionOpenErrorDetail  Action = "open_error_detail"  // Open error detail modal
@@ -207,11 +209,13 @@ func GetActionInfo(action Action) ActionInfo {
 		ActionGoToBottom:       {ActionGoToBottom, "Go to bottom", "Navigation"},
 		ActionExecute:          {ActionExecute, "Execute request", "File Operations"},
 		ActionOpenEditor:       {ActionOpenEditor, "Open in editor", "File Operations"},
+		ActionOpenTerminal:     {ActionOpenTerminal, "Open terminal", "Tools"},
 		ActionSaveResponse:     {ActionSaveResponse, "Save response", "Response"},
 		ActionCopyToClipboard:  {ActionCopyToClipboard, "Copy to clipboard", "Response"},
 		ActionToggleBody:       {ActionToggleBody, "Toggle body", "Response"},
 		ActionToggleHeaders:    {ActionToggleHeaders, "Toggle headers", "Response"},
 		ActionToggleFullscreen: {ActionToggleFullscreen, "Toggle fullscreen", "View"},
+		ActionToggleResponse:   {ActionToggleResponse, "Toggle response pane", "View"},
 		ActionOpenVariables:    {ActionOpenVariables, "Open variables", "Editors"},
 		ActionOpenHeaders:      {ActionOpenHeaders, "Open headers", "Editors"},
 		ActionOpenHelp:         {ActionOpenHelp, "Open help", "Information"},

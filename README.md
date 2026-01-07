@@ -191,8 +191,9 @@ Complete documentation at [docs/](docs/)
 15. [WebSocket](docs/guides/websocket.md)
 16. [Mock Server](docs/guides/mock-server.md)
 17. [Debug Proxy](docs/guides/debug-proxy.md)
-18. [HAR Importer](docs/converters/har2http.md)
-19. [Examples](docs/examples.md)
+18. [Keybindings](docs/guides/keybindings.md)
+19. [HAR Importer](docs/converters/har2http.md)
+20. [Examples](docs/examples.md)
 
 ## License
 

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/keybinds"
+	"github.com/studiowebux/restcli/internal/parser"
 )
 
 // handleRenameKeys handles keyboard input in rename mode
@@ -176,13 +177,40 @@ func (m *Model) renderConfirmExecutionModal() string {
 		return m.renderModal("Confirm Execution", "No request selected\n\nPress ESC to close", 50, 10)
 	}
 
-	requestName := m.currentRequest.Name
-	if requestName == "" {
-		requestName = fmt.Sprintf("%s %s", m.currentRequest.Method, m.currentRequest.URL)
+	profile := m.sessionMgr.GetActiveProfile()
+
+	// Create a copy of the request to resolve - EXACT copy from inspect modal
+	requestCopy := *m.currentRequest
+	requestCopy.Headers = make(map[string]string)
+	for k, v := range profile.Headers {
+		requestCopy.Headers[k] = v
+	}
+	for k, v := range m.currentRequest.Headers {
+		requestCopy.Headers[k] = v
 	}
 
-	content := fmt.Sprintf("WARNING - Critical Endpoint\n\nAre you sure you want to execute:\n\n  %s\n\nThis request requires confirmation.", requestName)
+	// Resolve variables - EXACT copy from inspect modal line 1593
+	resolver := parser.NewVariableResolver(profile.Variables, m.sessionMgr.GetSession().Variables, nil, parser.LoadSystemEnv())
+	resolvedRequest, err := resolver.ResolveRequest(&requestCopy)
+
+	var requestDisplay string
+	if err != nil || resolvedRequest == nil {
+		// Fallback to unresolved
+		requestDisplay = fmt.Sprintf("%s %s", m.currentRequest.Method, m.currentRequest.URL)
+	} else {
+		requestDisplay = fmt.Sprintf("%s %s", resolvedRequest.Method, resolvedRequest.URL)
+	}
+
+	// Wrap the request display to fit modal width
+	modalWidth := 80
+	wrappedRequest := wrapText(requestDisplay, modalWidth-10) // Account for padding and borders
+
+	content := fmt.Sprintf("Are you sure you want to execute:\n\n%s", wrappedRequest)
 	footer := "[y]es [n]o / ESC"
 
-	return m.renderModalWithFooter("Confirm Execution", content, footer, 65, 14)
+	// Calculate height based on wrapped lines
+	wrappedLines := strings.Count(wrappedRequest, "\n") + 1
+	modalHeight := 10 + wrappedLines // Base height + extra lines from wrapping
+
+	return m.renderModalWithFooter("Confirm Execution", content, footer, modalWidth, modalHeight)
 }

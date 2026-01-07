@@ -1,11 +1,11 @@
 ---
 title: Welcome to RestCLI
-description: Keyboard-driven TUI for testing HTTP endpoints.
+description: Keyboard-driven TUI for testing HTTP endpoints with Vim-style navigation.
 ---
 
 # REST CLI
 
-Keyboard-driven TUI for testing HTTP endpoints.
+Keyboard-driven TUI for testing HTTP endpoints with Vim-style navigation.
 
 ## Why?
 

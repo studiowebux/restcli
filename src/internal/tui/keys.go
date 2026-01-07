@@ -567,6 +567,15 @@ func (m *Model) handleToggleAction(action keybinds.Action) {
 		}
 		m.updateViewport()     // Recalculate viewport width for fullscreen
 		m.updateResponseView() // Regenerate content (wrapping changes based on fullscreen)
+
+	case keybinds.ActionToggleResponse:
+		m.hideResponse = !m.hideResponse
+		if m.hideResponse {
+			m.statusMsg = "Response pane hidden"
+		} else {
+			m.statusMsg = "Response pane shown"
+		}
+		m.updateViewport() // Recalculate viewport dimensions
 	}
 }
 
@@ -874,6 +883,9 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 	case keybinds.ActionOpenEditor, keybinds.ActionConfigureEditor, keybinds.ActionNoOp:
 		return m.handleEditorAction(action, msg)
 
+	case keybinds.ActionOpenTerminal:
+		return m.openTerminal()
+
 	case keybinds.ActionDuplicateFile, keybinds.ActionDeleteFile,
 		keybinds.ActionRenameFile, keybinds.ActionCreateFile,
 		keybinds.ActionRefreshFiles:
@@ -884,7 +896,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		keybinds.ActionFilterResponse:
 		return m.handleResponseAction(action)
 
-	case keybinds.ActionToggleBody, keybinds.ActionToggleHeaders, keybinds.ActionToggleFullscreen:
+	case keybinds.ActionToggleBody, keybinds.ActionToggleHeaders, keybinds.ActionToggleFullscreen, keybinds.ActionToggleResponse:
 		m.handleToggleAction(action)
 
 	case keybinds.ActionOpenVariables, keybinds.ActionOpenHeaders,

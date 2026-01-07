@@ -173,6 +173,27 @@ func (m Model) renderMain() string {
 		return ""
 	}
 
+	// Hide response mode - show only sidebar at full width
+	if m.hideResponse {
+		sidebar := m.renderSidebar(m.width-MinimalBorderMargin, m.height-MainViewHeightOffset)
+		sidebarBox := lipgloss.NewStyle().
+			Border(lipgloss.ThickBorder()).
+			BorderForeground(colorCyan). // Cyan for focused panel
+			Width(m.width - MinimalBorderMargin).
+			Height(m.height - ModalHeightMargin).
+			Padding(0).
+			AlignVertical(lipgloss.Top).
+			Render(sidebar)
+
+		statusBar := m.renderStatusBar()
+
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			sidebarBox,
+			statusBar,
+		)
+	}
+
 	// Fullscreen mode - show only response
 	if m.fullscreen {
 		response := m.renderResponse(m.width-ViewportPaddingHorizontal, m.height-MainViewHeightOffset)
@@ -791,8 +812,10 @@ func (m *Model) updateResponseView() {
 		}
 
 		if err == nil && resolvedRequest != nil {
-			// Show resolved values
-			content.WriteString(fmt.Sprintf("%s %s\n", resolvedRequest.Method, resolvedRequest.URL))
+			// Show resolved values with URL wrapping
+			methodUrlLine := fmt.Sprintf("%s %s", resolvedRequest.Method, resolvedRequest.URL)
+			wrappedMethodUrl := wrapText(methodUrlLine, wrapWidth)
+			content.WriteString(wrappedMethodUrl + "\n")
 
 			// Request Headers (with wrapping, toggle with Shift+B)
 			if m.showHeaders && len(resolvedRequest.Headers) > 0 {
@@ -809,8 +832,10 @@ func (m *Model) updateResponseView() {
 				}
 			}
 		} else {
-			// Fallback to unresolved values if resolution fails
-			content.WriteString(fmt.Sprintf("%s %s\n", requestCopy.Method, requestCopy.URL))
+			// Fallback to unresolved values if resolution fails with URL wrapping
+			methodUrlLine := fmt.Sprintf("%s %s", requestCopy.Method, requestCopy.URL)
+			wrappedMethodUrl := wrapText(methodUrlLine, wrapWidth)
+			content.WriteString(wrappedMethodUrl + "\n")
 
 			// Request Headers (with wrapping, toggle with Shift+B)
 			if m.showHeaders && len(requestCopy.Headers) > 0 {
@@ -1044,6 +1069,7 @@ FILE OPERATIONS
   i            Inspect request
   x            Open in editor
   X            Configure editor
+  U            Open terminal in workdir
   d            Duplicate file
   D            Delete file (with confirmation)
   F            Create new file
@@ -1059,6 +1085,7 @@ RESPONSE
   B            Toggle headers visibility (request + response)
   E            Edit request body (one-time override)
   f            Toggle fullscreen (ESC to exit)
+  Z            Toggle response pane (show only file list)
   w            Pin response for comparison
   W            Show diff (compare pinned vs current)
   J            Filter response with JMESPath (toggle on/off)
