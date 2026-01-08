@@ -30,6 +30,7 @@ title: Table of Contents
   - [Debug Proxy](guides/debug-proxy.md)
   - [CLI](guides/cli-mode.md)
   - [TUI](guides/tui-mode.md)
+  - [Keybindings](guides/keybindings.md)
 - Reference
   - [Keyboard](reference/keyboard-shortcuts.md)
   - [Profile](reference/profile-schema.md)

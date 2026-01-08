@@ -91,6 +91,7 @@ Multi-key sequences: `"gg": "go_to_top"` (press g twice rapidly)
 | `open_search` | `/` | Open search |
 | `open_editor` | `x` | Open in editor |
 | `configure_editor` | `X` | Configure editor |
+| `open_terminal` | `U` | Open terminal in workdir |
 | `duplicate_file` | `d` | Duplicate file |
 | `delete_file` | `D` | Delete file |
 | `rename_file` | `R` | Rename file |
@@ -101,6 +102,7 @@ Multi-key sequences: `"gg": "go_to_top"` (press g twice rapidly)
 | `toggle_body` | `b` | Toggle body |
 | `toggle_headers` | `B` | Toggle headers |
 | `toggle_fullscreen` | `f` | Toggle fullscreen |
+| `toggle_response` | `Z` | Toggle response pane |
 | `pin_response` | `w` | Pin for comparison |
 | `show_diff` | `W` | Show diff |
 | `filter_response` | `J` | Filter with JMESPath |

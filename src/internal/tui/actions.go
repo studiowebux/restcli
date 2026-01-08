@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -814,6 +815,67 @@ func (m *Model) openInEditor() tea.Cmd {
 	})
 }
 
+// openTerminal opens a new terminal in the profile's workdir
+func (m *Model) openTerminal() tea.Cmd {
+	profile := m.sessionMgr.GetActiveProfile()
+	workdir, err := config.GetWorkingDirectory(profile.Workdir)
+	if err != nil {
+		return m.setErrorMessage(fmt.Sprintf("Failed to get workdir: %v", err))
+	}
+
+	// Use configured terminal if set, otherwise auto-detect
+	var cmd *exec.Cmd
+	if profile.Terminal != "" {
+		// User has configured a custom terminal command
+		// Format: "terminal {{workdir}}" where {{workdir}} will be replaced
+		cmdStr := strings.ReplaceAll(profile.Terminal, "{{workdir}}", workdir)
+		parts := strings.Fields(cmdStr)
+		if len(parts) == 0 {
+			return m.setErrorMessage("Terminal command is empty")
+		}
+		cmd = exec.Command(parts[0], parts[1:]...)
+	} else {
+		// Auto-detect terminal based on OS
+		switch runtime.GOOS {
+		case "darwin": // macOS
+			cmd = exec.Command("open", "-a", "Terminal", workdir)
+		case "linux":
+			// Try common Linux terminals in order
+			terminals := []string{"gnome-terminal", "konsole", "xterm", "x-terminal-emulator"}
+			termFound := false
+			for _, term := range terminals {
+				if _, err := exec.LookPath(term); err == nil {
+					if term == "gnome-terminal" {
+						cmd = exec.Command(term, "--working-directory="+workdir)
+					} else if term == "konsole" {
+						cmd = exec.Command(term, "--workdir", workdir)
+					} else {
+						// For xterm and others, cd via shell
+						cmd = exec.Command(term, "-e", "bash", "-c", fmt.Sprintf("cd %q && exec bash", workdir))
+					}
+					termFound = true
+					break
+				}
+			}
+			if !termFound {
+				return m.setErrorMessage("No terminal emulator found (tried gnome-terminal, konsole, xterm)")
+			}
+		case "windows":
+			cmd = exec.Command("cmd", "/c", "start", "cmd", "/K", "cd", "/D", workdir)
+		default:
+			return m.setErrorMessage(fmt.Sprintf("Unsupported OS: %s", runtime.GOOS))
+		}
+	}
+
+	// Start terminal in background (don't wait for it to close)
+	if err := cmd.Start(); err != nil {
+		return m.setErrorMessage(fmt.Sprintf("Failed to open terminal: %v", err))
+	}
+
+	m.statusMsg = fmt.Sprintf("Opened terminal in %s", workdir)
+	return nil
+}
+
 // duplicateFile duplicates the current file
 func (m *Model) duplicateFile() tea.Cmd {
 	return func() tea.Msg {
@@ -1455,7 +1517,13 @@ func (m *Model) loadRequestsFromCurrentFile() {
 	filePath := currentFile.Path
 	requests, err := parser.Parse(filePath)
 	if err != nil {
-		m.errorMsg = fmt.Sprintf("Failed to parse file: %v", err)
+		fullMsg := fmt.Sprintf("Failed to parse file: %v", err)
+		m.fullErrorMsg = fullMsg
+		if len(fullMsg) > 100 {
+			m.errorMsg = fullMsg[:97] + "..."
+		} else {
+			m.errorMsg = fullMsg
+		}
 		return
 	}
 

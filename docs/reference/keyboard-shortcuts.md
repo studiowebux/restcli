@@ -59,6 +59,7 @@ Green border indicates focused panel.
 | `i`      | Inspect request details       |
 | `x`      | Edit in external editor       |
 | `X`      | Edit in inline editor         |
+| `U`      | Open terminal in workdir      |
 | `d`      | Duplicate file                |
 | `D`      | Delete file                   |
 | `F`      | Create new file               |
@@ -86,6 +87,7 @@ Search is context-aware based on focused panel and supports Regexes.
 | `b` | Toggle body visibility         |
 | `B` | Toggle headers visibility      |
 | `f` | Fullscreen mode                |
+| `Z` | Toggle response pane           |
 | `w` | Pin current response           |
 | `W` | Show diff with pinned response |
 
@@ -354,6 +356,7 @@ Interactive dual-pane mode for WebSocket connections.
 | --- | --------- |
 | `i` | Inspect   |
 | `x` | Edit      |
+| `U` | Terminal  |
 | `d` | Duplicate |
 | `D` | Delete    |
 | `F` | New file  |
@@ -369,6 +372,7 @@ Interactive dual-pane mode for WebSocket connections.
 | `b` | Toggle body    |
 | `B` | Toggle headers |
 | `f` | Fullscreen     |
+| `Z` | Toggle pane    |
 | `w` | Pin            |
 | `W` | Diff           |
 

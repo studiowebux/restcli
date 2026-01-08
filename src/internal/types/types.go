@@ -115,6 +115,7 @@ type Profile struct {
 	OAuth         *OAuthConfig              `json:"oauth,omitempty"`
 	TLS           *TLSConfig                `json:"tls,omitempty"`           // TLS/mTLS configuration
 	Editor        string                    `json:"editor,omitempty"`
+	Terminal      string                    `json:"terminal,omitempty"`      // Terminal emulator command
 	Output        string                    `json:"output,omitempty"`        // json, yaml, text
 	DefaultFilter    string `json:"defaultFilter,omitempty"`    // Global JMESPath filter for all responses
 	DefaultQuery     string `json:"defaultQuery,omitempty"`     // Global JMESPath query for all responses

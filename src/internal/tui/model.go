@@ -200,6 +200,7 @@ type Model struct {
 	showHeaders       bool
 	showBody          bool
 	fullscreen        bool
+	hideResponse      bool // Hide response pane to show only file list
 	loading           bool
 	gPressed          bool // Track if 'g' was pressed for 'gg' vim motion
 	confirmationGiven bool // Track if user confirmed critical operation
