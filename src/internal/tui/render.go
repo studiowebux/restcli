@@ -17,6 +17,7 @@ import (
 	"github.com/studiowebux/restcli/internal/config"
 	"github.com/studiowebux/restcli/internal/executor"
 	"github.com/studiowebux/restcli/internal/parser"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -634,17 +635,16 @@ func (m Model) renderStatusBar() string {
 		return left + strings.Repeat(" ", spacing) + right
 	}
 
-	// Show input for special modes
-	switch m.mode {
-	case ModeGoto:
+	// Show input for special modes based on state machine
+	if _, ok := m.stateMachine.Current().(*state.GotoState); ok {
 		right = fmt.Sprintf("Goto: :%s", addCursor(m.gotoInput))
-	case ModeSearch:
+	} else if _, ok := m.stateMachine.Current().(*state.SearchState); ok {
 		right = fmt.Sprintf("Search: %s", addCursor(m.searchInput))
-	case ModeTagFilter:
-		// Build cursor string manually for category filter
+	} else if _, ok := m.stateMachine.Current().(*state.TagFilterModalState); ok {
+		// Build cursor string manually for tag filter
 		cursorStr := m.inputValue[:m.inputCursor] + "█" + m.inputValue[m.inputCursor:]
-		right = fmt.Sprintf("Category: %s", cursorStr)
-	default:
+		right = fmt.Sprintf("Tag: %s", cursorStr)
+	} else {
 		// Show search results if active (check both file and response search)
 		_, _, fileMatches := m.fileExplorer.GetSearchInfo()
 		hasSearch := fileMatches > 0 || len(m.responseSearchMatches) > 0
@@ -831,6 +831,20 @@ func (m *Model) updateResponseView() {
 					}
 				}
 			}
+
+		// Request Body (toggle with Shift+B)
+		if m.showHeaders && resolvedRequest.Body != "" {
+			content.WriteString("Body:\n")
+			bodyLines := strings.Split(resolvedRequest.Body, "\n")
+			for _, line := range bodyLines {
+				wrappedLine := wrapText(line, wrapWidth-2)
+				for _, wl := range strings.Split(wrappedLine, "\n") {
+					if wl != "" {
+						content.WriteString("  " + wl + "\n")
+					}
+				}
+			}
+		}
 		} else {
 			// Fallback to unresolved values if resolution fails with URL wrapping
 			methodUrlLine := fmt.Sprintf("%s %s", requestCopy.Method, requestCopy.URL)
@@ -850,6 +864,20 @@ func (m *Model) updateResponseView() {
 						}
 					}
 				}
+
+		// Request Body (toggle with Shift+B)
+		if m.showHeaders && requestCopy.Body != "" {
+			content.WriteString("Body:\n")
+			bodyLines := strings.Split(requestCopy.Body, "\n")
+			for _, line := range bodyLines {
+				wrappedLine := wrapText(line, wrapWidth-2)
+				for _, wl := range strings.Split(wrappedLine, "\n") {
+					if wl != "" {
+						content.WriteString("  " + wl + "\n")
+					}
+				}
+			}
+		}
 			}
 		}
 		content.WriteString("\n")
@@ -1072,11 +1100,11 @@ FILE OPERATIONS
   U            Open terminal in workdir
   d            Duplicate file
   D            Delete file (with confirmation)
-  F            Create new file
+  F            Create new request
   R            Rename file
   r            Refresh file list
-  t            Filter by category
-  T            Clear category filter
+  t            Filter by tag
+  T            Clear tag filter
 
 RESPONSE
   s            Save response to file
@@ -1702,9 +1730,9 @@ func (m *Model) updateInspectView() {
 			content.WriteString("\n")
 		}
 
-		// Show categories if present
+		// Show tags if present
 		if resolvedRequest.Documentation != nil && len(resolvedRequest.Documentation.Tags) > 0 {
-			content.WriteString("Categories:\n")
+			content.WriteString("Tags:\n")
 			content.WriteString("  " + strings.Join(resolvedRequest.Documentation.Tags, ", ") + "\n\n")
 		}
 

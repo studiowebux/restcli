@@ -6,21 +6,28 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/keybinds"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
 // handleProfileKeys handles keyboard input in profile modes
 func (m *Model) handleProfileKeys(msg tea.KeyMsg) tea.Cmd {
-	switch m.mode {
-	case ModeProfileSwitch:
+	// Get current sub-state from state machine
+	currentState, ok := m.stateMachine.Current().(*state.ProfileModalState)
+	if !ok {
+		return nil
+	}
+
+	switch currentState.SubState {
+	case "switch":
 		return m.handleProfileSwitchKeys(msg)
-	case ModeProfileCreate:
+	case "create":
 		return m.handleProfileCreateKeys(msg)
-	case ModeProfileEdit:
+	case "edit":
 		return m.handleProfileEditKeys(msg)
-	case ModeProfileDuplicate:
+	case "duplicate":
 		return m.handleProfileDuplicateKeys(msg)
-	case ModeProfileDeleteConfirm:
+	case "delete":
 		return m.handleProfileDeleteConfirmKeys(msg)
 	}
 	return nil
@@ -34,7 +41,8 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 	if msg.String() == "e" {
 		if m.profileIndex < len(profiles) {
 			profile := profiles[m.profileIndex]
-			m.mode = ModeProfileEdit
+			if err := m.stateMachine.Transition(state.NewProfileModalState("edit")); err == nil {
+			}
 			m.profileEditState.SetField(0)
 			m.profileEditState.LoadFromProfile(
 				profile.Name,
@@ -55,7 +63,9 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		// Close modal completely, don't go back to previous state (which might be edit/create mode)
+		if err := m.stateMachine.Transition(state.NewNormalState()); err == nil {
+		}
 
 	case keybinds.ActionNavigateUp:
 		if m.profileIndex > 0 {
@@ -71,7 +81,7 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.profileIndex < len(profiles) {
 			selectedProfile := profiles[m.profileIndex]
 			m.sessionMgr.SetActiveProfile(selectedProfile.Name)
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.statusMsg = fmt.Sprintf("Switched to profile: %s", selectedProfile.Name)
 
 			// Reload files from new profile's workdir
@@ -80,7 +90,8 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionProfileDuplicate:
 		if m.profileIndex < len(profiles) {
-			m.mode = ModeProfileDuplicate
+			if err := m.stateMachine.Transition(state.NewProfileModalState("duplicate")); err == nil {
+			}
 			m.profileName = ""
 			m.profileNamePos = 0
 			m.errorMsg = ""
@@ -88,12 +99,14 @@ func (m *Model) handleProfileSwitchKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case keybinds.ActionProfileDelete:
 		if m.profileIndex < len(profiles) {
-			m.mode = ModeProfileDeleteConfirm
+			if err := m.stateMachine.Transition(state.NewProfileModalState("delete")); err == nil {
+			}
 			m.errorMsg = ""
 		}
 
 	case keybinds.ActionProfileCreate:
-		m.mode = ModeProfileCreate
+		if err := m.stateMachine.Transition(state.NewProfileModalState("create")); err == nil {
+		}
 		m.profileName = ""
 		m.profileNamePos = 0
 		m.errorMsg = ""
@@ -108,7 +121,7 @@ func (m *Model) handleProfileCreateKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			return nil
 
 		case keybinds.ActionTextSubmit:
@@ -120,7 +133,7 @@ func (m *Model) handleProfileCreateKeys(msg tea.KeyMsg) tea.Cmd {
 			// Create new profile
 			newProfile := types.Profile{
 				Name:      m.profileName,
-				Workdir:   ".restcli/requests",
+				Workdir:   fmt.Sprintf("~/.restcli/requests/%s", m.profileName),
 				Headers:   make(map[string]string),
 				Variables: make(map[string]types.VariableValue),
 			}
@@ -132,7 +145,7 @@ func (m *Model) handleProfileCreateKeys(msg tea.KeyMsg) tea.Cmd {
 
 			// Switch to the new profile
 			m.sessionMgr.SetActiveProfile(m.profileName)
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.statusMsg = fmt.Sprintf("Created and switched to profile: %s", m.profileName)
 
 			// Reload files
@@ -159,7 +172,8 @@ func (m *Model) handleProfileDuplicateKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeProfileSwitch
+			if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+			}
 			return nil
 
 		case keybinds.ActionTextSubmit:
@@ -212,7 +226,7 @@ func (m *Model) handleProfileDuplicateKeys(msg tea.KeyMsg) tea.Cmd {
 
 			// Switch to the new profile
 			m.sessionMgr.SetActiveProfile(m.profileName)
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.statusMsg = fmt.Sprintf("Duplicated profile '%s' as '%s'", sourceProfile.Name, m.profileName)
 
 			// Reload files
@@ -242,14 +256,16 @@ func (m *Model) handleProfileDeleteConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCancel:
-		m.mode = ModeProfileSwitch
+		if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+		}
 		m.errorMsg = ""
 
 	case keybinds.ActionConfirm:
 		profiles := m.sessionMgr.GetProfiles()
 		if m.profileIndex >= len(profiles) {
 			m.errorMsg = "Invalid profile selection"
-			m.mode = ModeProfileSwitch
+			if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+			}
 			return nil
 		}
 
@@ -259,21 +275,24 @@ func (m *Model) handleProfileDeleteConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 		// Prevent deleting the last profile
 		if len(profiles) <= 1 {
 			m.errorMsg = "Cannot delete the last profile"
-			m.mode = ModeProfileSwitch
+			if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+			}
 			return nil
 		}
 
 		// Prevent deleting the active profile
 		if profileToDelete.Name == activeProfile.Name {
 			m.errorMsg = "Cannot delete active profile. Switch to another profile first."
-			m.mode = ModeProfileSwitch
+			if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+			}
 			return nil
 		}
 
 		// Delete the profile
 		if err := m.sessionMgr.DeleteProfile(profileToDelete.Name); err != nil {
 			m.errorMsg = fmt.Sprintf("Failed to delete profile: %v", err)
-			m.mode = ModeProfileSwitch
+			if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+			}
 			return nil
 		}
 
@@ -282,7 +301,7 @@ func (m *Model) handleProfileDeleteConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 			m.profileIndex = len(profiles) - 2
 		}
 
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = fmt.Sprintf("Deleted profile: %s", profileToDelete.Name)
 		return nil
 	}
@@ -344,7 +363,8 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeProfileSwitch
+			if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+			}
 			return nil
 
 		case keybinds.ActionTextSubmit:
@@ -369,7 +389,7 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 					m.sessionMgr.SetActiveProfile(m.profileEditState.GetName())
 				}
 
-				m.mode = ModeNormal
+				m.stateMachine.GoBack()
 				m.statusMsg = fmt.Sprintf("Profile saved: %s", m.profileEditState.GetName())
 
 				// Reload files if workdir changed
@@ -450,7 +470,13 @@ func (m *Model) handleProfileEditKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) renderProfileModal() string {
 	var content strings.Builder
 
-	if m.mode == ModeProfileSwitch {
+	// Get current sub-state from state machine
+	currentState, ok := m.stateMachine.Current().(*state.ProfileModalState)
+	if !ok {
+		return ""
+	}
+
+	if currentState.SubState == "switch" {
 		profiles := m.sessionMgr.GetProfiles()
 		activeProfile := m.sessionMgr.GetActiveProfile()
 
@@ -468,7 +494,7 @@ func (m *Model) renderProfileModal() string {
 		// Use auto-scroll to keep selected profile visible
 		return m.renderModalWithFooterAndScroll("Switch Profile", content.String(), footer, 70, 15, m.profileIndex)
 
-	} else if m.mode == ModeProfileEdit {
+	} else if currentState.SubState == "edit" {
 
 		// Modal width for field display (account for border, padding, label)
 		fieldWidth := 50
@@ -619,7 +645,7 @@ func (m *Model) renderProfileModal() string {
 		footer := "[TAB] next [SPACE] toggle [Enter] save [ESC] cancel"
 		return m.renderModalWithFooter("Edit Profile", content.String(), footer, 70, 22)
 
-	} else if m.mode == ModeProfileDuplicate {
+	} else if currentState.SubState == "duplicate" {
 		profiles := m.sessionMgr.GetProfiles()
 		if m.profileIndex < len(profiles) {
 			sourceProfile := profiles[m.profileIndex]
@@ -644,7 +670,7 @@ func (m *Model) renderProfileModal() string {
 		content.WriteString("Invalid profile selection")
 		return m.renderModal("Profile", content.String(), 50, 10)
 
-	} else if m.mode == ModeProfileDeleteConfirm {
+	} else if currentState.SubState == "delete" {
 		profiles := m.sessionMgr.GetProfiles()
 		if m.profileIndex < len(profiles) {
 			profileToDelete := profiles[m.profileIndex]

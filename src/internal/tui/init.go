@@ -19,6 +19,7 @@ import (
 	"github.com/studiowebux/restcli/internal/proxy"
 	"github.com/studiowebux/restcli/internal/session"
 	"github.com/studiowebux/restcli/internal/stresstest"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -107,7 +108,7 @@ func New(mgr *session.Manager, version string) (Model, error) {
 		historyManager:    historyManager,
 		bookmarkManager:   bookmarkManager,
 		keybinds:          keybindRegistry,
-		mode:              ModeNormal,
+		stateMachine:      state.NewStateMachine(state.NewNormalState()), // Initialize state machine
 		version:           version,
 		fileExplorer:      fileExplorer,
 		historyState:      historyState,

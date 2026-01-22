@@ -62,7 +62,7 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = fmt.Sprintf("Opened: %s", filepath.Base(selectedFile))
 		m.errorMsg = ""
 	}
@@ -80,7 +80,7 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.errorMsg = ""
 
 	case keybinds.ActionNavigateDown:

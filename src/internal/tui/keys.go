@@ -11,6 +11,7 @@ import (
 	"github.com/studiowebux/restcli/internal/filter"
 	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/parser"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/stresstest"
 )
 
@@ -31,94 +32,129 @@ func (m *Model) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Mode-specific handling
-	switch m.mode {
-	case ModeNormal:
-		return m.handleNormalKeys(msg)
-	case ModeSearch:
-		return m.handleSearchKeys(msg)
-	case ModeGoto:
-		return m.handleGotoKeys(msg)
-	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage, ModeVariableAlias:
-		return m.handleVariableEditorKeys(msg)
-	case ModeVariablePromptInteractive:
-		return m.handleInteractiveVariablePromptKeys(msg)
-	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
-		return m.handleHeaderEditorKeys(msg)
-	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit, ModeProfileDuplicate, ModeProfileDeleteConfirm:
-		return m.handleProfileKeys(msg)
-	case ModeDocumentation:
-		return m.handleDocumentationKeys(msg)
-	case ModeHistory:
-		return m.handleHistoryKeys(msg)
-	case ModeHistoryClearConfirm:
-		return m.handleHistoryClearConfirmKeys(msg)
-	case ModeAnalytics:
-		return m.handleAnalyticsKeys(msg)
-	case ModeAnalyticsClearConfirm:
-		return m.handleAnalyticsClearConfirmKeys(msg)
-	case ModeStressTestConfig:
-		return m.handleStressTestConfigKeys(msg)
-	case ModeStressTestLoadConfig:
-		return m.handleStressTestLoadConfigKeys(msg)
-	case ModeStressTestProgress:
-		return m.handleStressTestProgressKeys(msg)
-	case ModeStressTestResults:
-		return m.handleStressTestResultsKeys(msg)
-	case ModeHelp:
+	// Check state machine for modals that have been migrated
+	if _, ok := m.stateMachine.Current().(*state.HelpModalState); ok {
 		return m.handleHelpKeys(msg)
-	case ModeInspect:
+	}
+	if _, ok := m.stateMachine.Current().(*state.InspectModalState); ok {
 		return m.handleInspectKeys(msg)
-	case ModeRename:
-		return m.handleRenameKeys(msg)
-	case ModeOAuthConfig:
-		return m.handleOAuthKeys(msg)
-	case ModeOAuthEdit:
-		return m.handleOAuthEditKeys(msg)
-	case ModeEditorConfig:
-		return m.handleEditorConfigKeys(msg)
-	case ModeConfigView:
-		return m.handleConfigViewKeys(msg)
-	case ModeDelete:
-		return m.handleDeleteKeys(msg)
-	case ModeConfirmExecution:
-		return m.handleConfirmExecutionKeys(msg)
-	case ModeShellErrors:
-		return m.handleShellErrorsKeys(msg)
-	case ModeErrorDetail:
+	}
+	if _, ok := m.stateMachine.Current().(*state.ErrorDetailModalState); ok {
 		return m.handleErrorDetailKeys(msg)
-	case ModeStatusDetail:
+	}
+	if _, ok := m.stateMachine.Current().(*state.StatusDetailModalState); ok {
 		return m.handleStatusDetailKeys(msg)
-	case ModeCreateFile:
-		return m.handleCreateFileKeys(msg)
-	case ModeMRU:
-		return m.handleMRUKeys(msg)
-	case ModeDiff:
+	}
+	if _, ok := m.stateMachine.Current().(*state.DiffModalState); ok {
 		return m.handleDiffKeys(msg)
-	case ModeBodyOverride:
+	}
+	if _, ok := m.stateMachine.Current().(*state.ShellErrorsModalState); ok {
+		return m.handleShellErrorsKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.DeleteConfirmModalState); ok {
+		return m.handleDeleteKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.ConfirmExecutionModalState); ok {
+		return m.handleConfirmExecutionKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.RenameModalState); ok {
+		return m.handleRenameKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.CreateFileModalState); ok {
+		return m.handleCreateFileKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.MRUModalState); ok {
+		return m.handleMRUKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.BodyOverrideModalState); ok {
 		return m.handleBodyOverrideKeys(msg)
-	case ModeJSONPathHistory:
+	}
+	if _, ok := m.stateMachine.Current().(*state.JSONPathHistoryModalState); ok {
 		return m.handleJSONPathHistoryKeys(msg)
-	case ModeTagFilter:
+	}
+	if _, ok := m.stateMachine.Current().(*state.TagFilterModalState); ok {
 		return m.handleTagFilterKeys(msg)
-	case ModeMockServer:
+	}
+	if _, ok := m.stateMachine.Current().(*state.InteractiveVarModalState); ok {
+		return m.handleInteractiveVariablePromptKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.SearchState); ok {
+		return m.handleSearchKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.GotoState); ok {
+		return m.handleGotoKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.DocumentationModalState); ok {
+		return m.handleDocumentationKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.HistoryModalState); ok {
+		return m.handleHistoryKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.HistoryClearConfirmModalState); ok {
+		return m.handleHistoryClearConfirmKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.AnalyticsModalState); ok {
+		return m.handleAnalyticsKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.AnalyticsClearConfirmModalState); ok {
+		return m.handleAnalyticsClearConfirmKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.MockServerModalState); ok {
 		return m.handleMockServerKeys(msg)
-	case ModeProxyViewer:
+	}
+	if _, ok := m.stateMachine.Current().(*state.ProxyViewerModalState); ok {
 		return m.handleProxyViewerKeys(msg)
-	case ModeProxyDetail:
+	}
+	if _, ok := m.stateMachine.Current().(*state.ProxyDetailModalState); ok {
 		return m.handleProxyDetailKeys(msg)
-	case ModeWebSocket:
+	}
+	if _, ok := m.stateMachine.Current().(*state.VariableModalState); ok {
+		return m.handleVariableEditorKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.HeaderModalState); ok {
+		return m.handleHeaderEditorKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.ProfileModalState); ok {
+		return m.handleProfileKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.StressTestModalState); ok {
+		st := m.stateMachine.Current().(*state.StressTestModalState)
+		switch st.SubState {
+		case "config":
+			return m.handleStressTestConfigKeys(msg)
+		case "load_config":
+			return m.handleStressTestLoadConfigKeys(msg)
+		case "progress":
+			return m.handleStressTestProgressKeys(msg)
+		case "results":
+			return m.handleStressTestResultsKeys(msg)
+		}
+	}
+	if _, ok := m.stateMachine.Current().(*state.WebSocketModalState); ok {
 		return m.handleWebSocketKeys(msg)
 	}
+	if _, ok := m.stateMachine.Current().(*state.OAuthConfigModalState); ok {
+		return m.handleOAuthKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.OAuthEditModalState); ok {
+		return m.handleOAuthEditKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.ConfigViewModalState); ok {
+		return m.handleConfigViewKeys(msg)
+	}
+	if _, ok := m.stateMachine.Current().(*state.EditorConfigModalState); ok {
+		return m.handleEditorConfigKeys(msg)
+	}
 
-	return nil
+	// Fallback to normal mode if no state matched
+	return m.handleNormalKeys(msg)
 }
 
 // handleShellErrorsKeys handles keyboard input in shell errors modal
 func (m *Model) handleShellErrorsKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle enter specially (closes modal)
 	if msg.String() == "enter" {
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.shellErrors = nil
 		return nil
 	}
@@ -130,7 +166,7 @@ func (m *Model) handleShellErrorsKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.shellErrors = nil
 
 	case keybinds.ActionNavigateDown:
@@ -153,7 +189,7 @@ func (m *Model) handleShellErrorsKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleErrorDetailKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle enter specially (closes modal)
 	if msg.String() == "enter" {
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		return nil
 	}
 
@@ -164,7 +200,7 @@ func (m *Model) handleErrorDetailKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 
 	case keybinds.ActionNavigateDown:
 		m.modalView.LineDown(1)
@@ -186,7 +222,7 @@ func (m *Model) handleErrorDetailKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleStatusDetailKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle enter specially (closes modal)
 	if msg.String() == "enter" {
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		return nil
 	}
 
@@ -197,7 +233,7 @@ func (m *Model) handleStatusDetailKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 	}
 
 	return nil
@@ -210,7 +246,7 @@ func (m *Model) handleEditorConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.inputValue = ""
 			m.inputCursor = 0
 			return nil
@@ -220,7 +256,7 @@ func (m *Model) handleEditorConfigKeys(msg tea.KeyMsg) tea.Cmd {
 			profile.Editor = m.inputValue
 			m.sessionMgr.SaveProfiles()
 			m.statusMsg = "Editor saved: " + m.inputValue
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.inputValue = ""
 			m.inputCursor = 0
 			return nil
@@ -246,50 +282,59 @@ func (m *Model) handleEditorConfigKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleModalOpenAction(action keybinds.Action) tea.Cmd {
 	switch action {
 	case keybinds.ActionOpenVariables:
-		m.mode = ModeVariableList
+		if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+		}
 		m.varEditIndex = 0
 		m.modalView.SetYOffset(0)
 		return nil
 
 	case keybinds.ActionOpenHeaders:
-		m.mode = ModeHeaderList
+		if err := m.stateMachine.Transition(state.NewHeaderModalState("list")); err == nil {
+		}
 		m.headerEditIndex = 0
 		m.modalView.SetYOffset(0)
 		return nil
 
 	case keybinds.ActionOpenErrorDetail:
 		if m.fullErrorMsg != "" {
-			m.mode = ModeErrorDetail
+			if err := m.stateMachine.Transition(state.NewErrorDetailModalState()); err == nil {
+			}
 		}
 		return nil
 
 	case keybinds.ActionShowStatusDetail:
 		if m.fullStatusMsg != "" {
-			m.mode = ModeStatusDetail
+			if err := m.stateMachine.Transition(state.NewStatusDetailModalState()); err == nil {
+			}
 		}
 		return nil
 
 	case keybinds.ActionOpenProfiles:
-		m.mode = ModeProfileSwitch
+		if err := m.stateMachine.Transition(state.NewProfileModalState("switch")); err == nil {
+		}
 		m.profileIndex = 0
 		return nil
 
 	case keybinds.ActionOpenMockServer:
-		m.mode = ModeMockServer
+		if err := m.stateMachine.Transition(state.NewMockServerModalState()); err == nil {
+		}
 		return nil
 
 	case keybinds.ActionOpenOAuthDetail:
-		m.mode = ModeOAuthConfig
+		if err := m.stateMachine.Transition(state.NewOAuthConfigModalState()); err == nil {
+		}
 		return nil
 
 	case keybinds.ActionOpenRecentFiles:
-		m.mode = ModeMRU
+		if err := m.stateMachine.Transition(state.NewMRUModalState()); err == nil {
+		}
 		m.mruIndex = 0
 		m.errorMsg = ""
 		return nil
 
 	case keybinds.ActionOpenConfigView:
-		m.mode = ModeConfigView
+		if err := m.stateMachine.Transition(state.NewConfigViewModalState()); err == nil {
+		}
 		return nil
 
 	default:
@@ -315,7 +360,8 @@ func (m *Model) handleComplexModalAction(action keybinds.Action) tea.Cmd {
 				m.bodyOverrideInput = m.currentRequest.Body
 			}
 			m.bodyOverrideCursor = 0
-			m.mode = ModeBodyOverride
+			if err := m.stateMachine.Transition(state.NewBodyOverrideModalState()); err == nil {
+		}
 			m.statusMsg = "Editing request body (one-time override)"
 		} else {
 			m.statusMsg = "No request selected"
@@ -323,7 +369,8 @@ func (m *Model) handleComplexModalAction(action keybinds.Action) tea.Cmd {
 		return nil
 
 	case keybinds.ActionOpenDocumentation:
-		m.mode = ModeDocumentation
+		if err := m.stateMachine.Transition(state.NewDocumentationModalState()); err == nil {
+		}
 		// Initialize caches for field trees (prevents rebuilding on every navigation)
 		m.docState.ClearFieldTreeCache()
 		m.docState.ClearChildrenCache()
@@ -332,26 +379,30 @@ func (m *Model) handleComplexModalAction(action keybinds.Action) tea.Cmd {
 		return nil
 
 	case keybinds.ActionOpenHistory:
-		m.mode = ModeHistory
+		if err := m.stateMachine.Transition(state.NewHistoryModalState()); err == nil {
+		}
 		m.statusMsg = "Loading history..."
 		return m.loadHistory()
 
 	case keybinds.ActionOpenAnalytics:
-		m.mode = ModeAnalytics
+		if err := m.stateMachine.Transition(state.NewAnalyticsModalState()); err == nil {
+		}
 		m.analyticsState.SetPreviewVisible(true)
 		m.analyticsState.SetGroupByPath(false)
 		m.statusMsg = "Loading analytics..."
 		return m.loadAnalytics()
 
 	case keybinds.ActionOpenStressTest:
-		m.mode = ModeStressTestResults
+		if err := m.stateMachine.Transition(state.NewStressTestModalState("results")); err == nil {
+		}
 		m.stressTestState.SetFocusedPane("list")
 		m.statusMsg = "Loading stress tests..."
 		return m.loadStressTestRuns()
 
 	case keybinds.ActionOpenProxy:
 		// Open proxy viewer (debug proxy)
-		m.mode = ModeProxyViewer
+		if err := m.stateMachine.Transition(state.NewProxyViewerModalState()); err == nil {
+		}
 		m.updateProxyView()
 		// Start event listener if proxy is running
 		if m.proxyServerState.IsRunning() && m.proxyServerState.GetServer() != nil {
@@ -360,7 +411,9 @@ func (m *Model) handleComplexModalAction(action keybinds.Action) tea.Cmd {
 		return nil
 
 	case keybinds.ActionOpenHelp:
-		m.mode = ModeHelp
+		// Transition to help modal using state machine
+		if err := m.stateMachine.Transition(state.NewHelpModalState()); err == nil {
+		}
 		m.updateHelpView()
 		return m.checkForUpdate()
 
@@ -368,7 +421,8 @@ func (m *Model) handleComplexModalAction(action keybinds.Action) tea.Cmd {
 		return m.startOAuthFlow()
 
 	case keybinds.ActionOpenSearch:
-		m.mode = ModeSearch
+		if err := m.stateMachine.Transition(state.NewSearchState()); err == nil {
+		}
 		// Clear search input text for new search
 		m.searchInput = ""
 		m.searchCursor = 0
@@ -437,7 +491,8 @@ func (m *Model) handleEditorAction(action keybinds.Action, msg tea.KeyMsg) tea.C
 
 	case keybinds.ActionConfigureEditor:
 		// Configure editor
-		m.mode = ModeEditorConfig
+		if err := m.stateMachine.Transition(state.NewEditorConfigModalState()); err == nil {
+		}
 		profile := m.sessionMgr.GetActiveProfile()
 		m.inputValue = profile.Editor
 		m.inputCursor = len(m.inputValue)
@@ -457,21 +512,22 @@ func (m *Model) handleEditorAction(action keybinds.Action, msg tea.KeyMsg) tea.C
 	}
 }
 
-// handleTagFilterAction handles tag/category filtering actions
+// handleTagFilterAction handles tag filtering actions
 func (m *Model) handleTagFilterAction(action keybinds.Action) {
 	switch action {
 	case keybinds.ActionOpenTagFilter:
-		// Category filter mode
-		m.mode = ModeTagFilter
+		// Tag filter mode
+		if err := m.stateMachine.Transition(state.NewTagFilterModalState()); err == nil {
+		}
 		m.inputValue = ""
 		m.inputCursor = 0
-		m.statusMsg = "Enter category to filter (press T to clear)"
+		m.statusMsg = "Enter tag to filter (press T to clear)"
 
 	case keybinds.ActionClearTagFilter:
-		// Clear category filter (Shift+t)
+		// Clear tag filter (Shift+t)
 		if len(m.fileExplorer.GetTagFilter()) > 0 {
 			m.fileExplorer.SetTagFilter(nil)
-			m.statusMsg = "Category filter cleared"
+			m.statusMsg = "Tag filter cleared"
 		}
 	}
 }
@@ -504,7 +560,8 @@ func (m *Model) handleResponseAction(action keybinds.Action) tea.Cmd {
 		if m.currentResponse == nil {
 			return m.setErrorMessage("No current response to compare")
 		}
-		m.mode = ModeDiff
+		if err := m.stateMachine.Transition(state.NewDiffModalState()); err == nil {
+		}
 		m.updateDiffView()
 		return nil
 
@@ -571,7 +628,9 @@ func (m *Model) handleToggleAction(action keybinds.Action) {
 	case keybinds.ActionToggleResponse:
 		m.hideResponse = !m.hideResponse
 		if m.hideResponse {
-			m.statusMsg = "Response pane hidden"
+			// When hiding response, focus the file pane
+			m.focusedPanel = "sidebar"
+			m.statusMsg = "Response pane hidden - focused file pane"
 		} else {
 			m.statusMsg = "Response pane shown"
 		}
@@ -593,17 +652,20 @@ func (m *Model) handleFileOperationAction(action keybinds.Action) tea.Cmd {
 
 	case keybinds.ActionDeleteFile:
 		if len(m.fileExplorer.GetFiles()) > 0 {
-			m.mode = ModeDelete
+			if err := m.stateMachine.Transition(state.NewDeleteConfirmModalState()); err == nil {
+			}
 		}
 		return nil
 
 	case keybinds.ActionRenameFile:
-		m.mode = ModeRename
+		if err := m.stateMachine.Transition(state.NewRenameModalState()); err == nil {
+		}
 		m.renameState.Reset()
 		return nil
 
 	case keybinds.ActionCreateFile:
-		m.mode = ModeCreateFile
+		if err := m.stateMachine.Transition(state.NewCreateFileModalState()); err == nil {
+		}
 		m.createFileInput = ""
 		m.createFileCursor = 0
 		m.createFileType = 0 // Default to .http
@@ -668,7 +730,6 @@ func (m *Model) handleSearchNavigationAction(action keybinds.Action) {
 			m.statusMsg = "No active search - press / to search"
 		} else if isNext {
 			// ActionSearchNext with no active search: create new profile (legacy 'n' behavior)
-			m.mode = ModeProfileCreate
 			m.profileName = ""
 		}
 	}
@@ -867,7 +928,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		m.handleNavigationAction(action)
 
 	case keybinds.ActionOpenGoto:
-		m.mode = ModeGoto
+		if err := m.stateMachine.Transition(state.NewGotoState()); err == nil {
+		}
 		m.gotoInput = ""
 
 	case keybinds.ActionExecute:
@@ -877,7 +939,9 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		if m.currentRequest == nil {
 			return m.setErrorMessage("No request loaded (select a file first)")
 		}
-		m.mode = ModeInspect
+		// Transition to inspect modal using state machine
+		if err := m.stateMachine.Transition(state.NewInspectModalState()); err == nil {
+		}
 		m.updateInspectView() // Set content once when entering modal
 
 	case keybinds.ActionOpenEditor, keybinds.ActionConfigureEditor, keybinds.ActionNoOp:
@@ -1015,7 +1079,7 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 		switch action {
 		case keybinds.ActionTextCancel:
 			wasSearchingResponse := m.searchInResponseCtx
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.searchInput = ""
 			m.searchCursor = 0
 			m.searchInResponseCtx = false
@@ -1028,7 +1092,7 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 			return nil
 
 		case keybinds.ActionTextSubmit:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.performSearch()
 			return nil
 		}
@@ -1087,7 +1151,8 @@ func (m *Model) handleFilterInlineKeys(msg tea.KeyMsg) tea.Cmd {
 	case "up":
 		// Open history modal if input is empty
 		if m.filterInput == "" {
-			m.mode = ModeJSONPathHistory
+			if err := m.stateMachine.Transition(state.NewJSONPathHistoryModalState()); err == nil {
+			}
 			m.jsonpathHistorySearch = ""
 			m.jsonpathHistorySearching = false
 			m.jsonpathHistoryCursor = 0
@@ -1164,12 +1229,12 @@ func (m *Model) handleGotoKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.gotoInput = ""
 			return nil
 
 		case keybinds.ActionTextSubmit:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.performGoto()
 			return nil
 		}
@@ -1247,7 +1312,8 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) tea.Cmd {
 				m.helpSearchQuery = ""
 				m.updateHelpView() // Reset to full content
 			} else {
-				m.mode = ModeNormal
+				// Close modal using state machine (go back to normal)
+				m.stateMachine.GoBack()
 				m.helpSearchQuery = ""
 				m.helpSearchActive = false
 			}
@@ -1309,7 +1375,7 @@ func (m *Model) handleDocumentationKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.docState.SetSelectedIdx(0)
 
 	case keybinds.ActionNavigateUp:
@@ -1673,7 +1739,7 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 
 	case keybinds.ActionSwitchPane:
 		m.historyState.ToggleFocus()
@@ -1730,7 +1796,8 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		m.updateHistoryView()
 
 	case keybinds.ActionHistoryClear:
-		m.mode = ModeHistoryClearConfirm
+		if err := m.stateMachine.Transition(state.NewHistoryClearConfirmModalState()); err == nil {
+		}
 
 	case keybinds.ActionPageUp:
 		if m.historyState.GetFocusedPane() == "preview" && m.historyState.GetPreviewVisible() {
@@ -1839,7 +1906,7 @@ func (m *Model) handleHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleConfigViewKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle 'C' specially (closes modal - same key that opens it)
 	if msg.String() == "C" {
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		return nil
 	}
 
@@ -1850,7 +1917,7 @@ func (m *Model) handleConfigViewKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 	}
 
 	return nil
@@ -1865,7 +1932,7 @@ func (m *Model) handleDeleteKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCancel:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = "Delete cancelled"
 
 	case keybinds.ActionConfirm:
@@ -1884,13 +1951,13 @@ func (m *Model) handleConfirmExecutionKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCancel:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = "Execution cancelled"
 		m.confirmationGiven = false
 
 	case keybinds.ActionConfirm:
 		m.confirmationGiven = true
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		return m.executeRequest()
 	}
 
@@ -1906,18 +1973,19 @@ func (m *Model) handleHistoryClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCancel:
-		m.mode = ModeHistory
+		m.stateMachine.GoBack()
 		m.statusMsg = "Clear history cancelled"
 
 	case keybinds.ActionConfirm:
 		if m.historyManager != nil {
 			if err := m.historyManager.Clear(); err != nil {
-				m.mode = ModeHistory
+				if goBackErr := m.stateMachine.GoBack(); goBackErr == nil {
+				}
 				return m.setErrorMessage(fmt.Sprintf("Failed to clear history: %v", err))
 			}
 			m.historyState.SetEntries(nil)
 			m.historyState.SetIndex(0)
-			m.mode = ModeHistory
+			m.stateMachine.GoBack()
 			m.statusMsg = "All history cleared"
 			m.updateHistoryView()
 		}
@@ -1940,7 +2008,7 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 
 	case keybinds.ActionSwitchPane:
 		if m.analyticsState.GetFocusedPane() == "list" {
@@ -1993,7 +2061,6 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 			fileFound := m.fileExplorer.NavigateToFile(stat.FilePath, pageSize)
 			if fileFound {
 				m.focusedPanel = "sidebar"
-				m.mode = ModeNormal
 				m.loadRequestsFromCurrentFile()
 				m.statusMsg = fmt.Sprintf("Loaded %s from analytics", filepath.Base(stat.FilePath))
 			} else {
@@ -2021,7 +2088,8 @@ func (m *Model) handleAnalyticsKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.loadAnalytics()
 
 	case keybinds.ActionAnalyticsClear:
-		m.mode = ModeAnalyticsClearConfirm
+		if err := m.stateMachine.Transition(state.NewAnalyticsClearConfirmModalState()); err == nil {
+		}
 		m.statusMsg = "Confirm clear all analytics"
 
 	case keybinds.ActionPageUp:
@@ -2140,13 +2208,14 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCancel:
-		m.mode = ModeAnalytics
+		m.stateMachine.GoBack()
 		m.statusMsg = "Clear analytics cancelled"
 
 	case keybinds.ActionConfirm:
 		if m.analyticsManager != nil {
 			if err := m.analyticsManager.Clear(); err != nil {
-				m.mode = ModeAnalytics
+				if goBackErr := m.stateMachine.GoBack(); goBackErr == nil {
+				}
 				return m.setErrorMessage(fmt.Sprintf("Failed to clear analytics: %v", err))
 			}
 			m.analyticsState.SetStats(nil)
@@ -2155,7 +2224,7 @@ func (m *Model) handleAnalyticsClearConfirmKeys(msg tea.KeyMsg) tea.Cmd {
 			detailView := m.analyticsState.GetDetailView()
 			detailView.SetContent("")
 			m.analyticsState.SetDetailView(detailView)
-			m.mode = ModeAnalytics
+			m.stateMachine.GoBack()
 			m.statusMsg = "All analytics cleared"
 			m.updateAnalyticsView()
 		}
@@ -2234,8 +2303,9 @@ func (m *Model) handleStressTestConfigKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionCloseModal:
-			// Close modal (works in all modes)
-			m.mode = ModeNormal
+			// Close modal completely, don't go back to previous state (which might be load_config or results)
+			if err := m.stateMachine.Transition(state.NewNormalState()); err == nil {
+			}
 			m.stressTestState.SetConfigEdit(nil)
 			m.stressTestState.SetConfigInput("")
 			m.stressTestState.SetFilePickerActive(false)
@@ -2360,8 +2430,9 @@ func (m *Model) handleStressTestProgressKeys(msg tea.KeyMsg) tea.Cmd {
 				return stressTestStoppedMsg{err: err}
 			}
 		} else {
-			// No active stress test or already stopping - just close modal
-			m.mode = ModeNormal
+			// No active stress test or already stopping - close modal completely
+			if err := m.stateMachine.Transition(state.NewNormalState()); err == nil {
+			}
 			m.stressTestState.SetStopping(false)
 		}
 	}
@@ -2383,7 +2454,8 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeStressTestConfig
+		if err := m.stateMachine.Transition(state.NewStressTestModalState("config")); err == nil {
+		}
 		m.stressTestState.SetFilePickerActive(false)
 		m.stressTestState.SetFilePickerFiles(nil)
 		m.stressTestState.SetFilePickerIndex(0)
@@ -2403,7 +2475,8 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(m.stressTestState.GetConfigs()) > 0 && m.stressTestState.GetConfigIndex() < len(m.stressTestState.GetConfigs()) {
 			config := m.stressTestState.GetConfigs()[m.stressTestState.GetConfigIndex()]
 			m.stressTestState.SetConfigEdit(config)
-			m.mode = ModeStressTestConfig
+			if err := m.stateMachine.Transition(state.NewStressTestModalState("config")); err == nil {
+			}
 			m.stressTestState.SetFilePickerActive(false)
 			m.stressTestState.SetFilePickerFiles(nil)
 			m.stressTestState.SetFilePickerIndex(0)
@@ -2430,7 +2503,8 @@ func (m *Model) handleStressTestLoadConfigKeys(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 	// Handle "n" key for new stress test config (special action)
 	if msg.String() == "n" {
-		m.mode = ModeStressTestConfig
+		if err := m.stateMachine.Transition(state.NewStressTestModalState("config")); err == nil {
+		}
 		m.stressTestState.SetConfigEdit(&stresstest.Config{
 			Name:              "",
 			RequestFile:       "",
@@ -2458,7 +2532,9 @@ func (m *Model) handleStressTestResultsKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		// Close modal completely, don't go back to previous state
+		if err := m.stateMachine.Transition(state.NewNormalState()); err == nil {
+		}
 
 	case keybinds.ActionSwitchPane:
 		if m.stressTestState.GetFocusedPane() == "list" {
@@ -2566,7 +2642,7 @@ func (m *Model) handleTagFilterKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.fileExplorer.SetTagFilter(nil)
 			m.statusMsg = "Tag filter cleared"
 			m.inputValue = ""
@@ -2575,15 +2651,15 @@ func (m *Model) handleTagFilterKeys(msg tea.KeyMsg) tea.Cmd {
 
 		case keybinds.ActionTextSubmit:
 			if m.inputValue == "" {
-				m.mode = ModeNormal
+				m.stateMachine.GoBack()
 				m.fileExplorer.SetTagFilter(nil)
 				m.statusMsg = "Tag filter cleared"
 			} else {
 				m.fileExplorer.SetTagFilter([]string{m.inputValue})
 				m.loadRequestsFromCurrentFile()
-				m.mode = ModeNormal
+				m.stateMachine.GoBack()
 				files := m.fileExplorer.GetFiles()
-				m.statusMsg = fmt.Sprintf("Filtered by category: %s (%d files)", m.inputValue, len(files))
+				m.statusMsg = fmt.Sprintf("Filtered by tag: %s (%d files)", m.inputValue, len(files))
 			}
 			m.inputValue = ""
 			m.inputCursor = 0

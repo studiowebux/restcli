@@ -8,6 +8,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/keybinds"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -145,7 +146,7 @@ func (m *Model) handleOAuthKeys(msg tea.KeyMsg) tea.Cmd {
 	case "s":
 		// Save OAuth config
 		m.sessionMgr.SaveProfiles()
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = "OAuth configuration saved"
 		return nil
 	}
@@ -158,7 +159,7 @@ func (m *Model) handleOAuthKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 
 	case keybinds.ActionNavigateUp:
 		if m.oauthField > 0 {
@@ -177,7 +178,8 @@ func (m *Model) handleOAuthKeys(msg tea.KeyMsg) tea.Cmd {
 // editOAuthField opens an input dialog to edit an OAuth field
 func (m *Model) editOAuthField() tea.Cmd {
 	// Switch to edit mode for text input
-	m.mode = ModeOAuthEdit
+	if err := m.stateMachine.Transition(state.NewOAuthEditModalState()); err == nil {
+	}
 	m.oauthCursor = len(m.inputValue) // Start cursor at end
 	return nil
 }
@@ -191,7 +193,7 @@ func (m *Model) handleOAuthEditKeys(msg tea.KeyMsg) tea.Cmd {
 		switch action {
 		case keybinds.ActionTextCancel:
 			// Cancel edit
-			m.mode = ModeOAuthConfig
+			m.stateMachine.GoBack()
 			return nil
 
 		case keybinds.ActionTextSubmit:
@@ -199,7 +201,7 @@ func (m *Model) handleOAuthEditKeys(msg tea.KeyMsg) tea.Cmd {
 			if profile.OAuth != nil {
 				m.setOAuthFieldValue(profile.OAuth, m.oauthField, m.inputValue)
 			}
-			m.mode = ModeOAuthConfig
+			m.stateMachine.GoBack()
 			return nil
 
 		case keybinds.ActionTextMoveLeft:

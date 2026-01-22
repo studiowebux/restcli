@@ -26,7 +26,7 @@ func (m *Model) handleCreateFileKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.createFileInput = ""
 			m.errorMsg = ""
 			return nil
@@ -105,7 +105,7 @@ func (m *Model) handleCreateFileKeys(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.statusMsg = fmt.Sprintf("Created: %s", filename)
 			m.createFileInput = ""
 
@@ -173,7 +173,7 @@ func (m *Model) renderCreateFileModal() string {
 	instruction := wrapText("Enter filename (with optional path), then press Enter to create, ESC to cancel", 64)
 	content += "\n\n" + instruction
 
-	return m.renderModal("Create New File", content, 70, 18)
+	return m.renderModal("Create New Request", content, 70, 18)
 }
 
 // getFileTemplate returns a basic template for each file type

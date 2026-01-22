@@ -41,7 +41,6 @@ func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 	case "up":
 		// Open history modal if input is empty
 		if m.filterInput == "" {
-			m.mode = ModeJSONPathHistory
 			m.jsonpathHistorySearch = ""
 			m.jsonpathHistorySearching = false
 			m.jsonpathHistoryCursor = 0
@@ -83,7 +82,6 @@ func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionTextCancel:
 		// Clear filter and return to normal mode
-		m.mode = ModeNormal
 		m.filterInput = ""
 		m.filterCursor = 0
 		m.filterActive = false
@@ -111,7 +109,7 @@ func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 		if err != nil {
 			// Keep modal open and show error
 			m.filterError = fmt.Sprintf("Failed to apply filter: %s", err.Error())
-			// Stay in ModeFilter to show the error
+			// Stay in filter modal to show the error
 			return nil
 		}
 
@@ -119,7 +117,6 @@ func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
 		m.filteredResponse = result
 		m.filterActive = true
 		m.filterError = ""
-		m.mode = ModeNormal
 		m.statusMsg = fmt.Sprintf("Filter applied: %s", m.filterInput)
 
 		// Update response view to show filtered content

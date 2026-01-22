@@ -4,13 +4,21 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/keybinds"
+	"github.com/studiowebux/restcli/internal/tui/state"
 )
 
 // initInteractiveVarPrompt initializes the state for the current variable prompt
 func (m *Model) initInteractiveVarPrompt() {
 	if len(m.interactiveVarNames) == 0 {
+		return
+	}
+
+	// Transition to interactive variable modal
+	if err := m.stateMachine.Transition(state.NewInteractiveVarModalState()); err != nil {
+		// If transition fails, fall back to normal mode
 		return
 	}
 
@@ -104,7 +112,7 @@ func (m *Model) handleInteractiveVariablePromptKeys(msg tea.KeyMsg) tea.Cmd {
 		// Cancel - clear the queue and go back to normal mode
 		m.interactiveVarNames = nil
 		m.interactiveVarValues = nil
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = "Interactive variable prompt cancelled"
 		return nil
 
@@ -183,6 +191,13 @@ func (m *Model) handleInteractiveVariablePromptKeys(msg tea.KeyMsg) tea.Cmd {
 		case keybinds.ActionTextClearAfter:
 			// Clear from cursor to end (ctrl+k)
 			m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor]
+
+		case keybinds.ActionTextPaste:
+			// Paste from clipboard
+			if clipText, err := clipboard.ReadAll(); err == nil {
+				m.interactiveVarInput = m.interactiveVarInput[:m.interactiveVarCursor] + clipText + m.interactiveVarInput[m.interactiveVarCursor:]
+				m.interactiveVarCursor += len(clipText)
+			}
 		}
 	}
 
@@ -217,7 +232,6 @@ func (m *Model) submitInteractiveVar() tea.Cmd {
 
 	if len(m.interactiveVarNames) == 0 {
 		// Done with all prompts - proceed with request execution
-		m.mode = ModeNormal
 		return m.executeRequestWithInteractiveVars()
 	}
 
@@ -229,7 +243,6 @@ func (m *Model) submitInteractiveVar() tea.Cmd {
 // renderInteractiveVariablePrompt renders the interactive variable prompt modal
 func (m *Model) renderInteractiveVariablePrompt() string {
 	if len(m.interactiveVarNames) == 0 {
-		m.mode = ModeNormal
 		return m.View()
 	}
 

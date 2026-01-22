@@ -1,30 +1,28 @@
 ---
-title: Categories and Filtering
+title: Tags and Filtering
 tags:
   - guide
 ---
 
-# Categories and Filtering
+# Tags and Filtering
 
 ## Overview
 
-Categories allow you to organize and filter request files by function, purpose, or any custom grouping. Filter the file list to show only requests matching specific categories.
+Tags allow you to organize and filter request files by function, purpose, or any custom grouping. Filter the file list to show only requests matching specific tags. This uses OpenAPI-compliant `@tag` annotations.
 
-## Adding Categories
+## Adding Tags
 
-Categories work in `.http` files and structured formats (`.yaml`, `.yml`, `.json`, `.jsonc`).
-
-**Note:** OpenAPI files use `tags` field which is OpenAPI-specific metadata. For regular request files, use `@category`.
+Tags work in `.http` files and structured formats (`.yaml`, `.yml`, `.json`, `.jsonc`).
 
 ### .http Files
 
-Use the `@category` annotation in comments before the request:
+Use the `@tag` annotation in comments before the request:
 
 ```http
 ### Login Endpoint
-# @category auth
-# @category critical
-# @category api
+# @tag auth
+# @tag critical
+# @tag api
 POST https://api.example.com/auth/login
 Content-Type: application/json
 
@@ -36,7 +34,7 @@ Content-Type: application/json
 
 ### YAML Files
 
-Use the `documentation.tags` array (stored as tags internally but represents categories):
+Use the `documentation.tags` array:
 
 ```yaml
 - name: Login Endpoint
@@ -77,9 +75,9 @@ Use the `documentation.tags` array:
 }
 ```
 
-## Viewing Categories in TUI
+## Viewing Tags in TUI
 
-Categories appear in the file list sidebar next to each file name:
+Tags appear in the file list sidebar next to each file name:
 
 ```
 Files
@@ -97,7 +95,7 @@ Files
 
 ### Inspect Modal
 
-Press `i` to inspect a request. The inspect modal shows all categories:
+Press `i` to inspect a request. The inspect modal shows all tags:
 
 ```
 Request Preview
@@ -113,26 +111,26 @@ Body:
     "password": "pass"
   }
 
-Categories:
+Tags:
   auth, critical, api
 ```
 
-## Filtering by Category
+## Filtering by Tag
 
 ### Enter Filter Mode
 
-Press `t` to enter category filter mode. The status bar shows:
+Press `t` to enter tag filter mode. The status bar shows:
 
 ```
-Category: █
+Tag: █
 ```
 
-### Type Category Name
+### Type Tag Name
 
-Enter the category name to filter by (e.g., `auth`):
+Enter the tag name to filter by (e.g., `auth`):
 
 ```
-Category: auth█
+Tag: auth█
 ```
 
 ### Apply Filter
@@ -172,8 +170,8 @@ Files
 
 | Key | Action |
 |-----|--------|
-| `t` | Enter category filter mode |
-| `Enter` | Apply category filter |
+| `t` | Enter tag filter mode |
+| `Enter` | Apply tag filter |
 | `T` | Clear active filter |
 | `Esc` | Cancel input |
 | `←` / `→` | Move cursor in input |
@@ -184,7 +182,7 @@ Files
 | `Ctrl+U` | Delete from cursor to start |
 | `Ctrl+K` | Delete from cursor to end |
 
-## Category Naming Conventions
+## Tag Naming Conventions
 
 ### By Function
 ```
@@ -220,17 +218,17 @@ public, admin, internal, partner
 
 ### Smoke Test Suite
 
-Categorize critical endpoints for quick smoke testing:
+Tag critical endpoints for quick smoke testing:
 
 ```http
 ### Health Check
-# @category smoke-test
-# @category monitoring
+# @tag smoke-test
+# @tag monitoring
 GET https://api.example.com/health
 
 ### Login
-# @category smoke-test
-# @category auth
+# @tag smoke-test
+# @tag auth
 POST https://api.example.com/auth/login
 ```
 
@@ -238,13 +236,13 @@ Filter by `smoke-test` to see only essential checks.
 
 ### Admin Operations
 
-Categorize admin-only endpoints:
+Tag admin-only endpoints:
 
 ```http
 ### Delete User
-# @category admin
-# @category critical
-# @category users
+# @tag admin
+# @tag critical
+# @tag users
 DELETE https://api.example.com/users/{{userId}}
 Authorization: Bearer {{admin_token}}
 ```
@@ -253,18 +251,18 @@ Filter by `admin` to see all administrative operations.
 
 ### Environment-Specific
 
-Categorize requests by environment:
+Tag requests by environment:
 
 ```http
 ### Dev API Health
-# @category dev
-# @category monitoring
+# @tag dev
+# @tag monitoring
 GET https://api.dev.example.com/health
 
 ### Prod API Health
-# @category production
-# @category monitoring
-# @category critical
+# @tag production
+# @tag monitoring
+# @tag critical
 GET https://api.example.com/health
 ```
 
@@ -272,21 +270,20 @@ Filter by `dev` or `production` to focus on specific environments.
 
 ## Tips
 
-1. **Use consistent category names** - Establish conventions across your team
-2. **Categorize multiple dimensions** - Combine function, criticality, and environment
-3. **Keep categories short** - Easier to type in filter mode
-4. **Categories at file level** - Each `.http` file can have multiple requests, categories apply to the file
-5. **Case insensitive** - Category matching ignores case (`Auth` matches `auth`)
+1. **Use consistent tag names** - Establish conventions across your team
+2. **Tag multiple dimensions** - Combine function, criticality, and environment
+3. **Keep tags short** - Easier to type in filter mode
+4. **Tags at file level** - Each `.http` file can have multiple requests, tags apply to the file
+5. **Case insensitive** - Tag matching ignores case (`Auth` matches `auth`)
 
 ## Limitations
 
-- Category filtering is case-insensitive
-- Currently supports single category filters (multiple category support planned)
-- Categories are stored per file, not per individual request within multi-request files
-- OpenAPI files use `tags` field which is separate from `@category` annotations
+- Tag filtering is case-insensitive
+- Currently supports single tag filters (multiple tag support planned)
+- Tags are stored per file, not per individual request within multi-request files
 
 ## Related Features
 
 - [File Formats](file-formats.md) - Supported request file formats
 - [TUI Mode](tui-mode.md) - Navigation and keyboard shortcuts
-- [History](history.md) - View historical requests with categories
+- [History](history.md) - View historical requests with tags

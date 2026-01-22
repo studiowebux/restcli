@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -63,7 +64,14 @@ func ExecuteWebSocket(ctx context.Context, req *types.WebSocketRequest, tlsConfi
 	if err != nil {
 		errMsg := fmt.Sprintf("Connection failed: %v", err)
 		if resp != nil {
-			errMsg = fmt.Sprintf("Connection failed (HTTP %d): %v", resp.StatusCode, err)
+			// Read the HTTP response body to include server error details
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr == nil && len(bodyBytes) > 0 {
+				errMsg = fmt.Sprintf("Connection failed (HTTP %d): %v\n\nServer response:\n%s", resp.StatusCode, err, string(bodyBytes))
+			} else {
+				errMsg = fmt.Sprintf("Connection failed (HTTP %d): %v", resp.StatusCode, err)
+			}
 		}
 		result.Error = errMsg
 		result.Duration = time.Since(startTime).Milliseconds()
@@ -306,7 +314,14 @@ func ExecuteWebSocketInteractive(ctx context.Context, url string, headers map[st
 	if err != nil {
 		errMsg := fmt.Sprintf("Connection failed: %v", err)
 		if resp != nil {
-			errMsg = fmt.Sprintf("Connection failed (HTTP %d): %v", resp.StatusCode, err)
+			// Read the HTTP response body to include server error details
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr == nil && len(bodyBytes) > 0 {
+				errMsg = fmt.Sprintf("Connection failed (HTTP %d): %v\n\nServer response:\n%s", resp.StatusCode, err, string(bodyBytes))
+			} else {
+				errMsg = fmt.Sprintf("Connection failed (HTTP %d): %v", resp.StatusCode, err)
+			}
 		}
 		return fmt.Errorf("%s", errMsg)
 	}

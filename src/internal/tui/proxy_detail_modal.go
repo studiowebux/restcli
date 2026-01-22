@@ -22,7 +22,7 @@ func (m *Model) updateProxyDetailView() {
 }
 
 // renderProxyDetailModal renders the detailed view of a single proxy request
-func (m Model) renderProxyDetailModal() string {
+func (m *Model) renderProxyDetailModal() string {
 	if m.proxyServerState.GetSelectedIndex() < 0 || m.proxyServerState.GetSelectedIndex() >= len(m.proxyServerState.GetLogs()) {
 		return "No request selected"
 	}
@@ -168,7 +168,11 @@ func (m *Model) handleProxyDetailKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionCloseModal:
 		// Go back to proxy viewer instead of normal mode
-		m.mode = ModeProxyViewer
+		m.stateMachine.GoBack()
+		// Reset viewport scroll position
+		m.modalView.GotoTop()
+		// Refresh proxy logs when returning to viewer
+		m.updateProxyView()
 
 	case keybinds.ActionNavigateUp:
 		m.modalView.ScrollUp(1)

@@ -19,7 +19,7 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.renameState.Reset()
 			m.errorMsg = ""
 			return nil
@@ -92,7 +92,7 @@ func (m *Model) handleRenameKeys(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 
-			m.mode = ModeNormal
+			m.stateMachine.GoBack()
 			m.statusMsg = fmt.Sprintf("Renamed to: %s", newName)
 			m.renameState.Reset()
 

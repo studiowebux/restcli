@@ -22,6 +22,7 @@ import (
 	"github.com/studiowebux/restcli/internal/filter"
 	"github.com/studiowebux/restcli/internal/oauth"
 	"github.com/studiowebux/restcli/internal/parser"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
 	"github.com/studiowebux/restcli/internal/version"
 )
@@ -81,7 +82,7 @@ func (m *Model) executeRequest() tea.Cmd {
 		// Clear loading flag since we're not executing yet (waiting for confirmation)
 		m.loading = false
 		// Show confirmation modal
-		m.mode = ModeConfirmExecution
+		m.stateMachine.Transition(state.NewConfirmExecutionModalState())
 		m.statusMsg = fmt.Sprintf("Confirm execution of: %s", request.Name)
 		return nil
 	}
@@ -212,7 +213,7 @@ func (m *Model) executeWebSocket() tea.Cmd {
 	m.wsSelectedMessageIndex = 0
 	m.wsFocusedPane = "menu"     // Start with menu focused
 	m.wsPendingMessageIndex = -1 // No pending message initially
-	m.mode = ModeWebSocket
+	m.stateMachine.Transition(state.NewWebSocketModalState())
 
 	// Initialize viewport content
 	m.updateWebSocketViews(m.width, m.height)
@@ -936,7 +937,7 @@ func (m *Model) deleteFile() tea.Cmd {
 		// File index will be adjusted when files are reloaded
 
 		m.statusMsg = fmt.Sprintf("Deleted: %s", fileName)
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 
 		// Refresh file list
 		files, _ := loadFiles(m.sessionMgr)
@@ -1087,7 +1088,7 @@ func (m *Model) copyToClipboard() tea.Cmd {
 
 // performSearch performs context-aware search (files or response based on focus)
 func (m *Model) performSearch() {
-	// Use searchInput from ModeSearch (not the currently active search)
+	// Use searchInput from search state (not the currently active search)
 	query := m.searchInput
 	if query == "" {
 		wasSearchingResponse := m.searchInResponseCtx
@@ -1336,8 +1337,10 @@ func (m *Model) loadHistoryEntry(index int) tea.Cmd {
 	// Update response view
 	m.updateResponseView()
 
+	// Close history modal and return to normal mode
+	m.stateMachine.GoBack()
+
 	// Switch to normal mode and focus sidebar (to show the selected file)
-	m.mode = ModeNormal
 	m.focusedPanel = "sidebar"
 	m.statusMsg = fmt.Sprintf("Loaded history entry from %s", entry.Timestamp[:19])
 
@@ -1395,7 +1398,6 @@ func (m *Model) replayHistoryEntry(index int) tea.Cmd {
 	m.currentRequest = request
 
 	// Close history modal
-	m.mode = ModeNormal
 	m.statusMsg = fmt.Sprintf("Replaying request from %s", entry.Timestamp[:19])
 
 	// Execute the request
@@ -1564,6 +1566,9 @@ func (m *Model) getInteractiveVariables() []string {
 
 // executeRequestWithInteractiveVars is called after interactive variables are collected
 func (m *Model) executeRequestWithInteractiveVars() tea.Cmd {
+	// Close interactive modal and return to normal mode
+	m.stateMachine.GoBack()
+
 	// Simply call executeRequest again, which will now have the values
 	return m.executeRequest()
 }
