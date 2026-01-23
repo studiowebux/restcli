@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/keybinds"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -17,8 +18,14 @@ func (m *Model) renderVariableEditor() string {
 
 	var footer string
 
-	switch m.mode {
-	case ModeVariableList:
+	// Get current sub-state from state machine
+	currentState, ok := m.stateMachine.Current().(*state.VariableModalState)
+	if !ok {
+		return ""
+	}
+
+	switch currentState.SubState {
+	case "list":
 		content.WriteString("Profile Variables:\n")
 
 		if len(profile.Variables) == 0 {
@@ -43,7 +50,19 @@ func (m *Model) renderVariableEditor() string {
 			}
 
 			for i, v := range vars {
-				line := fmt.Sprintf("  %s = %s", v.name, truncate(v.value.GetValue(), 50))
+				// Calculate max value length based on tags
+				maxValueLen := 50
+				if v.value.IsMultiValue() {
+					maxValueLen -= 8 // " [multi]" length
+				}
+				if v.value.Interactive {
+					maxValueLen -= 14 // " [interactive]" length
+				}
+				if maxValueLen < 10 {
+					maxValueLen = 10 // Minimum
+				}
+
+				line := fmt.Sprintf("  %s = %s", v.name, truncate(v.value.GetValue(), maxValueLen))
 				if v.value.IsMultiValue() {
 					line += " [multi]"
 				}
@@ -59,7 +78,7 @@ func (m *Model) renderVariableEditor() string {
 
 		footer = "[a]dd [e]dit [d]elete [o]ptions [m]anage [i]nteractive [ESC]"
 
-	case ModeVariableAdd:
+	case "add":
 		content.WriteString("Add Variable\n\n")
 		nameField := m.varEditName
 		valueField := m.varEditValue
@@ -71,10 +90,11 @@ func (m *Model) renderVariableEditor() string {
 			valueField = m.varEditValue[:m.varEditValuePos] + "█" + m.varEditValue[m.varEditValuePos:]
 		}
 		content.WriteString("Name:  " + nameField + "\n")
-		content.WriteString("Value: " + valueField + "\n")
+		wrappedValue := wrapText(valueField, 55)
+		content.WriteString("Value:\n" + wrappedValue + "\n")
 		footer = "[TAB] switch fields [Enter] save [ESC] cancel"
 
-	case ModeVariableEdit:
+	case "edit":
 		content.WriteString("Edit Variable\n\n")
 		nameField := m.varEditName
 		valueField := m.varEditValue
@@ -86,15 +106,16 @@ func (m *Model) renderVariableEditor() string {
 			valueField = m.varEditValue[:m.varEditValuePos] + "█" + m.varEditValue[m.varEditValuePos:]
 		}
 		content.WriteString("Name:  " + nameField + "\n")
-		content.WriteString("Value: " + valueField + "\n")
+		wrappedValue := wrapText(valueField, 55)
+		content.WriteString("Value:\n" + wrappedValue + "\n")
 		footer = "[TAB] switch fields [Enter] save [ESC] cancel"
 
-	case ModeVariableDelete:
+	case "delete":
 		content.WriteString("Delete Variable\n\n")
 		content.WriteString(fmt.Sprintf("Are you sure you want to delete '%s'?", m.varEditName))
 		footer = "[y]es [n]o"
 
-	case ModeVariableManage:
+	case "manage":
 		content.WriteString("Manage Multi-Value Variable\n\n")
 		varValue, exists := profile.Variables[m.varEditName]
 		if !exists || !varValue.IsMultiValue() {
@@ -135,7 +156,7 @@ func (m *Model) renderVariableEditor() string {
 			}
 		}
 
-	case ModeVariableAlias:
+	case "alias":
 		content.WriteString("Set Alias\n\n")
 		varValue, exists := profile.Variables[m.varEditName]
 		if exists && varValue.IsMultiValue() && m.varAliasTargetIdx < len(varValue.MultiValue.Options) {
@@ -146,7 +167,7 @@ func (m *Model) renderVariableEditor() string {
 		content.WriteString("\nEnter a short name for this option (e.g., 'u1', 'dev')")
 		footer = "[Enter] save [ESC] cancel"
 
-	case ModeVariableOptions:
+	case "options":
 		content.WriteString("Create Multi-Value Variable\n\n")
 		nameField := m.varEditName
 		valueField := m.varEditValue
@@ -169,11 +190,16 @@ func (m *Model) renderVariableEditor() string {
 
 	// Calculate selected line for auto-scroll
 	selectedLine := -1
-	switch m.mode {
-	case ModeVariableList:
+	// Get current sub-state from state machine (reuse from above)
+	if !ok {
+		return ""
+	}
+
+	switch currentState.SubState {
+	case "list":
 		// Line 0 is "Profile Variables:", selected item is at line 1 + index
 		selectedLine = 1 + m.varEditIndex
-	case ModeVariableManage:
+	case "manage":
 		// Only scroll when not editing (editing input is at bottom)
 		if m.varEditCursor != 1 {
 			// Content lines:
@@ -215,14 +241,21 @@ func getSortedVariableNames(vars map[string]types.VariableValue) []string {
 func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 
-	switch m.mode {
-	case ModeVariableList:
+	// Get current sub-state from state machine
+	currentState, ok := m.stateMachine.Current().(*state.VariableModalState)
+	if !ok {
+		return nil
+	}
+
+	switch currentState.SubState {
+	case "list":
 		sortedNames := getSortedVariableNames(profile.Variables)
 
 		// Handle special keys not in registry
 		switch msg.String() {
 		case "o":
-			m.mode = ModeVariableOptions
+			if err := m.stateMachine.Transition(state.NewVariableModalState("options")); err == nil {
+			}
 			m.varEditName = ""
 			m.varEditValue = ""
 			m.varEditCursor = 0
@@ -257,7 +290,9 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 
 		switch action {
 		case keybinds.ActionCloseModal:
-			m.mode = ModeNormal
+			// Close modal completely, don't go back to previous state (which might be edit mode)
+			if err := m.stateMachine.Transition(state.NewNormalState()); err == nil {
+			}
 
 		case keybinds.ActionNavigateUp:
 			if m.varEditIndex > 0 {
@@ -301,7 +336,8 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 
 		case keybinds.ActionVarAdd:
-			m.mode = ModeVariableAdd
+			if err := m.stateMachine.Transition(state.NewVariableModalState("add")); err == nil {
+			}
 			m.varEditName = ""
 			m.varEditValue = ""
 			m.varEditCursor = 0
@@ -312,7 +348,8 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
 				name := sortedNames[m.varEditIndex]
 				value := profile.Variables[name]
-				m.mode = ModeVariableEdit
+				if err := m.stateMachine.Transition(state.NewVariableModalState("edit")); err == nil {
+				}
 				m.varEditName = name
 				if value.IsMultiValue() {
 					m.varEditValue = "[multi-value - use 'm' to manage options]"
@@ -329,7 +366,8 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 
 		case keybinds.ActionVarDelete:
 			if len(sortedNames) > 0 && m.varEditIndex < len(sortedNames) {
-				m.mode = ModeVariableDelete
+				if err := m.stateMachine.Transition(state.NewVariableModalState("delete")); err == nil {
+				}
 				m.varEditName = sortedNames[m.varEditIndex]
 			}
 
@@ -338,7 +376,8 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 				name := sortedNames[m.varEditIndex]
 				value := profile.Variables[name]
 				if value.IsMultiValue() {
-					m.mode = ModeVariableManage
+					if err := m.stateMachine.Transition(state.NewVariableModalState("manage")); err == nil {
+					}
 					m.varEditName = name
 					m.varOptionIndex = 0
 					m.varEditCursor = 0
@@ -351,10 +390,10 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 
 		m.gPressed = false
 
-	case ModeVariableAdd, ModeVariableEdit:
+	case "add", "edit":
 		return m.handleVariableInputKeys(msg)
 
-	case ModeVariableDelete:
+	case "delete":
 		action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
 		if !ok {
 			return nil
@@ -364,20 +403,22 @@ func (m *Model) handleVariableEditorKeys(msg tea.KeyMsg) tea.Cmd {
 		case keybinds.ActionConfirm:
 			delete(profile.Variables, m.varEditName)
 			m.sessionMgr.SaveProfiles()
-			m.mode = ModeVariableList
+			if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+			}
 			m.statusMsg = fmt.Sprintf("Deleted variable: %s", m.varEditName)
 
 		case keybinds.ActionCancel:
-			m.mode = ModeVariableList
+			if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+			}
 		}
 
-	case ModeVariableManage:
+	case "manage":
 		return m.handleVariableManageKeys(msg)
 
-	case ModeVariableAlias:
+	case "alias":
 		return m.handleVariableAliasKeys(msg)
 
-	case ModeVariableOptions:
+	case "options":
 		return m.handleVariableOptionsKeys(msg)
 	}
 
@@ -400,7 +441,8 @@ func (m *Model) handleVariableInputKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeVariableList
+			if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+			}
 			return nil
 
 		case keybinds.ActionTextSubmit:
@@ -424,7 +466,8 @@ func (m *Model) handleVariableInputKeys(msg tea.KeyMsg) tea.Cmd {
 				}
 			} else {
 				var varValue types.VariableValue
-				if m.mode == ModeVariableEdit {
+				// Get current sub-state from state machine
+				if currentState, ok := m.stateMachine.Current().(*state.VariableModalState); ok && currentState.SubState == "edit" {
 					if existingVar, exists := profile.Variables[m.varEditName]; exists {
 						varValue.Interactive = existingVar.Interactive
 					}
@@ -434,7 +477,8 @@ func (m *Model) handleVariableInputKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 
 			m.sessionMgr.SaveProfiles()
-			m.mode = ModeVariableList
+			if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+			}
 			m.statusMsg = fmt.Sprintf("Saved variable: %s", m.varEditName)
 			return nil
 
@@ -475,7 +519,8 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 	varValue, exists := profile.Variables[m.varEditName]
 	if !exists || !varValue.IsMultiValue() {
-		m.mode = ModeVariableList
+		if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+		}
 		return nil
 	}
 
@@ -569,7 +614,8 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(varValue.MultiValue.Options) == 0 {
 			m.statusMsg = "No options to alias"
 		} else if m.varOptionIndex < len(varValue.MultiValue.Options) {
-			m.mode = ModeVariableAlias
+			if err := m.stateMachine.Transition(state.NewVariableModalState("alias")); err == nil {
+			}
 			m.varAliasTargetIdx = m.varOptionIndex
 			m.varAliasInput = ""
 		} else {
@@ -609,7 +655,8 @@ func (m *Model) handleVariableManageKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeVariableList
+		if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+		}
 
 	case keybinds.ActionNavigateUp:
 		if m.varOptionIndex > 0 {
@@ -670,7 +717,8 @@ func (m *Model) handleVariableOptionsKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeVariableList
+			if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+			}
 			return nil
 
 		case keybinds.ActionTextSubmit:
@@ -716,7 +764,8 @@ func (m *Model) handleVariableOptionsKeys(msg tea.KeyMsg) tea.Cmd {
 			profile.Variables[m.varEditName] = varValue
 
 			m.sessionMgr.SaveProfiles()
-			m.mode = ModeVariableList
+			if err := m.stateMachine.Transition(state.NewVariableModalState("list")); err == nil {
+			}
 			m.statusMsg = fmt.Sprintf("Created multi-value variable: %s", m.varEditName)
 			return nil
 		}
@@ -753,7 +802,8 @@ func (m *Model) handleVariableAliasKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 	varValue, exists := profile.Variables[m.varEditName]
 	if !exists || !varValue.IsMultiValue() {
-		m.mode = ModeVariableManage
+		if err := m.stateMachine.Transition(state.NewVariableModalState("manage")); err == nil {
+		}
 		return nil
 	}
 
@@ -761,7 +811,8 @@ func (m *Model) handleVariableAliasKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeVariableManage
+			if err := m.stateMachine.Transition(state.NewVariableModalState("manage")); err == nil {
+			}
 			m.varAliasInput = ""
 			return nil
 
@@ -782,7 +833,8 @@ func (m *Model) handleVariableAliasKeys(msg tea.KeyMsg) tea.Cmd {
 			m.sessionMgr.SaveProfiles()
 
 			m.statusMsg = fmt.Sprintf("Alias '%s' set", m.varAliasInput)
-			m.mode = ModeVariableManage
+			if err := m.stateMachine.Transition(state.NewVariableModalState("manage")); err == nil {
+			}
 			m.varAliasInput = ""
 			return nil
 

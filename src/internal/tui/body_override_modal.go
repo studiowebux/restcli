@@ -16,7 +16,7 @@ func (m *Model) handleBodyOverrideKeys(msg tea.KeyMsg) tea.Cmd {
 	case "ctrl+s", "ctrl+enter":
 		// Save and return to normal mode
 		m.bodyOverride = m.bodyOverrideInput
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = "Body override applied (will be used for next request)"
 		return nil
 
@@ -101,7 +101,7 @@ func (m *Model) handleBodyOverrideKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionTextCancel:
 		// Cancel - discard changes
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.bodyOverrideInput = ""
 		m.bodyOverrideCursor = 0
 		m.statusMsg = "Body override cancelled"

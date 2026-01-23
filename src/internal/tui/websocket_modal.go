@@ -641,7 +641,7 @@ func (m *Model) handleWebSocketKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionCloseModal:
 		// Close WebSocket modal
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.wsState.Cancel()
 		m.wsConnectionStatus = "disconnected"
 		m.wsMessageChannel = nil

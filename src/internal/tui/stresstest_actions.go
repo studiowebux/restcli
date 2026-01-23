@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/parser"
 	"github.com/studiowebux/restcli/internal/stresstest"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
 )
 
@@ -123,7 +124,7 @@ func (m *Model) startStressTest() tea.Cmd {
 	m.stressTestState.GetExecutor().Start()
 
 	// Switch to progress mode
-	m.mode = ModeStressTestProgress
+	m.stateMachine.Transition(state.NewStressTestModalState("progress"))
 	m.statusMsg = "Stress test started"
 
 	// Start polling for updates

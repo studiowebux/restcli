@@ -43,10 +43,12 @@ func (m *Model) handleInspectKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal, keybinds.ActionCloseModalAlt:
-		m.mode = ModeNormal
+		// Close modal using state machine (go back to normal)
+		m.stateMachine.GoBack()
 
 	case keybinds.ActionExecute:
-		m.mode = ModeNormal
+		// Close modal and execute request
+		m.stateMachine.GoBack()
 		return m.executeRequest()
 
 	case keybinds.ActionNavigateUp:

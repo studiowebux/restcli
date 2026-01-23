@@ -85,7 +85,7 @@ const (
 	ActionDuplicateFile    Action = "duplicate_file"     // Duplicate file
 	ActionDeleteFile       Action = "delete_file"        // Delete file (with confirm)
 	ActionRenameFile       Action = "rename_file"        // Rename file
-	ActionCreateFile       Action = "create_file"        // Create new file
+	ActionCreateFile       Action = "create_file"        // Create new request
 	ActionRefreshFiles     Action = "refresh_files"      // Refresh file list
 
 	// Response operations (Normal mode)

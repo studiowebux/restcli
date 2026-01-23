@@ -62,7 +62,7 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.statusMsg = fmt.Sprintf("Opened: %s", filepath.Base(selectedFile))
 		m.errorMsg = ""
 	}
@@ -80,7 +80,7 @@ func (m *Model) handleMRUKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.errorMsg = ""
 
 	case keybinds.ActionNavigateDown:
@@ -140,9 +140,10 @@ func (m *Model) renderMRUModal() string {
 
 	// Render all files - let the modal viewport handle scrolling
 	for i, filePath := range existingFiles {
-		displayPath := filePath
+		// Show only filename for readability
+		displayPath := filepath.Base(filePath)
 
-		// Show relative path if in workdir
+		// If in workdir, show relative path instead
 		if workdir != "" {
 			if rel, err := filepath.Rel(workdir, filePath); err == nil {
 				if !strings.HasPrefix(rel, "..") {

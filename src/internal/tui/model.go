@@ -13,65 +13,8 @@ import (
 	"github.com/studiowebux/restcli/internal/jsonpath"
 	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/session"
+	"github.com/studiowebux/restcli/internal/tui/state"
 	"github.com/studiowebux/restcli/internal/types"
-)
-
-// Mode represents the current TUI mode
-type Mode int
-
-const (
-	ModeNormal Mode = iota
-	ModeSearch
-	ModeGoto
-	ModeVariableList
-	ModeVariableAdd
-	ModeVariableEdit
-	ModeVariableDelete
-	ModeVariableOptions
-	ModeVariableManage
-	ModeVariablePromptInteractive
-	ModeHeaderList
-	ModeHeaderAdd
-	ModeHeaderEdit
-	ModeHeaderDelete
-	ModeProfileSwitch
-	ModeProfileCreate
-	ModeDocumentation
-	ModeHistory
-	ModeHistoryClearConfirm
-	ModeAnalytics
-	ModeAnalyticsClearConfirm
-	ModeStressTest
-	ModeStressTestConfig
-	ModeStressTestLoadConfig
-	ModeStressTestProgress
-	ModeStressTestResults
-	ModeHelp
-	ModeInspect
-	ModeRename
-	ModeEditorConfig
-	ModeOAuthConfig
-	ModeOAuthEdit
-	ModeConfigView
-	ModeDelete
-	ModeProfileEdit
-	ModeProfileDuplicate
-	ModeProfileDeleteConfirm
-	ModeVariableAlias
-	ModeShellErrors
-	ModeCreateFile
-	ModeMRU
-	ModeDiff
-	ModeConfirmExecution
-	ModeErrorDetail
-	ModeStatusDetail
-	ModeBodyOverride
-	ModeJSONPathHistory
-	ModeTagFilter
-	ModeMockServer
-	ModeProxyViewer
-	ModeProxyDetail
-	ModeWebSocket
 )
 
 // Model represents the TUI state
@@ -82,7 +25,7 @@ type Model struct {
 	historyManager   *history.Manager
 	bookmarkManager  *jsonpath.BookmarkManager
 	keybinds         *keybinds.Registry
-	mode             Mode
+	stateMachine     *state.StateMachine
 	version          string
 	updateAvailable  bool
 	latestVersion    string
@@ -97,7 +40,7 @@ type Model struct {
 	searchInResponseCtx   bool   // True if current search is in response context
 	gotoInput             string // Goto line input
 	gotoCursor            int    // Cursor position in goto input
-	searchInput           string // Temporary search input buffer while in ModeSearch
+	searchInput           string // Temporary search input buffer while in search state
 	searchCursor          int    // Cursor position in search input
 
 	// Request/Response
@@ -340,7 +283,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateViewport()
 
 	case fileListLoadedMsg:
+		// Preserve active tag filter before updating files
+		activeTagFilter := m.fileExplorer.GetTagFilter()
 		m.fileExplorer.SetFiles(msg.files, msg.files)
+		// Re-apply tag filter if one was active
+		if len(activeTagFilter) > 0 {
+			m.fileExplorer.SetTagFilter(activeTagFilter)
+		}
 		m.statusMsg = "Files loaded"
 		// Reload current file's requests to reflect any changes
 		m.loadRequestsFromCurrentFile()
@@ -396,7 +345,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.shellErrors) > 0 {
 			m.shellErrors = msg.shellErrors
 			m.shellErrorScroll = 0
-			m.mode = ModeShellErrors
+			if err := m.stateMachine.Transition(state.NewShellErrorsModalState()); err == nil {
+			}
 			m.updateShellErrorsView()
 		}
 
@@ -535,7 +485,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stressTestConfigsLoadedMsg:
 		m.stressTestState.SetConfigs(msg.configs)
 		m.stressTestState.SetConfigIndex(0)
-		m.mode = ModeStressTestLoadConfig
+		if err := m.stateMachine.Transition(state.NewStressTestModalState("load_config")); err == nil {
+		}
 		if len(msg.configs) > 0 {
 			m.statusMsg = fmt.Sprintf("Loaded %d stress test configurations", len(msg.configs))
 		} else {
@@ -555,7 +506,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stressTestState.SetActiveRequest(nil)
 		m.stressTestState.SetStopping(false)
 		m.statusMsg = "Stress test completed"
-		m.mode = ModeStressTestResults
+		if err := m.stateMachine.Transition(state.NewStressTestModalState("results")); err == nil {
+		}
 		return m, m.loadStressTestRuns()
 
 	case stressTestStoppedMsg:
@@ -572,7 +524,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "Stress test cancelled"
 		}
 
-		m.mode = ModeStressTestResults
 		return m, m.loadStressTestRuns()
 
 	case promptInteractiveVarsMsg:
@@ -581,7 +532,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.interactiveVarValues = make(map[string]string)
 		m.interactiveVarInput = ""
 		m.interactiveVarCursor = 0
-		m.mode = ModeVariablePromptInteractive
 		m.initInteractiveVarPrompt()
 
 	case mockServerStartedMsg:
@@ -596,14 +546,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case mockServerTickMsg:
 		// Refresh mock server view if in that mode and server is running
-		if m.mode == ModeMockServer && m.mockServerState.IsRunning() {
+		if _, ok := m.stateMachine.Current().(*state.MockServerModalState); ok && m.mockServerState.IsRunning() {
 			// Return another tick to keep refreshing
 			cmd = m.tickMockServer()
 		}
 
 	case proxyViewerTickMsg:
 		// Refresh proxy viewer if in that mode and proxy is running
-		if m.mode == ModeProxyViewer && m.proxyServerState.IsRunning() {
+		if _, ok := m.stateMachine.Current().(*state.ProxyViewerModalState); ok && m.proxyServerState.IsRunning() {
 			m.updateProxyView()
 			// Return another tick to keep refreshing
 			cmd = m.tickProxyViewer()
@@ -611,7 +561,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case proxyLogReceivedMsg:
 		// New proxy log received - update view
-		if m.mode == ModeProxyViewer && m.proxyServerState.IsRunning() {
+		if _, ok := m.stateMachine.Current().(*state.ProxyViewerModalState); ok && m.proxyServerState.IsRunning() {
 			m.updateProxyView()
 		}
 		// Continue listening for more logs
@@ -664,7 +614,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// This prevents double-processing of keys and mouse events
 	if cmd == nil {
 		// Only update help viewport since it doesn't have manual key handling
-		if m.mode == ModeHelp {
+		if _, ok := m.stateMachine.Current().(*state.HelpModalState); ok {
 			// Filter out mouse messages
 			if _, isMouseMsg := msg.(tea.MouseMsg); !isMouseMsg {
 				m.helpView, cmd = m.helpView.Update(msg)
@@ -683,78 +633,113 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
-	switch m.mode {
-	case ModeHelp:
+	// Check state machine for modals that have been migrated
+	if _, ok := m.stateMachine.Current().(*state.HelpModalState); ok {
 		return m.renderHelp()
-	case ModeVariableList, ModeVariableAdd, ModeVariableEdit, ModeVariableDelete, ModeVariableOptions, ModeVariableManage, ModeVariableAlias:
-		return m.renderVariableEditor()
-	case ModeVariablePromptInteractive:
-		return m.renderInteractiveVariablePrompt()
-	case ModeHeaderList, ModeHeaderAdd, ModeHeaderEdit, ModeHeaderDelete:
-		return m.renderHeaderEditor()
-	case ModeProfileSwitch, ModeProfileCreate, ModeProfileEdit, ModeProfileDuplicate, ModeProfileDeleteConfirm:
-		return m.renderProfileModal()
-	case ModeDocumentation:
-		return m.renderDocumentation()
-	case ModeHistory:
-		return m.renderHistory()
-	case ModeHistoryClearConfirm:
-		return m.renderHistoryClearConfirmation()
-	case ModeAnalytics:
-		return m.renderAnalytics()
-	case ModeAnalyticsClearConfirm:
-		return m.renderAnalyticsClearConfirmation()
-	case ModeStressTestConfig:
-		return m.renderStressTestConfig()
-	case ModeStressTestLoadConfig:
-		return m.renderStressTestLoadConfig()
-	case ModeStressTestProgress:
-		return m.renderStressTestProgress()
-	case ModeStressTestResults:
-		return m.renderStressTestResults()
-	case ModeInspect:
-		return m.renderInspect()
-	case ModeOAuthConfig:
-		return m.renderOAuthConfig()
-	case ModeOAuthEdit:
-		return m.renderOAuthEdit()
-	case ModeRename:
-		return m.renderRenameModal()
-	case ModeEditorConfig:
-		return m.renderEditorConfigModal()
-	case ModeConfigView:
-		return m.renderConfigView()
-	case ModeDelete:
-		return m.renderDeleteModal()
-	case ModeConfirmExecution:
-		return m.renderConfirmExecutionModal()
-	case ModeErrorDetail:
-		return m.renderErrorDetailModal()
-	case ModeStatusDetail:
-		return m.renderStatusDetailModal()
-	case ModeShellErrors:
-		return m.renderShellErrorsModal()
-	case ModeCreateFile:
-		return m.renderCreateFileModal()
-	case ModeMockServer:
-		return m.renderMockServer()
-	case ModeProxyViewer:
-		return m.renderProxyModal()
-	case ModeProxyDetail:
-		return m.renderProxyDetailModal()
-	case ModeMRU:
-		return m.renderMRUModal()
-	case ModeDiff:
-		return m.renderDiffModal()
-	case ModeBodyOverride:
-		return m.renderBodyOverrideModal()
-	case ModeJSONPathHistory:
-		return m.renderJSONPathHistoryModal()
-	case ModeWebSocket:
-		return m.renderWebSocketModal()
-	default:
-		return m.renderMain()
 	}
+	if _, ok := m.stateMachine.Current().(*state.InspectModalState); ok {
+		return m.renderInspect()
+	}
+	if _, ok := m.stateMachine.Current().(*state.ErrorDetailModalState); ok {
+		return m.renderErrorDetailModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.StatusDetailModalState); ok {
+		return m.renderStatusDetailModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.DiffModalState); ok {
+		return m.renderDiffModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.ShellErrorsModalState); ok {
+		return m.renderShellErrorsModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.DeleteConfirmModalState); ok {
+		return m.renderDeleteModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.ConfirmExecutionModalState); ok {
+		return m.renderConfirmExecutionModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.RenameModalState); ok {
+		return m.renderRenameModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.CreateFileModalState); ok {
+		return m.renderCreateFileModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.MRUModalState); ok {
+		return m.renderMRUModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.BodyOverrideModalState); ok {
+		return m.renderBodyOverrideModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.JSONPathHistoryModalState); ok {
+		return m.renderJSONPathHistoryModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.DocumentationModalState); ok {
+		return m.renderDocumentation()
+	}
+	if _, ok := m.stateMachine.Current().(*state.HistoryModalState); ok {
+		return m.renderHistory()
+	}
+	if _, ok := m.stateMachine.Current().(*state.HistoryClearConfirmModalState); ok {
+		return m.renderHistoryClearConfirmation()
+	}
+	if _, ok := m.stateMachine.Current().(*state.AnalyticsModalState); ok {
+		return m.renderAnalytics()
+	}
+	if _, ok := m.stateMachine.Current().(*state.AnalyticsClearConfirmModalState); ok {
+		return m.renderAnalyticsClearConfirmation()
+	}
+	if _, ok := m.stateMachine.Current().(*state.MockServerModalState); ok {
+		return m.renderMockServer()
+	}
+	if _, ok := m.stateMachine.Current().(*state.ProxyViewerModalState); ok {
+		return m.renderProxyModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.ProxyDetailModalState); ok {
+		return m.renderProxyDetailModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.VariableModalState); ok {
+		return m.renderVariableEditor()
+	}
+	if _, ok := m.stateMachine.Current().(*state.InteractiveVarModalState); ok {
+		return m.renderInteractiveVariablePrompt()
+	}
+	if _, ok := m.stateMachine.Current().(*state.HeaderModalState); ok {
+		return m.renderHeaderEditor()
+	}
+	if _, ok := m.stateMachine.Current().(*state.ProfileModalState); ok {
+		return m.renderProfileModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.StressTestModalState); ok {
+		st := m.stateMachine.Current().(*state.StressTestModalState)
+		switch st.SubState {
+		case "config":
+			return m.renderStressTestConfig()
+		case "load_config":
+			return m.renderStressTestLoadConfig()
+		case "progress":
+			return m.renderStressTestProgress()
+		case "results":
+			return m.renderStressTestResults()
+		}
+	}
+	if _, ok := m.stateMachine.Current().(*state.WebSocketModalState); ok {
+		return m.renderWebSocketModal()
+	}
+	if _, ok := m.stateMachine.Current().(*state.OAuthConfigModalState); ok {
+		return m.renderOAuthConfig()
+	}
+	if _, ok := m.stateMachine.Current().(*state.OAuthEditModalState); ok {
+		return m.renderOAuthEdit()
+	}
+	if _, ok := m.stateMachine.Current().(*state.ConfigViewModalState); ok {
+		return m.renderConfigView()
+	}
+	if _, ok := m.stateMachine.Current().(*state.EditorConfigModalState); ok {
+		return m.renderEditorConfigModal()
+	}
+
+	// Fallback to main view if no state matched
+	return m.renderMain()
 }
 
 // Custom message types

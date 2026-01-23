@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/studiowebux/restcli/internal/keybinds"
+	"github.com/studiowebux/restcli/internal/tui/state"
 )
 
 // getSortedHeaderNames returns sorted header names
@@ -32,8 +33,14 @@ func (m *Model) renderHeaderEditor() string {
 	var content strings.Builder
 	var footer string
 
-	switch m.mode {
-	case ModeHeaderList:
+	// Get current sub-state from state machine
+	currentState, ok := m.stateMachine.Current().(*state.HeaderModalState)
+	if !ok {
+		return ""
+	}
+
+	switch currentState.SubState {
+	case "list":
 		content.WriteString("Profile Headers:\n")
 
 		if len(profile.Headers) == 0 {
@@ -51,7 +58,7 @@ func (m *Model) renderHeaderEditor() string {
 
 		footer = "[a]dd [e]dit [d]elete [ESC]"
 
-	case ModeHeaderAdd:
+	case "add":
 		content.WriteString("Add Header\n\n")
 		nameField := m.headerEditName
 		valueField := m.headerEditValue
@@ -64,7 +71,7 @@ func (m *Model) renderHeaderEditor() string {
 		content.WriteString("Value: " + valueField + "\n")
 		footer = "[TAB] switch fields [Enter] save [ESC] cancel"
 
-	case ModeHeaderEdit:
+	case "edit":
 		content.WriteString("Edit Header\n\n")
 		nameField := m.headerEditName
 		valueField := m.headerEditValue
@@ -77,7 +84,7 @@ func (m *Model) renderHeaderEditor() string {
 		content.WriteString("Value: " + valueField + "\n")
 		footer = "[TAB] switch fields [Enter] save [ESC] cancel"
 
-	case ModeHeaderDelete:
+	case "delete":
 		content.WriteString("Delete Header\n\n")
 		content.WriteString(fmt.Sprintf("Are you sure you want to delete '%s'?", m.headerEditName))
 		footer = "[y]es [n]o"
@@ -85,7 +92,7 @@ func (m *Model) renderHeaderEditor() string {
 
 	// Calculate selected line for auto-scroll (only in list mode)
 	selectedLine := -1
-	if m.mode == ModeHeaderList {
+	if currentState.SubState == "list" {
 		// Line 0 is "Profile Headers:", selected item is at line 1 + index
 		selectedLine = 1 + m.headerEditIndex
 	}
@@ -97,8 +104,14 @@ func (m *Model) renderHeaderEditor() string {
 func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 	profile := m.sessionMgr.GetActiveProfile()
 
-	switch m.mode {
-	case ModeHeaderList:
+	// Get current sub-state from state machine
+	currentState, ok := m.stateMachine.Current().(*state.HeaderModalState)
+	if !ok {
+		return nil
+	}
+
+	switch currentState.SubState {
+	case "list":
 		sortedNames := getSortedHeaderNames(profile.Headers)
 
 		action, ok, partial := m.keybinds.MatchMultiKey(keybinds.ContextHeaderList, msg.String())
@@ -113,7 +126,9 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 
 		switch action {
 		case keybinds.ActionCloseModal:
-			m.mode = ModeNormal
+			// Close modal completely, don't go back to previous state (which might be edit mode)
+			if err := m.stateMachine.Transition(state.NewNormalState()); err == nil {
+			}
 
 		case keybinds.ActionNavigateUp:
 			if m.headerEditIndex > 0 {
@@ -157,14 +172,16 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 			}
 
 		case keybinds.ActionHeaderAdd:
-			m.mode = ModeHeaderAdd
+			if err := m.stateMachine.Transition(state.NewHeaderModalState("add")); err == nil {
+			}
 			m.headerEditName = ""
 			m.headerEditValue = ""
 			m.headerEditCursor = 0
 
 		case keybinds.ActionHeaderEdit:
 			if len(sortedNames) > 0 && m.headerEditIndex < len(sortedNames) {
-				m.mode = ModeHeaderEdit
+				if err := m.stateMachine.Transition(state.NewHeaderModalState("edit")); err == nil {
+				}
 				name := sortedNames[m.headerEditIndex]
 				m.headerEditName = name
 				m.headerEditValue = profile.Headers[name]
@@ -173,17 +190,18 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 
 		case keybinds.ActionHeaderDelete:
 			if len(sortedNames) > 0 && m.headerEditIndex < len(sortedNames) {
-				m.mode = ModeHeaderDelete
+				if err := m.stateMachine.Transition(state.NewHeaderModalState("delete")); err == nil {
+				}
 				m.headerEditName = sortedNames[m.headerEditIndex]
 			}
 		}
 
 		m.gPressed = false
 
-	case ModeHeaderAdd, ModeHeaderEdit:
+	case "add", "edit":
 		return m.handleHeaderInputKeys(msg)
 
-	case ModeHeaderDelete:
+	case "delete":
 		action, ok := m.keybinds.Match(keybinds.ContextConfirm, msg.String())
 		if !ok {
 			return nil
@@ -193,11 +211,13 @@ func (m *Model) handleHeaderEditorKeys(msg tea.KeyMsg) tea.Cmd {
 		case keybinds.ActionConfirm:
 			delete(profile.Headers, m.headerEditName)
 			m.sessionMgr.SaveProfiles()
-			m.mode = ModeHeaderList
+			if err := m.stateMachine.Transition(state.NewHeaderModalState("list")); err == nil {
+			}
 			m.statusMsg = fmt.Sprintf("Deleted header: %s", m.headerEditName)
 
 		case keybinds.ActionCancel:
-			m.mode = ModeHeaderList
+			if err := m.stateMachine.Transition(state.NewHeaderModalState("list")); err == nil {
+			}
 		}
 	}
 
@@ -218,7 +238,8 @@ func (m *Model) handleHeaderInputKeys(msg tea.KeyMsg) tea.Cmd {
 	if ok {
 		switch action {
 		case keybinds.ActionTextCancel:
-			m.mode = ModeHeaderList
+			if err := m.stateMachine.Transition(state.NewHeaderModalState("list")); err == nil {
+			}
 			return nil
 
 		case keybinds.ActionTextSubmit:
@@ -235,7 +256,8 @@ func (m *Model) handleHeaderInputKeys(msg tea.KeyMsg) tea.Cmd {
 			profile.Headers[m.headerEditName] = m.headerEditValue
 
 			m.sessionMgr.SaveProfiles()
-			m.mode = ModeHeaderList
+			if err := m.stateMachine.Transition(state.NewHeaderModalState("list")); err == nil {
+			}
 			m.statusMsg = fmt.Sprintf("Saved header: %s", m.headerEditName)
 			return nil
 		}

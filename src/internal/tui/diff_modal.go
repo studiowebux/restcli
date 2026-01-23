@@ -35,7 +35,7 @@ func (m *Model) handleDiffKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 
 	case keybinds.ActionNavigateDown:
 		// Vim-style navigation

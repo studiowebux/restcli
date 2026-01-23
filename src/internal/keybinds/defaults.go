@@ -170,7 +170,7 @@ func registerVariableBindings(r *Registry) {
 	r.RegisterMultiple(ContextVariableList, []string{"up", "k"}, ActionNavigateUp)
 	r.RegisterMultiple(ContextVariableList, []string{"down", "j"}, ActionNavigateDown)
 	r.Register(ContextVariableList, "a", ActionVarAdd)
-	r.Register(ContextVariableList, "e", ActionVarEdit)
+	r.RegisterMultiple(ContextVariableList, []string{"e", "enter"}, ActionVarEdit)
 	r.Register(ContextVariableList, "d", ActionVarDelete)
 	r.Register(ContextVariableList, "m", ActionVarManage)
 	r.Register(ContextVariableList, " ", ActionVarToggle)

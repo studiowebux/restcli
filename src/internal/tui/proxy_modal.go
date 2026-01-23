@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/studiowebux/restcli/internal/keybinds"
 	"github.com/studiowebux/restcli/internal/proxy"
+	"github.com/studiowebux/restcli/internal/tui/state"
 )
 
 // updateProxyView updates the proxy viewer modal content
@@ -19,7 +20,7 @@ func (m *Model) updateProxyView() {
 }
 
 // renderProxyModal renders the proxy viewer modal
-func (m Model) renderProxyModal() string {
+func (m *Model) renderProxyModal() string {
 	var content strings.Builder
 
 	// Calculate dimensions
@@ -201,7 +202,7 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "enter":
 		if m.proxyServerState.GetSelectedIndex() >= 0 && m.proxyServerState.GetSelectedIndex() < len(m.proxyServerState.GetLogs()) {
-			m.mode = ModeProxyDetail
+			m.stateMachine.Transition(state.NewProxyDetailModalState())
 			m.updateProxyDetailView() // Set content once when entering modal
 		}
 		return nil
@@ -215,7 +216,9 @@ func (m *Model) handleProxyViewerKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		// Close modal completely, don't go back to previous state (which might be detail modal)
+		if err := m.stateMachine.Transition(state.NewNormalState()); err == nil {
+		}
 
 	case keybinds.ActionNavigateDown:
 		if len(m.proxyServerState.GetLogs()) > 0 && m.proxyServerState.GetSelectedIndex() < len(m.proxyServerState.GetLogs())-1 {

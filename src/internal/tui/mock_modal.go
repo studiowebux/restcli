@@ -153,7 +153,7 @@ func (m *Model) handleMockServerKeys(msg tea.KeyMsg) tea.Cmd {
 
 	switch action {
 	case keybinds.ActionCloseModal:
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 
 	case keybinds.ActionNavigateUp:
 		m.modalView.LineUp(1)

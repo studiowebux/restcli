@@ -58,7 +58,7 @@ func (m *Model) handleJSONPathHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "q":
 		// Close modal
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.filterEditing = true
 		m.jsonpathHistorySearch = ""
 		m.jsonpathHistorySearching = false
@@ -121,7 +121,7 @@ func (m *Model) handleJSONPathHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 		selectedBookmark := m.jsonpathHistoryMatches[m.jsonpathHistoryCursor]
 		m.filterInput = selectedBookmark.Expression
 		m.filterCursor = len(m.filterInput)
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.filterEditing = true
 		m.jsonpathHistorySearch = ""
 		m.jsonpathHistorySearching = false
@@ -144,7 +144,7 @@ func (m *Model) handleJSONPathHistoryKeys(msg tea.KeyMsg) tea.Cmd {
 	switch action {
 	case keybinds.ActionCloseModal:
 		// Close modal and return to filter editing
-		m.mode = ModeNormal
+		m.stateMachine.GoBack()
 		m.filterEditing = true
 		m.jsonpathHistorySearch = ""
 		m.jsonpathHistorySearching = false

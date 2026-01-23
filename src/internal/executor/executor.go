@@ -61,12 +61,22 @@ func ExecuteWithContext(ctx context.Context, req *types.HttpRequest, tlsConfig *
 	}
 
 	// Build HTTP client with optional TLS configuration
+	clientBuildStart := time.Now()
 	client, err := buildHTTPClient(tlsConfig, time.Duration(timeout)*time.Second)
+	clientBuildDuration := time.Since(clientBuildStart)
+	if clientBuildDuration > 10*time.Millisecond {
+		fmt.Fprintf(os.Stderr, "[PERF] Client build took %v\n", clientBuildDuration)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure HTTP client: %w", err)
 	}
 
+	requestStart := time.Now()
 	resp, err := client.Do(httpReq)
+	requestDuration := time.Since(requestStart)
+	if requestDuration > 50*time.Millisecond {
+		fmt.Fprintf(os.Stderr, "[PERF] HTTP request took %v\n", requestDuration)
+	}
 	duration := time.Since(startTime).Milliseconds()
 
 	if err != nil {
@@ -287,6 +297,7 @@ func streamResponse(ctx context.Context, body io.Reader, maxSize int64, callback
 // buildHTTPClient creates an HTTP client with optional TLS/mTLS configuration
 // timeout parameter: 0 = no timeout, > 0 = specific timeout
 func buildHTTPClient(tlsConfig *types.TLSConfig, timeout time.Duration) (*http.Client, error) {
+	clientStart := time.Now()
 	transport := &http.Transport{}
 
 	if tlsConfig != nil {
@@ -296,7 +307,12 @@ func buildHTTPClient(tlsConfig *types.TLSConfig, timeout time.Duration) (*http.C
 
 		// Load client certificate if provided (for mTLS)
 		if tlsConfig.CertFile != "" && tlsConfig.KeyFile != "" {
+			certStart := time.Now()
 			cert, err := tls.LoadX509KeyPair(tlsConfig.CertFile, tlsConfig.KeyFile)
+			certDuration := time.Since(certStart)
+			if certDuration > 10*time.Millisecond {
+				fmt.Fprintf(os.Stderr, "[PERF] TLS cert loading took %v\n", certDuration)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to load client certificate: %w", err)
 			}
@@ -305,7 +321,12 @@ func buildHTTPClient(tlsConfig *types.TLSConfig, timeout time.Duration) (*http.C
 
 		// Load CA certificate if provided (for server verification)
 		if tlsConfig.CAFile != "" {
+			caStart := time.Now()
 			caCert, err := os.ReadFile(tlsConfig.CAFile)
+			caDuration := time.Since(caStart)
+			if caDuration > 10*time.Millisecond {
+				fmt.Fprintf(os.Stderr, "[PERF] CA cert loading took %v\n", caDuration)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to read CA certificate: %w", err)
 			}
@@ -317,6 +338,11 @@ func buildHTTPClient(tlsConfig *types.TLSConfig, timeout time.Duration) (*http.C
 		}
 
 		transport.TLSClientConfig = tlsCfg
+	}
+
+	clientDuration := time.Since(clientStart)
+	if clientDuration > 10*time.Millisecond {
+		fmt.Fprintf(os.Stderr, "[PERF] buildHTTPClient took %v (total)\n", clientDuration)
 	}
 
 	return &http.Client{

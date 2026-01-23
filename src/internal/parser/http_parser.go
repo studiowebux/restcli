@@ -300,10 +300,10 @@ func parseDocumentation(line string, doc *types.Documentation) {
 		return
 	}
 
-	// @category
-	if strings.HasPrefix(line, "@category") {
-		category := strings.TrimSpace(strings.TrimPrefix(line, "@category"))
-		doc.Tags = append(doc.Tags, category)
+	// @tag (OpenAPI compliant)
+	if strings.HasPrefix(line, "@tag") {
+		tag := strings.TrimSpace(strings.TrimPrefix(line, "@tag"))
+		doc.Tags = append(doc.Tags, tag)
 		return
 	}
 

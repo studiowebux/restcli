@@ -33,11 +33,11 @@ All state objects use sync.RWMutex for thread safety.
 The application uses a mode-based system with 79+ distinct modes.
 Each modal has associated handlers in keys.go and render functions.
 
-Modes are organized by category:
-  - Normal operation (ModeNormal, ModeLoading, etc.)
-  - Request editing (ModeVariableEdit, ModeHeaderEdit, etc.)
-  - Modals (ModeHistory, ModeAnalytics, ModeStressTest, etc.)
-  - Confirmations (ModeDeleteConfirm, ModeHistoryClearConfirm, etc.)
+States are organized by category:
+  - Normal operation (browsing, loading, etc.)
+  - Request editing (variable editor, header editor, etc.)
+  - Modals (history, analytics, stress test, etc.)
+  - Confirmations (delete confirm, history clear confirm, etc.)
 
 # Keybind System
 
