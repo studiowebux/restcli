@@ -314,11 +314,11 @@ Absolute paths work too:
 
 5. **Error Responses**: Handle authentication failures gracefully
 
-6. **Categories**: Tag chain files for filtering
+6. **Tags**: Tag chain files for filtering
 
    ```http
-   # @category chain
-   # @category auth
+   # @tag chain
+   # @tag auth
    ```
 
 ## Advanced Example: User Creation Workflow

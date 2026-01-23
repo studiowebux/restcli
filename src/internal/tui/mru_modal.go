@@ -140,9 +140,10 @@ func (m *Model) renderMRUModal() string {
 
 	// Render all files - let the modal viewport handle scrolling
 	for i, filePath := range existingFiles {
-		displayPath := filePath
+		// Show only filename for readability
+		displayPath := filepath.Base(filePath)
 
-		// Show relative path if in workdir
+		// If in workdir, show relative path instead
 		if workdir != "" {
 			if rel, err := filepath.Rel(workdir, filePath); err == nil {
 				if !strings.HasPrefix(rel, "..") {

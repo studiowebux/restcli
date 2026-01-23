@@ -21,7 +21,7 @@ No more merge conflicts. No more outdated collections. Each endpoint is a file. 
 3. **Multi-value variables** with aliases (e.g., `dev`, `staging`, `prod`)
 4. **Profile system** for environment-specific headers and variables
 5. **Request history** with split view and live preview
-6. **Categories and filtering** - organize requests with categories, filter by category in TUI
+6. **Tags and filtering** - organize requests with tags, filter by tag in TUI
 
 ### Execution & Control
 7. **Request chaining** with dependency resolution and automatic variable extraction

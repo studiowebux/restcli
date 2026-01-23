@@ -11,7 +11,7 @@ import (
 	"github.com/studiowebux/restcli/internal/keybinds"
 )
 
-var fileTypes = []string{"http", "json", "yaml", "jsonc"}
+var fileTypes = []string{"http", "ws", "json", "yaml", "jsonc"}
 
 // handleCreateFileKeys handles keyboard input in create file mode
 func (m *Model) handleCreateFileKeys(msg tea.KeyMsg) tea.Cmd {
@@ -182,6 +182,17 @@ func getFileTemplate(fileType string) string {
 	case "http":
 		return `### New Request
 GET https://example.com
+`
+	case "ws":
+		return `WEBSOCKET ws://localhost:8080/ws
+
+### Ping
+> {"type": "ping"}
+<
+
+### Subscribe
+> {"type": "subscribe", "channel": "updates"}
+<
 `
 	case "json":
 		return `[

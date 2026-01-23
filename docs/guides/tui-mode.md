@@ -93,11 +93,11 @@ Search is context-aware:
 1. Sidebar focused: searches filenames
 2. Response focused: searches response body
 
-### Category Filtering
+### Tag Filtering
 
-Press `t` to filter files by category. Type category name and press `Enter`. Press `T` to clear filter.
+Press `t` to filter files by tag. Type tag name and press `Enter`. Press `T` to clear filter.
 
-See [Categories](categories.md) for details.
+See [Tags](tags.md) for details.
 
 **Search behavior:**
 

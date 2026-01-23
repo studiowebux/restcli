@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -1088,7 +1089,7 @@ SEARCH
   ESC            Clear search / Cancel
 
 FOCUS
-  Green border   Shows which panel is focused
+  Cyan border    Shows which panel is focused
   Arrow keys     Control the focused panel only
 
 FILE OPERATIONS
@@ -1598,6 +1599,29 @@ func (m *Model) updateInspectView() {
 	m.modalView.Height = m.height - ContentOffsetSidebar // Modal content height minus padding, title lines, and footer
 
 	if m.currentRequest == nil {
+		// Check if this is a WebSocket file
+		currentFile := m.fileExplorer.GetCurrentFile()
+		isWebSocket := currentFile != nil && filepath.Ext(currentFile.Path) == ".ws"
+		if isWebSocket {
+			// Display WebSocket file info
+			var content strings.Builder
+			content.WriteString("WebSocket File Preview\n\n")
+			content.WriteString(fmt.Sprintf("File: %s\n", filepath.Base(currentFile.Path)))
+			content.WriteString(fmt.Sprintf("Protocol: WebSocket\n\n"))
+
+			// Read file content to show messages
+			fileContent, err := os.ReadFile(currentFile.Path)
+			if err != nil {
+				content.WriteString(styleError.Render(fmt.Sprintf("Error reading file: %v", err)))
+			} else {
+				content.WriteString("File Content:\n")
+				content.WriteString(string(fileContent))
+			}
+
+			m.modalView.SetContent(content.String())
+			return
+		}
+
 		m.modalView.SetContent("No request selected\n\nPress ESC to close")
 		return
 	}

@@ -936,7 +936,10 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) tea.Cmd {
 		return m.handleExecuteAction()
 
 	case keybinds.ActionOpenInspect:
-		if m.currentRequest == nil {
+		// Allow inspect for both HTTP requests and WebSocket files
+		currentFile := m.fileExplorer.GetCurrentFile()
+		isWebSocket := currentFile != nil && filepath.Ext(currentFile.Path) == ".ws"
+		if m.currentRequest == nil && !isWebSocket {
 			return m.setErrorMessage("No request loaded (select a file first)")
 		}
 		// Transition to inspect modal using state machine
