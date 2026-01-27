@@ -19,9 +19,7 @@ import (
 	"github.com/studiowebux/restcli/internal/tui"
 )
 
-var (
-	version = "0.0.38"
-)
+var version = "0.0.39"
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
@@ -564,8 +562,8 @@ func findMockConfig(configPath string) (string, error) {
 	searchPaths := []string{
 		"mocks",
 		".",
-		"../mocks",  // Parent dir (common when running from src/)
-		"..",        // Parent directory
+		"../mocks", // Parent dir (common when running from src/)
+		"..",       // Parent directory
 	}
 
 	patterns := []string{"*.mock.yaml", "*.mock.yml", "*.mock.json"}
