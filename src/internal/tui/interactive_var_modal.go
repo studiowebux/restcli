@@ -16,11 +16,22 @@ func (m *Model) initInteractiveVarPrompt() {
 		return
 	}
 
-	// Transition to interactive variable modal
-	if err := m.stateMachine.Transition(state.NewInteractiveVarModalState()); err != nil {
-		// If transition fails, fall back to normal mode
-		return
+	// Transition to interactive variable modal (only if not already in this state)
+	if _, ok := m.stateMachine.Current().(*state.InteractiveVarModalState); !ok {
+		if err := m.stateMachine.Transition(state.NewInteractiveVarModalState()); err != nil {
+			// If transition fails, fall back to normal mode
+			return
+		}
 	}
+
+	// Reset all interactive variable state before setting up new variable
+	m.interactiveVarMode = "input"
+	m.interactiveVarOptions = nil
+	m.interactiveVarAliases = nil
+	m.interactiveVarActiveIdx = 0
+	m.interactiveVarSelectIdx = 0
+	m.interactiveVarInput = ""
+	m.interactiveVarCursor = 0
 
 	currentVar := m.interactiveVarNames[0]
 	profile := m.sessionMgr.GetActiveProfile()
@@ -52,18 +63,10 @@ func (m *Model) initInteractiveVarPrompt() {
 			if m.interactiveVarSelectIdx >= len(m.interactiveVarOptions) {
 				m.interactiveVarSelectIdx = 0
 			}
-		} else {
-			// Regular text input mode
-			m.interactiveVarMode = "input"
-			m.interactiveVarOptions = nil
-			m.interactiveVarAliases = nil
 		}
-	} else {
-		// No profile, default to input mode
-		m.interactiveVarMode = "input"
-		m.interactiveVarOptions = nil
-		m.interactiveVarAliases = nil
+		// else: stays in default input mode (already set above)
 	}
+	// else: no profile, stays in default input mode (already set above)
 }
 
 // handleInteractiveVariablePromptKeys handles key input for interactive variable prompt modal
@@ -227,8 +230,6 @@ func (m *Model) submitInteractiveVar() tea.Cmd {
 
 	// Move to next variable or finish
 	m.interactiveVarNames = m.interactiveVarNames[1:]
-	m.interactiveVarInput = ""
-	m.interactiveVarCursor = 0
 
 	if len(m.interactiveVarNames) == 0 {
 		// Done with all prompts - proceed with request execution

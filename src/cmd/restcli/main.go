@@ -19,7 +19,7 @@ import (
 	"github.com/studiowebux/restcli/internal/tui"
 )
 
-var version = "0.0.39"
+var version = "0.0.40"
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
