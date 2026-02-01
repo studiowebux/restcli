@@ -324,7 +324,7 @@ func (m *Model) renderInteractiveVariablePrompt() string {
 		return m.renderModalWithFooterAndScroll(title, content.String(), footer, 80, 20, selectedLine+headerLines)
 	}
 
-	// Input mode - show text input
+	// Input mode - show text input with scrolling support
 	var inputContent strings.Builder
 	inputContent.WriteString(fmt.Sprintf("Variable: %s\n", currentVar))
 	if defaultValue != "" {
@@ -332,17 +332,50 @@ func (m *Model) renderInteractiveVariablePrompt() string {
 	}
 	inputContent.WriteString("\n")
 
-	inputWithCursor := addCursorAt(m.interactiveVarInput, m.interactiveVarCursor)
-	wrappedValue := wrapText(inputWithCursor, 55)
-	inputContent.WriteString(fmt.Sprintf("Value: %s", wrappedValue))
-
-	if m.interactiveVarOptions != nil && len(m.interactiveVarOptions) > 0 {
-		inputContent.WriteString("\n\nEnter custom value or ESC to cancel")
-	} else {
-		inputContent.WriteString("\n\nEnter value and press Enter to continue, ESC to cancel")
+	// Calculate header lines for scroll positioning
+	headerLines := 2 // Variable + blank line
+	if defaultValue != "" {
+		headerLines = 3 // Variable + Default + blank line
 	}
 
-	return m.renderModal(title, inputContent.String(), 70, 12)
+	inputWithCursor := addCursorAt(m.interactiveVarInput, m.interactiveVarCursor)
+	wrapWidth := 55
+	wrappedValue := wrapText(inputWithCursor, wrapWidth)
+	inputContent.WriteString(fmt.Sprintf("Value: %s", wrappedValue))
+
+	// Calculate which line the cursor is on after wrapping
+	// Find cursor position in wrapped text by counting lines up to cursor block
+	cursorLine := 0
+	wrappedLines := strings.Split(wrappedValue, "\n")
+	charCount := 0
+	for i, line := range wrappedLines {
+		// Check if cursor block is in this line
+		if strings.Contains(line, "█") {
+			cursorLine = i
+			break
+		}
+		charCount += len(line) + 1 // +1 for newline
+	}
+
+	var footer string
+	if m.interactiveVarOptions != nil && len(m.interactiveVarOptions) > 0 {
+		footer = "Enter custom value or ESC to cancel"
+	} else {
+		footer = "Enter value and press Enter to continue, ESC to cancel"
+	}
+
+	// Use dynamic height based on terminal size, with scrolling support
+	modalHeight := 20
+	if m.height < 30 {
+		modalHeight = m.height - 8
+		if modalHeight < 10 {
+			modalHeight = 10
+		}
+	}
+
+	// Scroll to keep cursor line visible (add header offset)
+	selectedLine := headerLines + cursorLine
+	return m.renderModalWithFooterAndScroll(title, inputContent.String(), footer, 70, modalHeight, selectedLine)
 }
 
 // addCursorAt adds a cursor indicator at the specified position

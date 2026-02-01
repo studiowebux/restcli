@@ -1987,6 +1987,45 @@ func (m *Model) updateHistoryView() {
 				previewContent.WriteString(cached)
 			} else {
 				// Not cached - perform expensive rendering operations
+				var renderedContent strings.Builder
+
+				// Show request body if present
+				if entry.Body != "" {
+					renderedContent.WriteString(styleTitle.Render("Request Body") + "\n")
+					reqBodyText := entry.Body
+					reqIsJSON := false
+					reqIsTruncated := false
+
+					// Try to pretty-print JSON
+					var reqJSONData interface{}
+					if err := json.Unmarshal([]byte(entry.Body), &reqJSONData); err == nil {
+						if prettyJSON, err := json.MarshalIndent(reqJSONData, "", "  "); err == nil {
+							reqBodyText = string(prettyJSON)
+							reqIsJSON = true
+						}
+					}
+
+					// Truncate large request bodies
+					const maxReqBodySize = 50 * 1024
+					if len(reqBodyText) > maxReqBodySize {
+						reqBodyText = reqBodyText[:maxReqBodySize]
+						reqIsTruncated = true
+					}
+
+					wrappedReqBody := wrapText(reqBodyText, wrapWidth)
+					if reqIsJSON {
+						profile := m.sessionMgr.GetActiveProfile()
+						wrappedReqBody = highlightJSON(wrappedReqBody, profile)
+					}
+					renderedContent.WriteString(wrappedReqBody)
+					if reqIsTruncated {
+						renderedContent.WriteString("\n[Request body truncated - showing first 50KB]")
+					}
+					renderedContent.WriteString("\n\n")
+				}
+
+				// Show response body
+				renderedContent.WriteString(styleTitle.Render("Response Body") + "\n")
 				bodyText := entry.ResponseBody
 				isJSON := false
 				isTruncated := false
@@ -2017,15 +2056,17 @@ func (m *Model) updateHistoryView() {
 					wrappedBody = highlightJSON(wrappedBody, profile)
 				}
 
+				renderedContent.WriteString(wrappedBody)
+
 				// Add truncation notice if body was cut
 				if isTruncated {
-					wrappedBody += "\n\n[Response body truncated - showing first 150KB only]"
+					renderedContent.WriteString("\n\n[Response body truncated - showing first 150KB only]")
 				}
 
 				// Cache the final rendered result for this width
-				m.historyState.SetRenderedCache(entry.Timestamp, wrapWidth, wrappedBody)
+				m.historyState.SetRenderedCache(entry.Timestamp, wrapWidth, renderedContent.String())
 
-				previewContent.WriteString(wrappedBody)
+				previewContent.WriteString(renderedContent.String())
 			}
 		} else {
 			previewContent.WriteString("No history entry selected")
